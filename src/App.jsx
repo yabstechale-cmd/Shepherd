@@ -28,6 +28,8 @@ const getTag = (name) => CATEGORY_STYLES[name]?.tag || "tag-admin";
 const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.abs(n || 0));
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
+const PREVIEW_USERS_STORAGE_KEY = "shepherd-preview-users";
+const PREVIEW_SESSION_STORAGE_KEY = "shepherd-preview-session";
 
 const Icon = ({ d, size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -104,15 +106,21 @@ const isoOffset = (days) => {
 };
 
 const PREVIEW_DATA = {
-  churchCode: "0712",
-  previewUsers: [
-    { id: "user-eric", full_name: "Eric Souza", role: "senior_pastor", title: "Senior Pastor", ministries: ["Services", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true, email: "eric@reachchurch.example", passcode: "0712", registered: true },
-    { id: "user-will", full_name: "Will Potts", role: "worship_pastor", title: "Worship Pastor", ministries: ["Worship", "Services"], canSeeTeamOverview: true, canSeeAdminOverview: false, email: "", passcode: "", registered: false },
-    { id: "user-joel", full_name: "Joel", role: "associate_pastor", title: "Associate Pastor, Missions & Finance", ministries: ["Missions", "Finances", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: false, email: "", passcode: "", registered: false },
-    { id: "user-shannan", full_name: "Shannan", role: "admin", title: "Church Administrator", ministries: ["Admin", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true, email: "", passcode: "", registered: false },
-    { id: "user-yabs", full_name: "Yabs", role: "youth_creative", title: "Youth & Art / Design", ministries: ["Youth", "Young Adults", "Events"], canSeeTeamOverview: true, canSeeAdminOverview: false, readOnlyOversight: true, email: "", passcode: "", registered: false },
+  churches: [
+    {
+      id: "reach-church",
+      code: "0712",
+      name: "Reach Church",
+      users: [
+        { id: "user-eric", full_name: "Eric Souza", role: "senior_pastor", title: "Senior Pastor", ministries: ["Services", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true, email: "eric@reachchurch.example", passcode: "0712", registered: true },
+        { id: "user-will", full_name: "Will Potts", role: "worship_pastor", title: "Worship Pastor", ministries: ["Worship", "Services"], canSeeTeamOverview: true, canSeeAdminOverview: false, email: "", passcode: "", registered: false },
+        { id: "user-joel", full_name: "Joel", role: "associate_pastor", title: "Associate Pastor, Missions & Finance", ministries: ["Missions", "Finances", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: false, email: "", passcode: "", registered: false },
+        { id: "user-shannan", full_name: "Shannan", role: "admin", title: "Church Administrator", ministries: ["Admin", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true, email: "", passcode: "", registered: false },
+        { id: "user-yabs", full_name: "Yabs", role: "youth_creative", title: "Youth & Art / Design", ministries: ["Youth", "Young Adults", "Events"], canSeeTeamOverview: true, canSeeAdminOverview: false, readOnlyOversight: true, email: "", passcode: "", registered: false },
+      ],
+    },
   ],
-  church: { id: "preview", name: "Reach Church" },
+  church: { id: "reach-church", name: "Reach Church", code: "0712" },
   ministries: [
     { id: "min-1", name: "Worship", budget: 12000, spent: 6800, color: "#9b72e8" },
     { id: "min-2", name: "Youth", budget: 9000, spent: 4100, color: "#52c87a" },
@@ -152,37 +160,68 @@ const rememberCategory = (category) => {
   const current = getStoredCategoryOrder().filter((name) => name !== category);
   window.localStorage.setItem(CATEGORY_STORAGE_KEY, JSON.stringify([category, ...current].slice(0, TASK_CATEGORIES.length)));
 };
+const getPreviewChurchByCode = (code) => PREVIEW_DATA.churches.find((church) => church.code === code);
+const getStoredPreviewUsers = () => {
+  if (typeof window === "undefined") return {};
+  const raw = window.localStorage.getItem(PREVIEW_USERS_STORAGE_KEY);
+  return raw ? JSON.parse(raw) : {};
+};
+const getPreviewUsersForChurch = (code) => {
+  const defaults = getPreviewChurchByCode(code)?.users || [];
+  const stored = getStoredPreviewUsers();
+  return stored[code] || defaults;
+};
+const savePreviewUsersForChurch = (code, users) => {
+  if (typeof window === "undefined") return;
+  const stored = getStoredPreviewUsers();
+  window.localStorage.setItem(PREVIEW_USERS_STORAGE_KEY, JSON.stringify({ ...stored, [code]: users }));
+};
+const getStoredPreviewSession = () => {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(PREVIEW_SESSION_STORAGE_KEY);
+  return raw ? JSON.parse(raw) : null;
+};
+const savePreviewSession = (sessionData) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PREVIEW_SESSION_STORAGE_KEY, JSON.stringify(sessionData));
+};
+const clearPreviewSession = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(PREVIEW_SESSION_STORAGE_KEY);
+};
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-function AuthScreen({ previewUsers, onPreviewLogin, onPreviewRegister }) {
+function AuthScreen({ onPreviewLogin, onPreviewRegister }) {
   const [isLogin, setIsLogin] = useState(true);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [churchCode, setChurchCode] = useState("");
   const [form, setForm] = useState({ userId: "", email: "", password: "", passcode: "", confirmPassword: "" });
+  const selectedChurch = getPreviewChurchByCode(churchCode.trim());
+  const availableUsers = selectedChurch ? getPreviewUsersForChurch(selectedChurch.code) : [];
 
   const submit = async () => {
     setError("");
-    if (churchCode !== PREVIEW_DATA.churchCode) return setError("That church code does not match Reach Church.");
+    if (!selectedChurch) return setError("Enter a valid church code first.");
     if (!form.userId) return setError("Select your name first.");
     setLoading(true);
     try {
       if (isLogin) {
-        const selected = previewUsers.find((user) => user.id === form.userId);
+        const selected = availableUsers.find((user) => user.id === form.userId);
         if (!selected?.registered) throw new Error("That person has not registered yet. Use first-time setup.");
         if (!form.passcode) throw new Error("Enter your passcode.");
         if (selected.passcode !== form.passcode) throw new Error("That passcode is incorrect.");
-        onPreviewLogin(selected);
+        onPreviewLogin(selectedChurch, selected);
       } else {
         if (!form.email || !form.password || !form.passcode) throw new Error("Fill in every registration field.");
         if (form.password.length < 6) throw new Error("Use a password with at least 6 characters.");
         if (form.passcode.length < 4) throw new Error("Choose a passcode with at least 4 digits.");
         if (form.password !== form.confirmPassword) throw new Error("Your passwords do not match.");
-        const selected = previewUsers.find((user) => user.id === form.userId);
+        const selected = availableUsers.find((user) => user.id === form.userId);
         if (!selected) throw new Error("Select your name first.");
         const updatedUser = { ...selected, email: form.email, passcode: form.passcode, registered: true };
-        onPreviewRegister(updatedUser);
+        onPreviewRegister(selectedChurch, updatedUser);
       }
     } catch (err) { setError(err.message); }
     setLoading(false);
@@ -204,7 +243,7 @@ function AuthScreen({ previewUsers, onPreviewLogin, onPreviewRegister }) {
             <svg width="32" height="32" viewBox="0 0 32 32" fill={C.gold}><path d="M13 0h6v13h13v6H19v13h-6V19H0v-6h13z"/></svg>
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
-          <p style={{color:C.muted,fontSize:13,marginTop:4}}>Access Reach Church using your staff church code, then continue as yourself.</p>
+          <p style={{color:C.muted,fontSize:13,marginTop:4}}>Input your church&apos;s code, select who you are, then enter your passcode.</p>
         </div>
         <div style={{display:"flex",background:C.surface,borderRadius:12,padding:4,marginBottom:24,border:`1px solid ${C.border}`}}>
           {["Log In","First Time"].map((l,i)=>(
@@ -213,10 +252,10 @@ function AuthScreen({ previewUsers, onPreviewLogin, onPreviewRegister }) {
         </div>
         {error && <div style={{background:"rgba(224,82,82,.1)",border:"1px solid rgba(224,82,82,.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.danger,marginBottom:14}}>{error}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <input className="input-field" placeholder="Church code" value={churchCode} onChange={e=>setChurchCode(e.target.value)} />
-          <select className="input-field" value={form.userId} onChange={e=>setForm({...form,userId:e.target.value})} style={{background:C.surface}}>
+          <input className="input-field" placeholder="Church code" value={churchCode} onChange={e=>{ setChurchCode(e.target.value); setForm({ userId: "", email: "", password: "", passcode: "", confirmPassword: "" }); }} />
+          <select className="input-field" value={form.userId} onChange={e=>setForm({...form,userId:e.target.value})} style={{background:C.surface}} disabled={!selectedChurch}>
             <option value="">Select your name</option>
-            {previewUsers.map((user) => (
+            {availableUsers.map((user) => (
               <option key={user.id} value={user.id}>
                 {user.full_name} • {user.title}
               </option>
@@ -234,10 +273,9 @@ function AuthScreen({ previewUsers, onPreviewLogin, onPreviewRegister }) {
             <input className="input-field" placeholder="Create 4-digit passcode" value={form.passcode} onChange={e=>setForm({...form,passcode:e.target.value})}/>
           </>}
           <button className="btn-gold" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"13px",fontSize:15,marginTop:4}}>
-            {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isLogin?"Continue to Reach Church":"Register this account"}
+            {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isLogin?"Log In":"Register this account"}
           </button>
         </div>
-        <p style={{textAlign:"center",color:C.muted,fontSize:12,marginTop:28,lineHeight:1.6}}>Reach Church code: <strong style={{color:C.text}}>0712</strong><br/>Preview note: only Eric is pre-registered right now.</p>
       </div>
     </div>
   );
@@ -1035,9 +1073,15 @@ export default function App() {
 
   useEffect(() => {
     const loadPreviewData = () => {
-      setPreviewUsers(PREVIEW_DATA.previewUsers);
-      setProfile(null);
-      setChurch(PREVIEW_DATA.church);
+      const defaultChurch = PREVIEW_DATA.churches[0];
+      const defaultUsers = getPreviewUsersForChurch(defaultChurch.code);
+      const storedSession = getStoredPreviewSession();
+      const sessionChurch = storedSession ? getPreviewChurchByCode(storedSession.churchCode) : null;
+      const sessionUsers = sessionChurch ? getPreviewUsersForChurch(sessionChurch.code) : [];
+      const sessionUser = storedSession ? sessionUsers.find((user) => user.id === storedSession.userId) : null;
+      setPreviewUsers(sessionChurch ? sessionUsers : defaultUsers);
+      setProfile(sessionUser || null);
+      setChurch(sessionChurch ? { id: sessionChurch.id, name: sessionChurch.name, code: sessionChurch.code } : { id: defaultChurch.id, name: defaultChurch.name, code: defaultChurch.code });
       setTasks(PREVIEW_DATA.tasks);
       setPeople(PREVIEW_DATA.people);
       setTransactions(PREVIEW_DATA.transactions);
@@ -1059,20 +1103,28 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const loginPreviewUser = (user) => {
+  const loginPreviewUser = (churchInfo, user) => {
+    setPreviewUsers(getPreviewUsersForChurch(churchInfo.code));
+    setChurch({ id: churchInfo.id, name: churchInfo.name, code: churchInfo.code });
     setProfile(user);
+    savePreviewSession({ churchCode: churchInfo.code, userId: user.id });
     setActive("dashboard");
   };
 
-  const registerPreviewUser = (user) => {
-    setPreviewUsers((current) => current.map((entry) => entry.id === user.id ? user : entry));
+  const registerPreviewUser = (churchInfo, user) => {
+    const nextUsers = getPreviewUsersForChurch(churchInfo.code).map((entry) => entry.id === user.id ? user : entry);
+    savePreviewUsersForChurch(churchInfo.code, nextUsers);
+    setPreviewUsers(nextUsers);
+    setChurch({ id: churchInfo.id, name: churchInfo.name, code: churchInfo.code });
     setProfile(user);
+    savePreviewSession({ churchCode: churchInfo.code, userId: user.id });
     setActive("dashboard");
   };
 
   const logout = () => {
     if (isPreview) {
       setProfile(null);
+      clearPreviewSession();
       setActive("dashboard");
       return;
     }
@@ -1095,7 +1147,7 @@ export default function App() {
     return (
       <>
         <GS/>
-        <AuthScreen previewUsers={previewUsers} onPreviewLogin={loginPreviewUser} onPreviewRegister={registerPreviewUser}/>
+        <AuthScreen onPreviewLogin={loginPreviewUser} onPreviewRegister={registerPreviewUser}/>
       </>
     );
   }

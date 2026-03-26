@@ -179,6 +179,82 @@ create unique index if not exists ministries_church_name_key on public.ministrie
 alter table public.ministries
   enable row level security;
 
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  signup_staff public.church_staff%rowtype;
+  signup_staff_id uuid;
+  signup_church_id uuid;
+begin
+  signup_staff_id := nullif(new.raw_user_meta_data ->> 'staff_id', '')::uuid;
+  signup_church_id := nullif(new.raw_user_meta_data ->> 'church_id', '')::uuid;
+
+  if signup_staff_id is not null then
+    select *
+    into signup_staff
+    from public.church_staff
+    where id = signup_staff_id;
+  end if;
+
+  update public.church_staff
+  set
+    auth_user_id = new.id,
+    email = coalesce(new.email, email)
+  where id = signup_staff_id
+    and (auth_user_id is null or auth_user_id = new.id);
+
+  insert into public.profiles (
+    id,
+    church_id,
+    staff_id,
+    full_name,
+    role,
+    title,
+    email,
+    ministries,
+    can_see_team_overview,
+    can_see_admin_overview,
+    read_only_oversight
+  )
+  values (
+    new.id,
+    coalesce(signup_staff.church_id, signup_church_id),
+    signup_staff_id,
+    coalesce(signup_staff.full_name, new.raw_user_meta_data ->> 'full_name', new.email),
+    coalesce(signup_staff.role, new.raw_user_meta_data ->> 'role', 'staff'),
+    signup_staff.title,
+    new.email,
+    coalesce(signup_staff.ministries, '{}'::text[]),
+    coalesce(signup_staff.can_see_team_overview, true),
+    coalesce(signup_staff.can_see_admin_overview, false),
+    coalesce(signup_staff.read_only_oversight, false)
+  )
+  on conflict (id) do update
+  set
+    church_id = excluded.church_id,
+    staff_id = excluded.staff_id,
+    full_name = excluded.full_name,
+    role = excluded.role,
+    title = excluded.title,
+    email = excluded.email,
+    ministries = excluded.ministries,
+    can_see_team_overview = excluded.can_see_team_overview,
+    can_see_admin_overview = excluded.can_see_admin_overview,
+    read_only_oversight = excluded.read_only_oversight;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
 drop policy if exists "church code lookup" on public.churches;
 create policy "church code lookup"
 on public.churches

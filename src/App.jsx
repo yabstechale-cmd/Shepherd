@@ -229,13 +229,6 @@ function AuthScreen() {
         if (signUpError) throw signUpError;
         if (!data.user?.id) throw new Error("We couldn't finish creating that account.");
 
-        const profilePayload = createProfilePayload(data.user.id, churchAccess.church.id, selected, form.email);
-        const staffUpdate = supabase.from("church_staff").update({ auth_user_id: data.user.id, email: form.email }).eq("id", selected.id);
-        const profileUpsert = supabase.from("profiles").upsert(profilePayload);
-        const [staffResult, profileResult] = await Promise.all([staffUpdate, profileUpsert]);
-        if (staffResult.error) throw staffResult.error;
-        if (profileResult.error) throw profileResult.error;
-
         if (!data.session) {
           setMessage("Account created. Check your email, then log in.");
           setIsLogin(true);

@@ -147,7 +147,7 @@ const fetchChurchAccess = async (code) => {
 
 // ── Auth ───────────────────────────────────────────────────────────────────
 function AuthScreen() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [mode, setMode] = useState("login");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -156,6 +156,8 @@ function AuthScreen() {
   const [churchCode, setChurchCode] = useState("");
   const [churchAccess, setChurchAccess] = useState({ church: null, users: [] });
   const [form, setForm] = useState({ userId: "", email: "", password: "", confirmPassword: "" });
+  const isLogin = mode === "login";
+  const isForgotPassword = mode === "forgot";
 
   useEffect(() => {
     let active = true;
@@ -195,20 +197,33 @@ function AuthScreen() {
   const submit = async () => {
     setError("");
     setMessage("");
-    if (!churchAccess.church) return setError("Enter a valid church code first.");
-    if (!form.userId) return setError("Select your name first.");
-
-    const selected = churchAccess.users.find((user) => user.id === form.userId);
-    if (!selected) return setError("Select your name first.");
-
     setLoading(true);
     try {
-      if (isLogin) {
+      if (isForgotPassword) {
+        if (!churchAccess.church) throw new Error("Enter a valid church code first.");
+        if (!form.userId) throw new Error("Select your name first.");
+        const selected = churchAccess.users.find((user) => user.id === form.userId);
+        if (!selected?.email) throw new Error("That person has not registered yet. Use First Time to create the account.");
+        const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(selected.email, redirectTo ? { redirectTo } : undefined);
+        if (resetError) throw resetError;
+        setMessage("Password reset email sent. Use the link in that email to choose a new password.");
+        setMode("login");
+        setForm((current) => ({ ...current, password: "", confirmPassword: "" }));
+      } else if (isLogin) {
+        if (!churchAccess.church) throw new Error("Enter a valid church code first.");
+        if (!form.userId) throw new Error("Select your name first.");
+        const selected = churchAccess.users.find((user) => user.id === form.userId);
+        if (!selected) throw new Error("Select your name first.");
         if (!selected.email) throw new Error("That person has not registered yet. Use First Time to create the account.");
         if (!form.password) throw new Error("Enter your password.");
         const { error: loginError } = await supabase.auth.signInWithPassword({ email: selected.email, password: form.password });
         if (loginError) throw loginError;
       } else {
+        if (!churchAccess.church) throw new Error("Enter a valid church code first.");
+        if (!form.userId) throw new Error("Select your name first.");
+        const selected = churchAccess.users.find((user) => user.id === form.userId);
+        if (!selected) throw new Error("Select your name first.");
         if (selected.auth_user_id || selected.email) throw new Error("That person has already registered. Use Log In instead.");
         if (!form.email || !form.password) throw new Error("Fill in every registration field.");
         if (form.password.length < 6) throw new Error("Use a password with at least 6 characters.");
@@ -218,6 +233,7 @@ function AuthScreen() {
           email: form.email,
           password: form.password,
           options: {
+            emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
             data: {
               church_id: churchAccess.church.id,
               staff_id: selected.id,
@@ -229,11 +245,11 @@ function AuthScreen() {
         if (signUpError) throw signUpError;
         if (!data.user?.id) throw new Error("We couldn't finish creating that account.");
 
-        if (!data.session) {
-          setMessage("Account created. Check your email, then log in.");
-          setIsLogin(true);
-          setForm({ userId: selected.id, email: "", password: "", confirmPassword: "" });
-        }
+        setMessage(data.session
+          ? "Account created. If verification is enabled, check your email to confirm the account."
+          : "Account created. Check your email, verify your account, then log in.");
+        setMode("login");
+        setForm({ userId: selected.id, email: "", password: "", confirmPassword: "" });
       }
     } catch (err) {
       setError(err.message || "Something went wrong.");
@@ -258,14 +274,16 @@ function AuthScreen() {
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
-            {isLogin
+            {isForgotPassword
+              ? "Input your church's code, select who you are, and we'll email you a password reset link."
+              : isLogin
               ? "Input your church's code, select who you are, then enter your password."
               : "Input your church's code, select who you are, then create your account."}
           </p>
         </div>
         <div style={{display:"flex",background:C.surface,borderRadius:12,padding:4,marginBottom:24,border:`1px solid ${C.border}`}}>
           {["Log In","First Time"].map((label,index)=>(
-            <button key={label} onClick={()=>{setIsLogin(index===0);setError("");setMessage("");}} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:14,fontWeight:500,background:(isLogin?index===0:index===1)?C.card:"transparent",color:(isLogin?index===0:index===1)?C.text:C.muted}}>{label}</button>
+            <button key={label} onClick={()=>{setMode(index===0?"login":"signup");setError("");setMessage("");}} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:14,fontWeight:500,background:((mode==="login"&&index===0)||(mode==="signup"&&index===1))?C.card:"transparent",color:((mode==="login"&&index===0)||(mode==="signup"&&index===1))?C.text:C.muted}}>{label}</button>
           ))}
         </div>
         {error && <div style={{background:"rgba(224,82,82,.1)",border:"1px solid rgba(224,82,82,.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.danger,marginBottom:14}}>{error}</div>}
@@ -288,21 +306,48 @@ function AuthScreen() {
               </option>
             ))}
           </select>
-          {!isLogin && (
+          {mode === "signup" && (
             <input className="input-field" placeholder="Email address" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
           )}
-          <div style={{position:"relative"}}>
-            <input className="input-field" placeholder={isLogin ? "Password" : "Create password"} type={showPassword?"text":"password"} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} style={{paddingRight:44}}/>
-            <button onClick={()=>setShowPassword(!showPassword)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:C.muted}}>
-              {showPassword?<Icons.eyeOff/>:<Icons.eye/>}
-            </button>
-          </div>
-          {!isLogin && (
+          {!isForgotPassword && (
+            <div style={{position:"relative"}}>
+              <input className="input-field" placeholder={isLogin ? "Password" : "Create password"} type={showPassword?"text":"password"} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} style={{paddingRight:44}}/>
+              <button onClick={()=>setShowPassword(!showPassword)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:C.muted}}>
+                {showPassword?<Icons.eyeOff/>:<Icons.eye/>}
+              </button>
+            </div>
+          )}
+          {mode === "signup" && (
             <input className="input-field" placeholder="Confirm password" type="password" value={form.confirmPassword} onChange={e=>setForm({...form,confirmPassword:e.target.value})}/>
           )}
           <button className="btn-gold" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"13px",fontSize:15,marginTop:4}}>
-            {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isLogin ? "Log In" : "Register this account"}
+            {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isForgotPassword ? "Send reset email" : isLogin ? "Log In" : "Register this account"}
           </button>
+          {isLogin && (
+            <button
+              onClick={() => {
+                setMode("forgot");
+                setError("");
+                setMessage("");
+                setForm((current) => ({ ...current, password: "", confirmPassword: "" }));
+              }}
+              style={{background:"none",border:"none",cursor:"pointer",color:C.gold,fontSize:13,marginTop:4}}
+            >
+              Forgot password?
+            </button>
+          )}
+          {isForgotPassword && (
+            <button
+              onClick={() => {
+                setMode("login");
+                setError("");
+                setMessage("");
+              }}
+              style={{background:"none",border:"none",cursor:"pointer",color:C.gold,fontSize:13,marginTop:4}}
+            >
+              Back to Log In
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -75,6 +75,7 @@ alter table public.profiles add column if not exists can_see_team_overview boole
 alter table public.profiles add column if not exists can_see_admin_overview boolean not null default false;
 alter table public.profiles add column if not exists read_only_oversight boolean not null default false;
 alter table public.profiles add column if not exists created_at timestamptz not null default now();
+alter table public.profiles drop constraint if exists profiles_role_check;
 
 create unique index if not exists profiles_staff_id_key on public.profiles (staff_id) where staff_id is not null;
 

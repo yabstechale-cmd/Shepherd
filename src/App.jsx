@@ -1045,10 +1045,11 @@ export default function App() {
       setLoading(false);
     };
 
+    loadPreviewData();
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) loadData(session.user.id);
-      else loadPreviewData();
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setSession(session);

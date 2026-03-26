@@ -90,6 +90,9 @@ create table if not exists public.tasks (
   assignee text not null,
   due_date date,
   status text not null default 'todo',
+  review_required boolean not null default false,
+  reviewers text[] not null default '{}',
+  review_approvals text[] not null default '{}',
   notes text,
   created_at timestamptz not null default now()
 );
@@ -100,6 +103,9 @@ alter table public.tasks add column if not exists ministry text;
 alter table public.tasks add column if not exists assignee text;
 alter table public.tasks add column if not exists due_date date;
 alter table public.tasks add column if not exists status text not null default 'todo';
+alter table public.tasks add column if not exists review_required boolean not null default false;
+alter table public.tasks add column if not exists reviewers text[] not null default '{}';
+alter table public.tasks add column if not exists review_approvals text[] not null default '{}';
 alter table public.tasks add column if not exists notes text;
 alter table public.tasks add column if not exists created_at timestamptz not null default now();
 
@@ -513,7 +519,7 @@ values
   ('11111111-1111-1111-1111-111111111111', 'Will Potts', 'worship_pastor', 'Worship Pastor', array['Worship','Services'], true, false, false),
   ('11111111-1111-1111-1111-111111111111', 'Joel', 'associate_pastor', 'Associate Pastor, Missions & Finance', array['Missions','Finances','Operations'], true, false, false),
   ('11111111-1111-1111-1111-111111111111', 'Shannan', 'admin', 'Church Administrator', array['Admin','Operations'], true, true, false),
-  ('11111111-1111-1111-1111-111111111111', 'Yabs', 'youth_creative', 'Youth & Art / Design', array['Youth','Young Adults','Events'], true, false, true)
+  ('11111111-1111-1111-1111-111111111111', 'Yabs', 'youth_creative', 'Youth & Art / Design', array['Youth','Young Adults','Events'], true, false, false)
 on conflict (church_id, full_name) do update
 set
   role = excluded.role,

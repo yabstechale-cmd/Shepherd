@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
+import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 
 const C = {
   bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
@@ -9,6 +10,7 @@ const C = {
 };
 
 const TASK_CATEGORIES = ["Admin", "Events", "Services", "Worship", "Missions", "Men's", "Women's", "Young Adults", "Youth", "Kids", "Finances", "Operations"];
+const SORTED_TASK_CATEGORIES = [...TASK_CATEGORIES].sort((a, b) => a.localeCompare(b));
 const CATEGORY_STYLES = {
   Admin: { tag: "tag-admin", color: "#5b8fe8" },
   Events: { tag: "tag-events", color: "#e8a45b" },
@@ -48,14 +50,22 @@ const Icons = {
   eyeOff:   () => <Icon d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" />,
   menu:     () => <Icon d="M3 12h18M3 6h18M3 18h18" />,
   x:        () => <Icon d="M18 6L6 18M6 6l12 12" />,
+  pen:      () => <Icon d="M12 20h9M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />,
 };
 
 const GS = () => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@300;400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
+    @font-face{
+      font-family:'Young Serif Medium';
+      src:url(${youngSerifFont}) format('truetype');
+      font-weight:500;
+      font-style:normal;
+      font-display:swap;
+    }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     body{background:${C.bg};color:${C.text};font-family:'DM Sans',sans-serif;min-height:100vh}
-    input,textarea,select{font-family:'DM Sans',sans-serif}
+    input,textarea,select,button{font-family:'DM Sans',sans-serif}
     @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
     @keyframes spin{to{transform:rotate(360deg)}}
     .fadeIn{animation:fadeIn 0.3s ease forwards}
@@ -105,12 +115,24 @@ const normalizeAccessUser = (record) => ({
   canSeeAdminOverview: record?.can_see_admin_overview ?? record?.canSeeAdminOverview ?? false,
   readOnlyOversight: record?.read_only_oversight ?? record?.readOnlyOversight ?? false,
 });
+const normalizeTask = (task) => ({
+  ...task,
+  status: ["todo", "in-progress", "in-review", "done"].includes(task?.status) ? task.status : "todo",
+  reviewers: Array.isArray(task?.reviewers) ? task.reviewers : [],
+  review_approvals: Array.isArray(task?.review_approvals) ? task.review_approvals : [],
+  review_required: task?.review_required ?? false,
+});
+const normalizeName = (value) => (value || "").trim().toLowerCase();
+const samePerson = (left, right) => normalizeName(left) !== "" && normalizeName(left) === normalizeName(right);
+const listIncludesPerson = (list, fullName) => Array.isArray(list) && list.some((entry) => samePerson(entry, fullName));
 
 const roleLabel = (profile) => profile?.title || profile?.role || "Staff";
 const canManageAllTasks = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
-const canEditTask = (profile, task) => canManageAllTasks(profile) || task?.assignee === profile?.full_name;
+const canEditTask = (profile, task) => canManageAllTasks(profile) || samePerson(task?.assignee, profile?.full_name);
+const canReviewTask = (profile, task) => task?.review_required && listIncludesPerson(task?.reviewers, profile?.full_name);
 const canManagePeople = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
 const canManageBudget = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor" || profile?.full_name === "Joel";
+const isTaskForUser = (task, fullName) => samePerson(task?.assignee, fullName) || listIncludesPerson(task?.reviewers, fullName);
 const getStoredCategoryOrder = () => {
   if (typeof window === "undefined") return TASK_CATEGORIES;
   const raw = window.localStorage.getItem(CATEGORY_STORAGE_KEY);
@@ -151,6 +173,42 @@ const fetchChurchAccess = async (code) => {
   const { data: users, error: usersError } = await supabase.from("church_staff").select("*").eq("church_id", church.id).order("full_name");
   if (usersError) throw usersError;
   return { church, users: (users || []).map(normalizeAccessUser) };
+};
+const getTimeOfDayGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+};
+const GOOGLE_CALENDAR_EMBED_URL = import.meta.env.VITE_GOOGLE_CALENDAR_EMBED_URL || "";
+const DAILY_VERSES = [
+  { text: "Commit your works to the Lord, and your thoughts will be established.", reference: "Proverbs 16:3 NKJV" },
+  { text: "Let all that you do be done with love.", reference: "1 Corinthians 16:14 NKJV" },
+  { text: "Whatever you do, do it heartily, as to the Lord and not to men.", reference: "Colossians 3:23 NKJV" },
+  { text: "Be steadfast, immovable, always abounding in the work of the Lord.", reference: "1 Corinthians 15:58 NKJV" },
+  { text: "God is not unjust to forget your work and labor of love.", reference: "Hebrews 6:10 NKJV" },
+  { text: "Let us not grow weary while doing good, for in due season we shall reap.", reference: "Galatians 6:9 NKJV" },
+  { text: "Unless the Lord builds the house, they labor in vain who build it.", reference: "Psalm 127:1 NKJV" },
+  { text: "Trust in the Lord with all your heart, and lean not on your own understanding.", reference: "Proverbs 3:5 NKJV" },
+];
+const getDailyVerse = () => {
+  const now = new Date();
+  const rotationDate = new Date(now);
+  if (now.getHours() < 7) rotationDate.setDate(rotationDate.getDate() - 1);
+  rotationDate.setHours(7, 0, 0, 0);
+  const dayIndex = Math.floor(rotationDate.getTime() / 86400000);
+  return DAILY_VERSES[Math.abs(dayIndex) % DAILY_VERSES.length];
+};
+const displayHeadingStyle = {
+  fontFamily: "'Young Serif Medium', Georgia, serif",
+  fontWeight: 500,
+  letterSpacing: "0.01em",
+};
+const STATUS_STYLES = {
+  todo: { label: "Not Started", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
+  "in-progress": { label: "In Progress", accent: C.blue, surface: "rgba(91,143,232,0.08)" },
+  "in-review": { label: "In Review", accent: C.purple, surface: "rgba(155,114,232,0.08)" },
+  done: { label: "Done", accent: C.success, surface: "rgba(82,200,122,0.08)" },
 };
 
 // ── Auth ───────────────────────────────────────────────────────────────────
@@ -388,7 +446,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
           <div style={{width:32,height:32,borderRadius:8,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill={C.gold}><path d="M5.5 0h3v5.5H14v3H8.5V14h-3V8.5H0v-3h5.5z"/></svg>
           </div>
-          <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:C.text}}>Shepherd</span>
+          <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em"}}>Shepherd</span>
         </div>}
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4}}><Icons.menu/></button>
       </div>
@@ -418,150 +476,175 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, people, ministries, setActive, profile, previewUsers }) {
-  const myTasks = tasks.filter((t) => t.assignee === profile?.full_name);
-  const done = tasks.filter(t=>t.status==="done").length;
-  const followUps = people.filter(p=>p.status==="follow-up").length;
-  const totalBudget = ministries.reduce((s,m)=>s+(m.budget||0),0);
-  const totalSpent = ministries.reduce((s,m)=>s+(m.spent||0),0);
-  const inProgress = tasks.filter((t) => t.status === "in-progress");
-  const myOpen = myTasks.filter((t) => t.status !== "done").length;
+function Dashboard({ tasks, people, setActive, profile, previewUsers }) {
+  const greeting = getTimeOfDayGreeting();
+  const dailyVerse = getDailyVerse();
   const today = new Date();
-  const daysUntilSunday = (7-today.getDay())%7||7;
-  const sundayTasks = tasks.filter(t=>t.status!=="done"&&new Date(t.due_date)<=new Date(today.getTime()+daysUntilSunday*86400000));
   const teamSummary = previewUsers.map((user) => {
-    const assigned = tasks.filter((task) => task.assignee === user.full_name);
+    const assigned = tasks.filter((task) => samePerson(task.assignee, user.full_name));
+    const currentTask =
+      assigned.find((task) => task.status === "in-progress")
+      || assigned
+        .filter((task) => task.status !== "done")
+        .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0]
+      || null;
     return {
       ...user,
       openTasks: assigned.filter((task) => task.status !== "done").length,
       inProgressTasks: assigned.filter((task) => task.status === "in-progress").length,
+      currentTask,
       nextTask: assigned
         .filter((task) => task.status !== "done")
-        .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0],
+        .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0],
     };
   });
   const recentAdminWork = tasks
     .filter((task) => ["Admin", "Operations", "Finances"].includes(task.ministry))
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
     .slice(0, 4);
+  const notifications = [
+    ...tasks
+      .filter((task) => samePerson(task.assignee, profile?.full_name) && task.status !== "done" && task.due_date && new Date(task.due_date) < today)
+      .map((task) => ({
+        id: `overdue-${task.id}`,
+        tone: C.danger,
+        title: "Overdue task",
+        detail: `${task.title} was due ${fmtDate(task.due_date)}.`,
+      })),
+    ...tasks
+      .filter((task) => samePerson(task.assignee, profile?.full_name) && task.status === "todo")
+      .slice(0, 3)
+      .map((task) => ({
+        id: `todo-${task.id}`,
+        tone: C.blue,
+        title: "Ready to start",
+        detail: `${task.title} is waiting in ${task.ministry}.`,
+      })),
+    ...people
+      .filter((person) => person.status === "follow-up" || person.prayer_request)
+      .slice(0, 2)
+      .map((person) => ({
+        id: `person-${person.id}`,
+        tone: C.gold,
+        title: "People care follow-up",
+        detail: `${person.full_name} needs attention${person.prayer_request ? `: ${person.prayer_request}` : "."}`,
+      })),
+  ].slice(0, 5);
 
   return (
     <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1200}}>
       <div style={{marginBottom:28}}>
-        <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:C.text}}>Good morning, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
-        <p style={{color:C.muted,marginTop:4}}>
+        <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:42,fontWeight:500,color:C.text,letterSpacing:"0.01em"}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
+        <p style={{color:C.muted,marginTop:4,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
           {profile?.canSeeTeamOverview
             ? profile?.readOnlyOversight
               ? "You can see the whole church team's workload this week in read-only mode."
-              : "You have a leadership view of the whole church team this week."
+              : `${dailyVerse.text} ${dailyVerse.reference}`
             : profile?.canSeeAdminOverview
               ? "You can see the full church workload with an administrative operations lens."
               : `Here is your ministry workload and the shared church picture for ${roleLabel(profile)}.`}
         </p>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28}}>
-        {[
-          {label:"My Open Tasks",value:myOpen,sub:`assigned to ${profile?.full_name?.split(" ")[0] || "you"}`,color:C.blue},
-          {label:"Completed",value:done,sub:"tasks total",color:C.success},
-          {label:"Follow-ups",value:followUps,sub:"need pastoral attention",color:C.gold},
-          {label:"Budget Used",value:totalBudget?`${Math.round(totalSpent/totalBudget*100)}%`:"—",sub:`${fmt(totalBudget-totalSpent)} remaining`,color:C.purple},
-        ].map(s=>(
-          <div key={s.label} className="stat-card">
-            <div style={{fontSize:34,fontWeight:600,color:s.color,fontFamily:"'Cormorant Garamond',serif"}}>{s.value}</div>
-            <div style={{fontSize:13,color:C.text,marginTop:4}}>{s.label}</div>
-            <div style={{fontSize:11,color:C.muted,marginTop:2}}>{s.sub}</div>
-          </div>
-        ))}
-      </div>
       {previewUsers.length > 0 && (
         <div className="card" style={{padding:22,marginBottom:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={{fontSize:16,fontWeight:600,color:C.text}}>
+            <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>
               {profile?.canSeeAdminOverview ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
             </h3>
             <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open task board</button>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {teamSummary.map((member) => (
-              <div key={member.id} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-                <div style={{fontSize:14,fontWeight:600,color:C.text}}>{member.full_name}</div>
-                <div style={{fontSize:11,color:C.muted,marginTop:2}}>{member.title}</div>
-                <div style={{fontSize:28,fontFamily:"'Cormorant Garamond',serif",color:member.inProgressTasks ? C.blue : C.gold,marginTop:12}}>{member.openTasks}</div>
-                <div style={{fontSize:11,color:C.muted}}>open tasks</div>
-                <div style={{fontSize:11,color:member.inProgressTasks ? C.blue : C.muted,marginTop:8}}>
-                  {member.inProgressTasks ? `${member.inProgressTasks} in progress` : "No active work started"}
+              <div
+                key={member.id}
+                style={{
+                  padding:16,
+                  border:`1px solid ${member.currentTask?.status === "in-progress" ? C.goldDim : C.border}`,
+                  borderRadius:12,
+                  background:member.currentTask?.status === "in-progress" ? C.goldGlow : C.surface,
+                  display:"grid",
+                  gridTemplateColumns:"minmax(180px, 220px) minmax(220px, 1fr) 110px",
+                  gap:16,
+                  alignItems:"center"
+                }}
+              >
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:C.text}}>{member.full_name}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{member.title}</div>
                 </div>
-                {member.nextTask && (
-                  <div style={{fontSize:11,color:C.text,marginTop:10,lineHeight:1.5}}>
-                    Next: {member.nextTask.title}
+                <div>
+                  <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6}}>
+                    Working on now
                   </div>
-                )}
+                  {member.currentTask ? (
+                    <>
+                      <div style={{fontSize:14,color:C.text,fontWeight:500}}>{member.currentTask.title}</div>
+                      <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
+                        <span className={`badge ${getTag(member.currentTask.ministry)}`}>{member.currentTask.ministry}</span>
+                        <span className="badge" style={{background:"rgba(255,255,255,.04)",color:member.currentTask.status === "in-progress" ? C.blue : C.muted,border:`1px solid ${C.border}`}}>
+                          {member.currentTask.status === "in-progress" ? "In Progress" : "To Do"}
+                        </span>
+                        {member.currentTask.due_date && <span style={{fontSize:11,color:C.muted}}>Due {fmtDate(member.currentTask.due_date)}</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{fontSize:13,color:C.muted}}>No active task right now.</div>
+                  )}
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:28,fontFamily:"'Young Serif Medium', Georgia, serif",color:member.inProgressTasks ? C.blue : C.gold}}>
+                    {member.openTasks}
+                  </div>
+                  <div style={{fontSize:11,color:C.muted}}>open tasks</div>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-        <div className="card" style={{padding:22}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={{fontSize:15,fontWeight:600,color:C.text}}>🔄 In Progress</h3>
-            <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>View all</button>
-          </div>
-          {inProgress.length===0&&<p style={{color:C.muted,fontSize:13}}>Nothing is in progress right now.</p>}
-          {inProgress.map(t=>(
-            <div key={t.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:C.blue,marginTop:5,flexShrink:0}}/>
-              <div>
-                <div style={{fontSize:13,fontWeight:500,color:C.text}}>{t.title}</div>
-                <div style={{display:"flex",gap:8,marginTop:5,alignItems:"center"}}>
-                  <span className={`badge ${getTag(t.ministry)}`}>{t.ministry}</span>
-                  <span style={{fontSize:11,color:C.muted}}>{t.assignee}</span>
-                </div>
-              </div>
-            </div>
-          ))}
+      <div className="card" style={{padding:22,marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Notifications</h3>
+          <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open tasks</button>
         </div>
-        <div className="card" style={{padding:22}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={{fontSize:15,fontWeight:600,color:C.text}}>⛪ Sunday Readiness</h3>
-            <span style={{fontSize:12,color:C.gold,fontWeight:500}}>{daysUntilSunday} days away</span>
-          </div>
-          <div style={{marginBottom:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.muted,marginBottom:6}}>
-              <span>Tasks due before Sunday</span>
-              <span>{sundayTasks.filter(t=>t.status==="done").length}/{sundayTasks.length}</span>
-            </div>
-            <div className="progress-bar">
-              <div className="progress-fill" style={{width:`${sundayTasks.length?(sundayTasks.filter(t=>t.status==="done").length/sundayTasks.length)*100:100}%`}}/>
+        {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No new notifications right now.</p>}
+        {notifications.map((item) => (
+          <div key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:5,flexShrink:0}} />
+            <div>
+              <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
+              <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
             </div>
           </div>
-          {sundayTasks.filter(t=>t.status!=="done").slice(0,4).map(t=>(
-            <div key={t.id} style={{display:"flex",gap:10,marginBottom:10,alignItems:"center"}}>
-              <div style={{width:16,height:16,borderRadius:4,border:`1px solid ${C.border}`,flexShrink:0}}/>
-              <span style={{fontSize:13,color:C.text}}>{t.title}</span>
-              <span style={{marginLeft:"auto",fontSize:11,color:C.muted}}>{t.assignee}</span>
-            </div>
-          ))}
-          {sundayTasks.filter(t=>t.status!=="done").length===0&&<p style={{color:C.success,fontSize:13}}>✓ All tasks ready for Sunday!</p>}
+        ))}
+      </div>
+      <div className="card" style={{padding:22,marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Calendar</h3>
+          <button className="btn-outline" onClick={()=>setActive("calendar")} style={{padding:"5px 12px",fontSize:12}}>Open calendar</button>
         </div>
-        <div className="card" style={{padding:22}}>
-          <h3 style={{fontSize:15,fontWeight:600,color:C.text,marginBottom:16}}>💰 Ministry Budgets</h3>
-          {ministries.map(m=>(
-            <div key={m.id} style={{marginBottom:14}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5}}>
-                <span className={`badge ${getTag(m.name)}`}>{m.name}</span>
-                <span style={{color:C.muted}}>{fmt(m.spent)} / {fmt(m.budget)}</span>
-              </div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{width:`${Math.min(((m.spent||0)/(m.budget||1))*100,100)}%`,background:(m.spent/m.budget)>.85?`linear-gradient(90deg,${C.danger},#ff7c7c)`:undefined}}/>
-              </div>
+        {GOOGLE_CALENDAR_EMBED_URL ? (
+          <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:C.surface}}>
+            <iframe
+              title="Church Calendar"
+              src={GOOGLE_CALENDAR_EMBED_URL}
+              style={{width:"100%",height:560,border:"0",display:"block",background:"#fff"}}
+            />
+          </div>
+        ) : (
+          <div style={{border:`1px dashed ${C.border}`,borderRadius:12,padding:20,background:C.surface}}>
+            <div style={{fontSize:13,fontWeight:500,color:C.text,marginBottom:8}}>Google Calendar not connected yet.</div>
+            <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+              Add `VITE_GOOGLE_CALENDAR_EMBED_URL` to your local `.env` and Vercel environment settings with your church Google Calendar embed link to show it here.
             </div>
-          ))}
-        </div>
+          </div>
+        )}
+      </div>
+      <div>
         <div className="card" style={{padding:22}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={{fontSize:15,fontWeight:600,color:C.text}}>
-              {profile?.canSeeAdminOverview ? "🗂 Admin Watchlist" : "🙏 Pastoral Follow-ups"}
+            <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>
+              {profile?.canSeeAdminOverview ? "Admin Watchlist" : "Pastoral Follow-ups"}
             </h3>
             <button className="btn-outline" onClick={()=>setActive("members")} style={{padding:"5px 12px",fontSize:12}}>View all</button>
           </div>
@@ -590,7 +673,7 @@ function Dashboard({ tasks, people, ministries, setActive, profile, previewUsers
                   </div>
                   <div>
                     <div style={{fontSize:13,fontWeight:500,color:C.text}}>{p.full_name}</div>
-                    {p.prayer_request&&<div style={{fontSize:12,color:C.muted,marginTop:2}}>🙏 {p.prayer_request}</div>}
+                    {p.prayer_request&&<div style={{fontSize:12,color:C.muted,marginTop:2}}>{p.prayer_request}</div>}
                   </div>
                   {p.status==="follow-up"&&<span className="badge tag-board" style={{marginLeft:"auto",alignSelf:"flex-start"}}>Follow-up</span>}
                 </div>
@@ -613,7 +696,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
   const [aFilter, setAFilter] = useState("mine");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:""};
+  const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:"",review_required:false,reviewers:[],review_approvals:[]};
   const [form, setForm] = useState(blank);
   const [orderedCategories, setOrderedCategories] = useState(() => getStoredCategoryOrder());
   const teamNames = previewUsers?.map((user) => user.full_name) || [];
@@ -621,10 +704,11 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
 
   const filtered = tasks.filter((t) => {
     const ministryMatch = mFilter === "All" || t.ministry === mFilter;
+    const isMine = isTaskForUser(t, profile?.full_name);
     const assigneeMatch =
       aFilter === "all" ||
-      (aFilter === "mine" && t.assignee === profile?.full_name) ||
-      (aFilter === "team" && t.assignee !== profile?.full_name);
+      (aFilter === "mine" && isMine) ||
+      (aFilter === "team" && !isMine);
     return ministryMatch && assigneeMatch;
   });
 
@@ -633,44 +717,100 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
     setForm({ ...blank, ministry: orderedCategories[0] || "Admin", assignee: profile?.full_name || blank.assignee });
     setShowModal(true);
   };
-  const openEdit = (t) => { setEditing(t); setForm(t); setShowModal(true); };
+  const openEdit = (t) => { setEditing(t); setForm(normalizeTask(t)); setShowModal(true); };
 
   const save = async () => {
     if (!form.title) return;
     rememberCategory(form.ministry);
     setOrderedCategories(getStoredCategoryOrder());
     const safeAssignee = canAssignToAnyone ? form.assignee : profile?.full_name;
-    const safeForm = { ...form, assignee: safeAssignee };
+    const safeReviewers = form.review_required
+      ? form.reviewers.filter((name) => !samePerson(name, safeAssignee))
+      : [];
+    const safeApprovals = (form.review_approvals || []).filter((name) => listIncludesPerson(safeReviewers, name));
+    const safeForm = normalizeTask({ ...form, assignee: safeAssignee, reviewers: safeReviewers, review_approvals: safeApprovals });
     if (isPreview) {
       const record = editing
         ? { ...editing, ...safeForm }
         : { ...safeForm, id: `task-${Date.now()}`, church_id: churchId };
-      setTasks(editing ? tasks.map((t) => t.id === editing.id ? record : t) : [...tasks, record]);
+      setTasks(editing ? tasks.map((t) => t.id === editing.id ? normalizeTask(record) : t) : [...tasks, normalizeTask(record)]);
       setShowModal(false);
       return;
     }
+    const dbPayload = { ...safeForm, church_id: churchId };
     if (editing) {
-      const { data } = await supabase.from("tasks").update(safeForm).eq("id",editing.id).select().single();
-      setTasks(tasks.map(t=>t.id===editing.id?data:t));
+      let result = await supabase.from("tasks").update(safeForm).eq("id",editing.id).select().single();
+      if (result.error && /review_required|reviewers|review_approvals/i.test(result.error.message || "")) {
+        const fallbackPayload = {
+          title: safeForm.title,
+          ministry: safeForm.ministry,
+          assignee: safeForm.assignee,
+          due_date: safeForm.due_date,
+          status: safeForm.status,
+          notes: safeForm.notes,
+        };
+        result = await supabase.from("tasks").update(fallbackPayload).eq("id", editing.id).select().single();
+      }
+      if (result.data) setTasks(tasks.map(t=>t.id===editing.id?normalizeTask(result.data):t));
     } else {
-      const { data } = await supabase.from("tasks").insert({...safeForm,church_id:churchId}).select().single();
-      setTasks([...tasks,data]);
+      let result = await supabase.from("tasks").insert(dbPayload).select().single();
+      if (result.error && /review_required|reviewers|review_approvals/i.test(result.error.message || "")) {
+        const fallbackPayload = {
+          title: safeForm.title,
+          ministry: safeForm.ministry,
+          assignee: safeForm.assignee,
+          due_date: safeForm.due_date,
+          status: safeForm.status,
+          notes: safeForm.notes,
+          church_id: churchId,
+        };
+        result = await supabase.from("tasks").insert(fallbackPayload).select().single();
+      }
+      if (result.data) setTasks([...tasks,normalizeTask(result.data)]);
     }
     setShowModal(false);
   };
 
   const cycleStatus = async (task) => {
-    const next = {todo:"in-progress","in-progress":"done",done:"todo"}[task.status];
+    const next = {
+      todo: "in-progress",
+      "in-progress": task.review_required ? "in-review" : "done",
+      "in-review": "done",
+      done: "todo",
+    }[task.status];
     await setTaskStatus(task, next);
   };
 
   const setTaskStatus = async (task, nextStatus) => {
+    if (nextStatus === "done" && task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))) {
+      return;
+    }
     if (isPreview) {
       setTasks(tasks.map((t) => t.id === task.id ? { ...t, status: nextStatus } : t));
       return;
     }
     const { data } = await supabase.from("tasks").update({status:nextStatus}).eq("id",task.id).select().single();
-    setTasks(tasks.map(t=>t.id===task.id?data:t));
+    setTasks(tasks.map(t=>t.id===task.id?normalizeTask(data):t));
+  };
+
+  const toggleReviewer = (name) => {
+    const current = form.reviewers || [];
+    const next = listIncludesPerson(current, name) ? current.filter((entry) => !samePerson(entry, name)) : [...current, name];
+    setForm({
+      ...form,
+      reviewers: next,
+      review_approvals: (form.review_approvals || []).filter((entry) => listIncludesPerson(next, entry)),
+    });
+  };
+
+  const approveReview = async (task) => {
+    const approvals = [...new Set([...(task.review_approvals || []), profile?.full_name].filter(Boolean))];
+    if (isPreview) {
+      setTasks(tasks.map((entry) => entry.id === task.id ? normalizeTask({ ...entry, review_approvals: approvals }) : entry));
+      return;
+    }
+    const { data } = await supabase.from("tasks").update({ review_approvals: approvals }).eq("id", task.id).select().single();
+    setTasks(tasks.map((entry) => entry.id === task.id ? normalizeTask(data) : entry));
   };
 
   const del = async (id) => {
@@ -682,20 +822,23 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
     setTasks(tasks.filter(t=>t.id!==id));
   };
 
-  const SL = {todo:"To Do","in-progress":"In Progress",done:"Done"};
   const groupedTasks = {
     todo: filtered.filter((task) => task.status === "todo"),
     "in-progress": filtered.filter((task) => task.status === "in-progress"),
+    "in-review": filtered.filter((task) => task.status === "in-review"),
     done: filtered.filter((task) => task.status === "done"),
   };
 
   return (
     <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
-        <div>
-          <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:C.text}}>Task Board</h2>
+      <div style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
+        <div style={{justifySelf:"start",textAlign:"left"}}>
+          <h2 style={{...displayHeadingStyle,fontSize:52,color:C.text}}>Tasks</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
             {tasks.filter(t=>t.status!=="done").length} open tasks across the church team
+          </p>
+          <p style={{color:C.gold,fontSize:12,marginTop:6}}>
+            {tasks.filter((task) => task.status !== "done" && isTaskForUser(task, profile?.full_name)).length} open items involve you
           </p>
         </div>
         {canCreateTasks && <button className="btn-gold" onClick={openNew}><Icons.plus/>New Task</button>}
@@ -717,66 +860,84 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
           ))}
         </div>
         <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2}}>
-          {["All", ...TASK_CATEGORIES].map(m=>(
+          {["All", ...SORTED_TASK_CATEGORIES].map(m=>(
             <button key={m} onClick={()=>setMFilter(m)} style={{padding:"6px 10px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:mFilter===m?C.card:"transparent",color:mFilter===m?C.text:C.muted}}>{m}</button>
           ))}
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:16,alignItems:"start"}}>
-        {["todo","in-progress","done"].map((statusKey) => (
-          <div key={statusKey} className="card" style={{padding:16,minHeight:420}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16,alignItems:"start"}}>
+        {["todo","in-progress","in-review","done"].map((statusKey) => (
+          <div key={statusKey} className="card" style={{padding:16,minHeight:420,borderTop:`3px solid ${STATUS_STYLES[statusKey].accent}`,background:`linear-gradient(180deg, ${STATUS_STYLES[statusKey].surface} 0%, ${C.card} 24%)`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
               <div>
-                <div style={{fontSize:14,fontWeight:600,color:C.text}}>{SL[statusKey]}</div>
+                <div style={{fontSize:15,fontWeight:600,color:STATUS_STYLES[statusKey].accent}}>{STATUS_STYLES[statusKey].label}</div>
                 <div style={{fontSize:11,color:C.muted,marginTop:2}}>{groupedTasks[statusKey].length} tasks</div>
               </div>
-              <span className="badge" style={{background:C.surface,color:statusKey==="done"?C.success:statusKey==="in-progress"?C.blue:C.gold,border:`1px solid ${C.border}`}}>
-                {statusKey==="done" ? "Complete" : statusKey==="in-progress" ? "Active" : "Queued"}
-              </span>
+              <div style={{width:10,height:10,borderRadius:"50%",background:STATUS_STYLES[statusKey].accent,flexShrink:0}} />
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               {groupedTasks[statusKey].map((task) => (
-                <div key={task.id} style={{padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                <div key={task.id} style={{padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"flex",flexDirection:"column",minHeight:220}}>
                   <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
-                    <div>
+                    <div style={{textAlign:"left"}}>
                       <div style={{fontSize:14,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none"}}>{task.title}</div>
+                      <div style={{fontSize:11,color:C.muted,marginTop:4}}>Assigned to {task.assignee}</div>
+                      <div style={{fontSize:11,color:C.muted,marginTop:3}}>Due {fmtDate(task.due_date)}</div>
                       {task.notes && <div style={{fontSize:11,color:C.muted,marginTop:6,lineHeight:1.5}}>{task.notes}</div>}
                     </div>
                     {canEditTask(profile, task) && (
-                      <button onClick={()=>openEdit(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:13}}>✏️</button>
+                      <button onClick={()=>openEdit(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:0,display:"inline-flex",alignItems:"center"}}>
+                        <Icons.pen />
+                      </button>
                     )}
                   </div>
-                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
-                    <span className={`badge ${getTag(task.ministry)}`}>{task.ministry}</span>
-                    <span className="badge" style={{background:C.card,color:C.text,border:`1px solid ${C.border}`}}>
-                      {task.assignee===profile?.full_name ? "You" : task.assignee}
-                    </span>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,marginTop:"auto",paddingTop:12}}>
+                    {canEditTask(profile, task) ? (
+                      <div style={{display:"flex",justifyContent:"flex-start",gap:16,fontSize:12}}>
+                        <button onClick={()=>cycleStatus(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.gold,fontSize:12,padding:0}}>
+                          Move to next
+                        </button>
+                        <button onClick={()=>del(task.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:12,padding:0}}>
+                          Delete
+                        </button>
+                      </div>
+                    ) : <div />}
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      <span className={`badge ${getTag(task.ministry)}`}>{task.ministry}</span>
+                      {listIncludesPerson(task.reviewers, profile?.full_name) && !samePerson(task.assignee, profile?.full_name) && (
+                        <span className="badge" style={{background:"rgba(91,143,232,.12)",color:C.blue,border:`1px solid rgba(91,143,232,.3)`}}>
+                          Reviewer
+                        </span>
+                      )}
+                      {task.review_required && (
+                        <span className="badge" style={{background:C.goldGlow,color:C.gold,border:`1px solid ${C.goldDim}`}}>
+                          Review {task.review_approvals.length}/{task.reviewers.length}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,fontSize:12,color:C.muted}}>
-                    <span>Due {fmtDate(task.due_date)}</span>
+                  <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginTop:12,fontSize:12,color:C.muted}}>
                     {canEditTask(profile, task) ? (
                       <select className="input-field" value={task.status} onChange={(e)=>setTaskStatus(task, e.target.value)} style={{width:132,background:C.card,padding:"6px 10px",fontSize:12}}>
-                        <option value="todo">To Do</option>
+                        <option value="todo">Not Started</option>
                         <option value="in-progress">In Progress</option>
-                        <option value="done">Done</option>
+                        <option value="in-review">In Review</option>
+                        <option value="done" disabled={task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))}>Done</option>
                       </select>
                     ) : (
-                      <span>{SL[task.status]}</span>
+                      <span>{STATUS_STYLES[task.status]?.label || "Not Started"}</span>
                     )}
                   </div>
-                  {canEditTask(profile, task) && (
-                    <div style={{display:"flex",justifyContent:"space-between",marginTop:10}}>
-                      <button onClick={()=>cycleStatus(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.gold,fontSize:12,padding:0}}>
-                        Move to next
-                      </button>
-                      <button onClick={()=>del(task.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:12,padding:0}}>
-                        Delete
+                  {canReviewTask(profile, task) && !listIncludesPerson(task.review_approvals, profile?.full_name) && (
+                    <div style={{marginTop:10}}>
+                      <button onClick={()=>approveReview(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.blue,fontSize:12,padding:0}}>
+                        Approve Review
                       </button>
                     </div>
                   )}
                 </div>
               ))}
-              {groupedTasks[statusKey].length===0 && <div style={{padding:"28px 12px",textAlign:"center",color:C.muted,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:12}}>No tasks in {SL[statusKey].toLowerCase()}.</div>}
+              {groupedTasks[statusKey].length===0 && <div style={{padding:"28px 12px",textAlign:"center",color:C.muted,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:12}}>No tasks in {STATUS_STYLES[statusKey].label.toLowerCase()}.</div>}
             </div>
           </div>
         ))}
@@ -785,21 +946,57 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
           <div className="modal fadeIn">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,color:C.text}}>{editing?"Edit Task":"New Task"}</h3>
+              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>{editing?"Edit Task":"New Task"}</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <input className="input-field" placeholder="Task title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <select className="input-field" value={form.ministry} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
-                  {orderedCategories.map(m=><option key={m}>{m}</option>)}
-                </select>
-                <select className="input-field" value={canAssignToAnyone ? form.assignee : (profile?.full_name || "")} onChange={e=>setForm({...form,assignee:e.target.value})} style={{background:C.surface}} disabled={!canAssignToAnyone}>
-                  {allowedAssignees.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
-                <input className="input-field" type="date" value={form.due_date} onChange={e=>setForm({...form,due_date:e.target.value})}/>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Task Title</label>
+                <input className="input-field" placeholder="Task title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
               </div>
-              <textarea className="input-field" placeholder="Notes (optional)" rows={3} value={form.notes||""} onChange={e=>setForm({...form,notes:e.target.value})} style={{resize:"vertical"}}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
+                  <select className="input-field" value={form.ministry} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
+                    {orderedCategories.map(m=><option key={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Assigned To</label>
+                  <select className="input-field" value={canAssignToAnyone ? form.assignee : (profile?.full_name || "")} onChange={e=>setForm({...form,assignee:e.target.value})} style={{background:C.surface}} disabled={!canAssignToAnyone}>
+                    {allowedAssignees.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+                  <label style={{fontSize:12,color:C.muted,textAlign:"left",width:"100%"}}>Due Date</label>
+                  <input className="input-field" type="date" value={form.due_date} onChange={e=>setForm({...form,due_date:e.target.value})}/>
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Review Workflow</label>
+                <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+                  <input
+                    type="checkbox"
+                    checked={form.review_required}
+                    onChange={(e)=>setForm({...form,review_required:e.target.checked,reviewers:e.target.checked ? form.reviewers : [],review_approvals:[]})}
+                  />
+                  Requires Review Before Completion
+                </label>
+                {form.review_required && (
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                    {teamNames.filter((name) => !samePerson(name, canAssignToAnyone ? form.assignee : profile?.full_name)).map((name) => (
+                      <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+                        <input type="checkbox" checked={listIncludesPerson(form.reviewers || [], name)} onChange={()=>toggleReviewer(name)} />
+                        {name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Notes</label>
+                <textarea className="input-field" placeholder="Notes (optional)" rows={3} value={form.notes||""} onChange={e=>setForm({...form,notes:e.target.value})} style={{resize:"vertical"}}/>
+              </div>
             </div>
             <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
               <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
@@ -861,7 +1058,7 @@ function Members({ people, setPeople, churchId, profile }) {
     <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
         <div>
-          <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:C.text}}>People Care</h2>
+          <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>People Care</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>Track pastoral care, prayer requests & follow-ups</p>
         </div>
         {canEditPeople && <button className="btn-gold" onClick={openNew}><Icons.plus/>Add Person</button>}
@@ -884,7 +1081,7 @@ function Members({ people, setPeople, churchId, profile }) {
               <span className={`badge ${getTag(p.ministry)}`}>{p.ministry}</span>
               <span className="badge" style={{background:p.status==="follow-up"?"rgba(201,168,76,.15)":"rgba(82,200,122,.15)",color:p.status==="follow-up"?C.gold:C.success,border:`1px solid ${p.status==="follow-up"?C.goldDim:"rgba(82,200,122,.3)"}`}}>{p.status==="follow-up"?"Follow-up":"Active"}</span>
             </div>
-            {p.prayer_request&&<div style={{background:C.goldGlow,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:"8px 12px",fontSize:12,color:C.text}}>🙏 <em>{p.prayer_request}</em></div>}
+              {p.prayer_request&&<div style={{background:C.goldGlow,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:"8px 12px",fontSize:12,color:C.text}}><em>{p.prayer_request}</em></div>}
             {p.last_contact&&<div style={{fontSize:11,color:C.muted,marginTop:10}}>Last contact: {fmtDate(p.last_contact)}</div>}
           </div>
         ))}
@@ -894,7 +1091,7 @@ function Members({ people, setPeople, churchId, profile }) {
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
           <div className="modal fadeIn">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,color:C.text}}>{selected?"Edit Person":"Add Person"}</h3>
+              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>{selected?"Edit Person":"Add Person"}</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -917,7 +1114,7 @@ function Members({ people, setPeople, churchId, profile }) {
               <textarea className="input-field" placeholder="Prayer request (optional)" rows={2} value={form.prayer_request||""} onChange={e=>setForm({...form,prayer_request:e.target.value})} style={{resize:"vertical"}}/>
             </div>
             <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
-              {selected&&<button className="btn-outline" onClick={()=>{toggleFollowUp(selected);setShowModal(false);}} style={{borderColor:selected.status==="follow-up"?C.success:C.gold,color:selected.status==="follow-up"?C.success:C.gold}}>{selected.status==="follow-up"?"✓ Mark Active":"Flag Follow-up"}</button>}
+              {selected&&<button className="btn-outline" onClick={()=>{toggleFollowUp(selected);setShowModal(false);}} style={{borderColor:selected.status==="follow-up"?C.success:C.gold,color:selected.status==="follow-up"?C.success:C.gold}}>{selected.status==="follow-up"?"Mark Active":"Flag Follow-up"}</button>}
               <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
               <button className="btn-gold" onClick={save}>Save</button>
             </div>
@@ -957,7 +1154,7 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
     <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
         <div>
-          <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:C.text}}>Budget & Finance</h2>
+          <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Budget & Finance</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>Track ministry spending and income</p>
         </div>
         {canEditBudget && <button className="btn-gold" onClick={()=>setShowModal(true)}><Icons.plus/>Add Transaction</button>}
@@ -976,7 +1173,7 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
       </div>
       <div className="card" style={{overflow:"hidden"}}>
         <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
-          <h3 style={{fontSize:15,fontWeight:600,color:C.text}}>Recent Transactions</h3>
+          <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Recent Transactions</h3>
         </div>
         {transactions.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No transactions yet.</div>}
         {transactions.map(t=>(
@@ -997,7 +1194,7 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
           <div className="modal fadeIn">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,color:C.text}}>Add Transaction</h3>
+              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>Add Transaction</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,marginBottom:14,border:`1px solid ${C.border}`}}>
@@ -1036,14 +1233,14 @@ function Ministries({ ministries }) {
   return (
     <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:24}}>
-        <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:C.text}}>Ministries</h2>
+        <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Ministries</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>Overview of all ministry departments</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:18}}>
         {ministries.map(m=>(
           <div key={m.id} className="card" style={{padding:24,borderTop:`3px solid ${CATEGORY_STYLES[m.name]?.color||C.gold}`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-              <h3 style={{fontSize:18,fontFamily:"'Cormorant Garamond',serif",color:C.text}}>{m.name}</h3>
+              <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>{m.name}</h3>
               <span className={`badge ${getTag(m.name)}`}>{m.name}</span>
             </div>
             <div style={{marginBottom:8}}>
@@ -1077,7 +1274,7 @@ function CalendarView({ tasks }) {
   return (
     <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:24}}>
-        <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:C.text}}>Calendar</h2>
+        <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Calendar</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>{months[today.getMonth()]} {today.getFullYear()}</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:24}}>
@@ -1104,12 +1301,12 @@ function CalendarView({ tasks }) {
           </div>
         </div>
         <div className="card" style={{padding:20,height:"fit-content"}}>
-          <h3 style={{fontSize:15,fontWeight:600,color:C.text,marginBottom:16}}>Upcoming</h3>
+          <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text,marginBottom:16}}>Upcoming</h3>
           {upcoming.length===0&&<p style={{color:C.muted,fontSize:13}}>No upcoming tasks.</p>}
           {upcoming.slice(0,8).map(t=>(
             <div key={t.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
               <div style={{textAlign:"center",minWidth:36}}>
-                <div style={{fontSize:18,fontWeight:700,color:C.gold,fontFamily:"'Cormorant Garamond',serif",lineHeight:1}}>{new Date(t.due_date).getDate()}</div>
+                <div style={{fontSize:18,fontWeight:700,color:C.gold,fontFamily:"'Young Serif Medium', Georgia, serif",lineHeight:1}}>{new Date(t.due_date).getDate()}</div>
                 <div style={{fontSize:10,color:C.muted}}>{months[new Date(t.due_date).getMonth()]}</div>
               </div>
               <div>
@@ -1179,7 +1376,7 @@ export default function App() {
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
       ]);
       setChurch(ch.data);
-      setTasks(t.data || []);
+      setTasks((t.data || []).map(normalizeTask));
       setPeople(p.data || []);
       setTransactions(tr.data || []);
       setMinistries(m.data || []);
@@ -1241,7 +1438,7 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard tasks={tasks} people={people} ministries={ministries} setActive={setActive} profile={profile} previewUsers={previewUsers}/>,
+    dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers}/>,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} profile={profile} previewUsers={previewUsers}/>,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} churchId={church?.id} profile={profile}/>,

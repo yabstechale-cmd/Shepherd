@@ -136,6 +136,14 @@ const createProfilePayload = (authUserId, churchId, staffUser, email) => ({
   can_see_admin_overview: staffUser.can_see_admin_overview ?? staffUser.canSeeAdminOverview ?? false,
   read_only_oversight: staffUser.read_only_oversight ?? staffUser.readOnlyOversight ?? false,
 });
+const claimStaffProfile = async (staffId, churchId) => {
+  if (!staffId || !churchId) return;
+  const { error } = await supabase.rpc("claim_staff_profile", {
+    p_staff_id: staffId,
+    p_church_id: churchId,
+  });
+  if (error) throw error;
+};
 const fetchChurchAccess = async (code) => {
   const { data: church, error: churchError } = await supabase.from("churches").select("*").eq("code", code).maybeSingle();
   if (churchError) throw churchError;
@@ -219,6 +227,7 @@ function AuthScreen() {
         if (!form.password) throw new Error("Enter your password.");
         const { error: loginError } = await supabase.auth.signInWithPassword({ email: selected.email, password: form.password });
         if (loginError) throw loginError;
+        await claimStaffProfile(selected.id, churchAccess.church.id);
       } else {
         if (!churchAccess.church) throw new Error("Enter a valid church code first.");
         if (!form.userId) throw new Error("Select your name first.");
@@ -244,6 +253,13 @@ function AuthScreen() {
         });
         if (signUpError) throw signUpError;
         if (!data.user?.id) throw new Error("We couldn't finish creating that account.");
+
+        const { error: reserveError } = await supabase.rpc("reserve_staff_registration", {
+          p_staff_id: selected.id,
+          p_church_id: churchAccess.church.id,
+          p_email: form.email,
+        });
+        if (reserveError) throw reserveError;
 
         setMessage(data.session
           ? "Account created. If verification is enabled, check your email to confirm the account."
@@ -1124,8 +1140,25 @@ export default function App() {
 
   const loadData = async (uid) => {
     setLoading(true);
-    const { data: profileRow } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
+    let { data: profileRow } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
     let prof = profileRow;
+
+    if (!prof) {
+      const { data: authState } = await supabase.auth.getUser();
+      const staffId = authState?.user?.user_metadata?.staff_id;
+      const churchId = authState?.user?.user_metadata?.church_id;
+
+      if (staffId && churchId) {
+        try {
+          await claimStaffProfile(staffId, churchId);
+          const retry = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
+          profileRow = retry.data;
+          prof = retry.data;
+        } catch {
+          // Fall back to legacy recovery if profile claiming hasn't completed yet.
+        }
+      }
+    }
 
     if (!prof) {
       const { data: staffRow } = await supabase.from("church_staff").select("*").eq("auth_user_id", uid).maybeSingle();

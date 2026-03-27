@@ -225,6 +225,7 @@ const canManagePeople = (profile) => profile?.canSeeAdminOverview || profile?.ro
 const canManageBudget = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor" || profile?.full_name === "Joel";
 const canApproveEventRequests = (profile) => profile?.role === "admin";
 const isTaskForUser = (task, fullName) => samePerson(task?.assignee, fullName) || listIncludesPerson(task?.reviewers, fullName);
+const isContentTask = (task) => task?.ministry === "Content/Art";
 const isEventApplicant = (profile, request) => {
   if (!profile || !request) return false;
   const profileEmail = normalizeName(profile.email);
@@ -320,6 +321,22 @@ const displayHeadingStyle = {
   fontFamily: "'Young Serif Medium', Georgia, serif",
   fontWeight: 500,
   letterSpacing: "0.01em",
+};
+const pageTitleStyle = {
+  ...displayHeadingStyle,
+  fontSize: 46,
+  color: C.text,
+};
+const sectionTitleStyle = {
+  ...displayHeadingStyle,
+  fontSize: 30,
+  color: C.text,
+};
+const itemTitleStyle = {
+  ...displayHeadingStyle,
+  fontSize: 22,
+  color: C.text,
+  lineHeight: 1.15,
 };
 const STATUS_STYLES = {
   todo: { label: "Not Started", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
@@ -876,6 +893,19 @@ function AccountPage({ profile, setProfile }) {
   const [passwordError, setPasswordError] = useState("");
   const [resetMessage, setResetMessage] = useState("");
   const [resetError, setResetError] = useState("");
+  const [authEmail, setAuthEmail] = useState(profile?.email || "");
+
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      const liveEmail = data?.user?.email || "";
+      if (liveEmail) setAuthEmail(liveEmail);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handlePhotoUpload = (event) => {
     const file = event.target.files?.[0];
@@ -960,13 +990,14 @@ function AccountPage({ profile, setProfile }) {
   const sendPasswordReset = async () => {
     setResetError("");
     setResetMessage("");
-    if (!profile?.email) {
+    const recoveryEmail = authEmail || profile?.email || "";
+    if (!recoveryEmail) {
       setResetError("There is no email attached to this account yet.");
       return;
     }
     const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
     const { error } = await supabase.auth.resetPasswordForEmail(
-      profile.email,
+      recoveryEmail,
       redirectTo ? { redirectTo } : undefined
     );
     if (error) {
@@ -979,7 +1010,7 @@ function AccountPage({ profile, setProfile }) {
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:980}}>
       <div style={{marginBottom:24,textAlign:"left"}}>
-        <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Account</h2>
+        <h2 style={pageTitleStyle}>Account</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>Manage your profile photo, email, password, and account recovery.</p>
       </div>
       <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:18}}>
@@ -999,7 +1030,7 @@ function AccountPage({ profile, setProfile }) {
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:18}}>
           <div className="card" style={{padding:22,textAlign:"left"}}>
-            <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>Email</h3>
+            <h3 style={sectionTitleStyle}>Email</h3>
             <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Change the email attached to your Shepherd account. We verify this with your current password first, and the new inbox should still confirm the change.</p>
             <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
               <input className="input-field" type="email" value={emailForm.nextEmail} onChange={(e)=>setEmailForm({...emailForm,nextEmail:e.target.value})} placeholder="New email address" />
@@ -1015,7 +1046,7 @@ function AccountPage({ profile, setProfile }) {
             </div>
           </div>
           <div className="card" style={{padding:22,textAlign:"left"}}>
-            <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>Password</h3>
+            <h3 style={sectionTitleStyle}>Password</h3>
             <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Update your password for future logins. We verify the current password before allowing the new one.</p>
             <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
               <input className="input-field" type="password" value={passwordForm.currentPassword} onChange={(e)=>setPasswordForm({...passwordForm,currentPassword:e.target.value})} placeholder="Current password" />
@@ -1029,13 +1060,13 @@ function AccountPage({ profile, setProfile }) {
             </div>
           </div>
           <div className="card" style={{padding:22,textAlign:"left"}}>
-            <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>Password Recovery</h3>
+            <h3 style={sectionTitleStyle}>Password Recovery</h3>
             <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
               If you cannot remember your current password, send yourself a reset email. Use the link in that email to create a new password, then come back here for any secure account changes you still need to make.
             </p>
             <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
               <div style={{fontSize:12,color:C.muted}}>
-                Reset email will be sent to <span style={{color:C.text,fontWeight:600}}>{profile?.email || "the email on this account"}</span>.
+                Reset email will be sent to <span style={{color:C.text,fontWeight:600}}>{authEmail || profile?.email || "the email on this account"}</span>.
               </div>
               <div style={{display:"flex",justifyContent:"flex-end"}}>
                 <button className="btn-outline" onClick={sendPasswordReset}>Send Password Reset Email</button>
@@ -1055,7 +1086,7 @@ function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, 
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
-          <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Notifications</h2>
+          <h2 style={pageTitleStyle}>Notifications</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
             {unreadCount} unread notifications for your account
           </p>
@@ -1533,7 +1564,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       <div className="card" style={{padding:22}}>
         <div className="events-board-header" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div style={{textAlign:"left"}}>
-            <h3 style={{...displayHeadingStyle,fontSize:44,color:C.text,textAlign:"left"}}>Events Board</h3>
+            <h3 style={{...pageTitleStyle,textAlign:"left"}}>Events Board</h3>
             <p style={{color:C.muted,fontSize:13,marginTop:8,maxWidth:560,textAlign:"left",lineHeight:1.55}}>
               Manage event requests, approvals, and the follow-through needed to move each event from submission to calendar-ready planning.
             </p>
@@ -1557,7 +1588,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16}}>
               {eventColumns.map((column) => (
                 <div key={column.title} style={{padding:18,border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
-                  <div style={{...displayHeadingStyle,fontSize:22,color:C.text}}>{column.title}</div>
+                  <div style={sectionTitleStyle}>{column.title}</div>
                   <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginTop:8}}>{column.detail}</div>
                   <div style={{marginTop:18,display:"flex",flexDirection:"column",gap:12}}>
                     {loadingRequests && (
@@ -1567,7 +1598,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                     )}
                     {requests.filter((request) => request.status === column.id).map((request) => (
                       <button className="event-request-row" key={request.id} onClick={() => openRequest(request)} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.card,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
-                        <div style={{...displayHeadingStyle,fontSize:28,color:C.text,lineHeight:1.1}}>{request.event_name}</div>
+                        <div style={itemTitleStyle}>{request.event_name}</div>
                         <div className="event-request-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",textAlign:"right",gap:4}}>
                           <div style={{fontSize:11,color:C.muted}}>Submitted by {request.contact_name}</div>
                           <div style={{fontSize:11,color:C.muted}}>Submitted on {fmtDate(request.submitted_on || request.created_at)}</div>
@@ -1576,7 +1607,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                     ))}
                     {!loadingRequests && requests.length === 0 && column.id === "new" && (
                       <button className="event-request-row" onClick={() => openRequest(demoEventRequest)} style={{padding:16,border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.card,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
-                        <div style={{...displayHeadingStyle,fontSize:28,color:C.text,lineHeight:1.1}}>{demoEventRequest.event_name}</div>
+                        <div style={itemTitleStyle}>{demoEventRequest.event_name}</div>
                         <div className="event-request-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",textAlign:"right",gap:4}}>
                           <div style={{fontSize:11,color:C.muted}}>Submitted by {demoEventRequest.contact_name}</div>
                           <div style={{fontSize:11,color:C.muted}}>Submitted on {fmtDate(demoEventRequest.submitted_on)}</div>
@@ -1597,7 +1628,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowEventForm(false)}>
           <div className="modal fadeIn" style={{maxWidth:760}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>New Event Request</h3>
+              <h3 style={sectionTitleStyle}>New Event Request</h3>
               <button onClick={()=>setShowEventForm(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
@@ -1613,7 +1644,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setSelectedRequest(null)}>
           <div className="modal fadeIn" style={{maxWidth:760}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text,textAlign:"left"}}>{requestDetails.event_name}</h3>
+              <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{requestDetails.event_name}</h3>
               <button onClick={()=>setSelectedRequest(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <div style={{display:"grid",gap:14,textAlign:"left"}}>
@@ -1700,10 +1731,10 @@ function Workspaces({ setActive }) {
       systems: ["Event request form", "Approval queue", "Event logistics"],
     },
     {
-      id: "communications-board",
-      name: "Communications",
-      summary: "Creative, announcement, and publishing workflows.",
-      systems: ["Announcement planning", "Content review", "Publishing checklists"],
+      id: "content-media-board",
+      name: "Content & Media",
+      summary: "Creative production, review, and publishing frameworks.",
+      systems: ["Content intake", "Review rounds", "Publishing flow"],
     },
     {
       id: "operations-board",
@@ -1716,7 +1747,7 @@ function Workspaces({ setActive }) {
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:28}}>
-        <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Workspaces</h2>
+        <h2 style={pageTitleStyle}>Workspaces</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>
       Open a board to work inside a dedicated ministry framework.
         </p>
@@ -1729,7 +1760,7 @@ function Workspaces({ setActive }) {
             className="card"
             style={{padding:22,textAlign:"left",cursor:"pointer",background:C.card,border:`1px solid ${C.border}`,display:"flex",flexDirection:"column",minHeight:180}}
           >
-            <div style={{...displayHeadingStyle,fontSize:28,color:C.text}}>{board.name}</div>
+            <div style={sectionTitleStyle}>{board.name}</div>
             <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>{board.summary}</div>
             <div style={{fontSize:12,color:C.gold,marginTop:"auto",alignSelf:"flex-end",textAlign:"right"}}>Open board</div>
           </button>
@@ -1739,11 +1770,118 @@ function Workspaces({ setActive }) {
   );
 }
 
+function ContentMediaBoard({ tasks, setActive }) {
+  const isLocalhost = typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const sampleAssignees = ["Yabs", "Will Potts", "Eric Souza", "Shannan"];
+  const demoContentTasks = [
+    { id: "content-demo-1", title: "Build Easter announcement slides", assignee: sampleAssignees[0], ministry: "Content/Art", status: "todo", due_date: "2026-03-31", review_required: false },
+    { id: "content-demo-2", title: "Edit Sunday bumper video", assignee: sampleAssignees[0], ministry: "Content/Art", status: "in-progress", due_date: "2026-03-29", review_required: false },
+    { id: "content-demo-3", title: "Review youth camp promo reel", assignee: sampleAssignees[0], ministry: "Content/Art", status: "in-review", due_date: "2026-03-30", review_required: true },
+    { id: "content-demo-4", title: "Publish women's breakfast flyer", assignee: sampleAssignees[1], ministry: "Content/Art", status: "done", due_date: "2026-03-25", review_required: false },
+  ].map(normalizeTask);
+
+  const sourceTasks = tasks.length === 0 && isLocalhost ? demoContentTasks : tasks;
+  const contentTasks = sourceTasks.filter(isContentTask);
+  const columns = [
+    { id: "todo", title: "Not Started", detail: "New asks, fresh requests, and creative work that has not started yet." },
+    { id: "in-progress", title: "In Progress", detail: "Active design, editing, filming, writing, and production work in motion." },
+    { id: "in-review", title: "In Review", detail: "Drafts and deliverables waiting on approvals, edits, or final sign-off." },
+    { id: "done", title: "Published / Delivered", detail: "Approved content that has been delivered, posted, or completed." },
+  ];
+
+  return (
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
+      <div className="card" style={{padding:22}}>
+        <div className="events-board-header" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+          <div style={{textAlign:"left"}}>
+            <h3 style={{...pageTitleStyle,textAlign:"left"}}>Content &amp; Media Board</h3>
+            <p style={{color:C.muted,fontSize:13,marginTop:8,maxWidth:620,textAlign:"left",lineHeight:1.55}}>
+              This board mirrors every <span style={{color:C.text}}>Content/Art</span> task from the main Tasks page, so creative work stays in sync here automatically as it is assigned, edited, reviewed, and completed.
+            </p>
+          </div>
+          <div className="events-board-actions" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button className="btn-outline" onClick={() => setActive("tasks")}>Open Tasks</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16}}>
+          {columns.map((column) => {
+            const columnTasks = contentTasks.filter((task) => task.status === column.id);
+            const statusStyle = STATUS_STYLES[column.id] || STATUS_STYLES.todo;
+            return (
+              <div
+                key={column.id}
+                className="card"
+                style={{
+                  padding:16,
+                  minHeight:420,
+                  borderTop:`3px solid ${statusStyle.accent}`,
+                  background:`linear-gradient(180deg, ${statusStyle.surface} 0%, ${C.card} 24%)`,
+                }}
+              >
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{textAlign:"left"}}>
+                    <div style={{fontSize:15,fontWeight:600,color:statusStyle.accent}}>{column.title}</div>
+                    <div style={{fontSize:11,color:C.muted,marginTop:2}}>{columnTasks.length} items</div>
+                  </div>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:statusStyle.accent,flexShrink:0}} />
+                </div>
+                <div style={{marginTop:18,display:"flex",flexDirection:"column",gap:12}}>
+                  {columnTasks.map((task) => (
+                    <button
+                      key={task.id}
+                      type="button"
+                      style={{
+                        padding:16,
+                        border:`1px solid ${C.border}`,
+                        borderRadius:12,
+                        background:C.surface,
+                        textAlign:"left",
+                        cursor:"pointer",
+                        display:"grid",
+                        gridTemplateColumns:"1fr auto",
+                        gap:16,
+                        alignItems:"start",
+                      }}
+                    >
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        <div style={{fontSize:20,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none"}}>
+                          {task.title}
+                        </div>
+                        <div style={{fontSize:11,color:C.muted}}>Assigned to {task.assignee}</div>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,textAlign:"right"}}>
+                        <div style={{fontSize:11,color:C.muted}}>Due {fmtDate(task.due_date)}</div>
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                          {task.review_required && (
+                            <span className="badge" style={{background:C.goldGlow,color:C.gold,border:`1px solid ${C.goldDim}`}}>
+                              Review {task.review_approvals.length}/{task.reviewers.length}
+                            </span>
+                          )}
+                          <span className={`badge ${getTag(task.ministry)}`}>{task.ministry}</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  {columnTasks.length === 0 && (
+                    <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>
+                      No items in {statusStyle.label.toLowerCase()}.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlaceholderBoard({ title, summary, systems }) {
   return (
     <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
       <div className="card" style={{padding:24}}>
-        <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>{title}</h2>
+        <h2 style={pageTitleStyle}>{title}</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:6,maxWidth:620}}>{summary}</p>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:18}}>
           {systems.map((system) => (
@@ -1847,7 +1985,7 @@ function PublicEventRequestPage() {
       <div style={{maxWidth:860,margin:"0 auto"}}>
         <div className="card" style={{padding:28}}>
           <div style={{marginBottom:22,textAlign:"left"}}>
-            <h1 style={{...displayHeadingStyle,fontSize:42,color:C.text}}>Event Request Form</h1>
+            <h1 style={pageTitleStyle}>Event Request Form</h1>
             <p style={{color:C.muted,fontSize:13,marginTop:6}}>
               Enter your church code to submit an event request. Once submitted, it will automatically appear in the church's Events board for review.
             </p>
@@ -1935,7 +2073,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
       {previewUsers.length > 0 && (
         <div className="card" style={{padding:22,marginBottom:20}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>
+            <h3 style={sectionTitleStyle}>
               {profile?.canSeeAdminOverview ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
             </h3>
             <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open task board</button>
@@ -1992,7 +2130,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
       )}
       <div className="card" style={{padding:22,marginBottom:20}}>
         <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Notifications</h3>
+          <h3 style={sectionTitleStyle}>Notifications</h3>
           <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open tasks</button>
         </div>
         {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No new notifications right now.</p>}
@@ -2012,7 +2150,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
       <div>
         <div className="card" style={{padding:22}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>
+            <h3 style={sectionTitleStyle}>
               {profile?.canSeeAdminOverview ? "Admin Watchlist" : "Pastoral Follow-ups"}
             </h3>
             <button className="btn-outline" onClick={()=>setActive("members")} style={{padding:"5px 12px",fontSize:12}}>View all</button>
@@ -2291,7 +2429,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
-          <h2 style={{...displayHeadingStyle,fontSize:52,color:C.text}}>Tasks</h2>
+          <h2 style={{...pageTitleStyle,fontSize:52}}>Tasks</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
             {boardTasks.filter(t=>t.status!=="done").length} open tasks across the church team
           </p>
@@ -2366,7 +2504,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
           <div className="modal fadeIn">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>{editing?"Edit Task":"New Task"}</h3>
+              <h3 style={sectionTitleStyle}>{editing?"Edit Task":"New Task"}</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -2439,7 +2577,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelectedTask(null)}>
           <div className="modal fadeIn" style={{maxWidth:760}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text,textAlign:"left"}}>{selectedTask.title}</h3>
+              <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{selectedTask.title}</h3>
               <button onClick={()=>setSelectedTask(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <div style={{display:"grid",gap:16,textAlign:"left"}}>
@@ -2628,7 +2766,7 @@ function Members({ people, setPeople, churchId, profile }) {
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
         <div>
-          <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>People Care</h2>
+          <h2 style={pageTitleStyle}>People Care</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>Track pastoral care, prayer requests & follow-ups</p>
         </div>
         {canEditPeople && <button className="btn-gold" onClick={openNew}><Icons.plus/>Add Person</button>}
@@ -2661,7 +2799,7 @@ function Members({ people, setPeople, churchId, profile }) {
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
           <div className="modal fadeIn">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>{selected?"Edit Person":"Add Person"}</h3>
+              <h3 style={sectionTitleStyle}>{selected?"Edit Person":"Add Person"}</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -2724,7 +2862,7 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
         <div>
-          <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Budget & Finance</h2>
+          <h2 style={pageTitleStyle}>Budget & Finance</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>Track ministry spending and income</p>
         </div>
         {canEditBudget && <button className="btn-gold" onClick={()=>setShowModal(true)}><Icons.plus/>Add Transaction</button>}
@@ -2743,7 +2881,7 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
       </div>
       <div className="card" style={{overflow:"hidden"}}>
         <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
-          <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Recent Transactions</h3>
+          <h3 style={sectionTitleStyle}>Recent Transactions</h3>
         </div>
         {transactions.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No transactions yet.</div>}
         {transactions.map(t=>(
@@ -2764,7 +2902,7 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
           <div className="modal fadeIn">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>Add Transaction</h3>
+              <h3 style={sectionTitleStyle}>Add Transaction</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
             <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,marginBottom:14,border:`1px solid ${C.border}`}}>
@@ -2803,14 +2941,14 @@ function Ministries({ ministries }) {
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:24}}>
-        <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Ministries</h2>
+        <h2 style={pageTitleStyle}>Ministries</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>Overview of all ministry departments</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:18}}>
         {ministries.map(m=>(
           <div key={m.id} className="card" style={{padding:24,borderTop:`3px solid ${CATEGORY_STYLES[m.name]?.color||C.gold}`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-              <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>{m.name}</h3>
+              <h3 style={sectionTitleStyle}>{m.name}</h3>
               <span className={`badge ${getTag(m.name)}`}>{m.name}</span>
             </div>
             <div style={{marginBottom:8}}>
@@ -2844,7 +2982,7 @@ function CalendarView({ tasks }) {
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:24}}>
-        <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Calendar</h2>
+        <h2 style={pageTitleStyle}>Calendar</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>{months[today.getMonth()]} {today.getFullYear()}</p>
       </div>
       <div className="mobile-calendar-layout" style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:24}}>
@@ -2871,7 +3009,7 @@ function CalendarView({ tasks }) {
           </div>
         </div>
         <div className="card" style={{padding:20,height:"fit-content"}}>
-          <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text,marginBottom:16}}>Upcoming</h3>
+          <h3 style={{...sectionTitleStyle,marginBottom:16}}>Upcoming</h3>
           {upcoming.length===0&&<p style={{color:C.muted,fontSize:13}}>No upcoming tasks.</p>}
           {upcoming.slice(0,8).map(t=>(
             <div key={t.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
@@ -2936,13 +3074,15 @@ export default function App() {
 
   const loadData = async (uid) => {
     setLoading(true);
+    const { data: authState } = await supabase.auth.getUser();
+    const authUser = authState?.user || null;
+    const authEmail = authUser?.email || "";
     let { data: profileRow } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
     let prof = profileRow;
 
     if (!prof) {
-      const { data: authState } = await supabase.auth.getUser();
-      const staffId = authState?.user?.user_metadata?.staff_id;
-      const churchId = authState?.user?.user_metadata?.church_id;
+      const staffId = authUser?.user_metadata?.staff_id;
+      const churchId = authUser?.user_metadata?.church_id;
 
       if (staffId && churchId) {
         try {
@@ -2959,8 +3099,16 @@ export default function App() {
     if (!prof) {
       const { data: staffRow } = await supabase.from("church_staff").select("*").eq("auth_user_id", uid).maybeSingle();
       if (staffRow) {
-        prof = createProfilePayload(uid, staffRow.church_id, staffRow, staffRow.email || "");
+        prof = createProfilePayload(uid, staffRow.church_id, staffRow, authEmail || staffRow.email || "");
         await supabase.from("profiles").upsert(prof);
+      }
+    }
+
+    if (prof && authEmail && prof.email !== authEmail) {
+      prof = { ...prof, email: authEmail };
+      await supabase.from("profiles").update({ email: authEmail }).eq("id", uid);
+      if (prof.staff_id) {
+        await supabase.from("church_staff").update({ email: authEmail }).eq("id", prof.staff_id);
       }
     }
 
@@ -3085,7 +3233,7 @@ export default function App() {
     account: <AccountPage profile={profile} setProfile={setProfile} />,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks}/>,
-    "communications-board": <PlaceholderBoard title="Communications Board" summary="This board will hold creative, announcement, and publishing frameworks in their own dedicated workspace." systems={["Announcement planning", "Content review", "Publishing checklists"]} />,
+    "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
     "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
     notifications: <NotificationsPage notifications={notifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} profile={profile} previewUsers={previewUsers}/>,

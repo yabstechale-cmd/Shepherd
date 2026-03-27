@@ -116,6 +116,11 @@ const GS = () => (
       .app-sidebar-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 12px !important}
       .app-sidebar-nav .nav-item{margin-bottom:0;flex-shrink:0}
       .app-sidebar-footer{padding:10px 12px !important}
+      .section-header{flex-direction:column;align-items:flex-start !important;gap:12px}
+      .section-header .btn-outline,.section-header .btn-gold{width:100%;justify-content:center}
+      .dashboard-note-row{flex-direction:column}
+      .dashboard-note-row .btn-outline{margin-left:0 !important;width:100%;justify-content:center}
+      .dashboard-followup-row{flex-wrap:wrap}
       .page-header{grid-template-columns:1fr !important}
       .page-actions{justify-content:flex-start !important}
       .mobile-stack{grid-template-columns:1fr !important}
@@ -1619,7 +1624,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
       </div>
       {previewUsers.length > 0 && (
         <div className="card" style={{padding:22,marginBottom:20}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>
               {profile?.canSeeAdminOverview ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
             </h3>
@@ -1676,13 +1681,13 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
         </div>
       )}
       <div className="card" style={{padding:22,marginBottom:20}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Notifications</h3>
           <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open tasks</button>
         </div>
         {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No new notifications right now.</p>}
         {notifications.map((item) => (
-          <div key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`,alignItems:"flex-start"}}>
+          <div className="dashboard-note-row" key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`,alignItems:"flex-start"}}>
             <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:5,flexShrink:0}} />
             <div style={{textAlign:"left"}}>
               <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
@@ -1695,7 +1700,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
         ))}
       </div>
       <div className="card" style={{padding:22,marginBottom:20}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Calendar</h3>
           <button className="btn-outline" onClick={()=>setActive("calendar")} style={{padding:"5px 12px",fontSize:12}}>Open calendar</button>
         </div>
@@ -1719,7 +1724,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
       </div>
       <div>
         <div className="card" style={{padding:22}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>
               {profile?.canSeeAdminOverview ? "Admin Watchlist" : "Pastoral Follow-ups"}
             </h3>
@@ -1728,7 +1733,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
           {profile?.canSeeAdminOverview ? (
             <>
               {recentAdminWork.map((task) => (
-                <div key={task.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
+                <div className="dashboard-followup-row" key={task.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
                   <div style={{width:36,height:36,borderRadius:"50%",background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:C.gold,flexShrink:0}}>
                     {task.assignee?.split(" ").map((part) => part[0]).join("").slice(0,2)}
                   </div>
@@ -1744,7 +1749,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
           ) : (
             <>
               {people.filter(p=>p.status==="follow-up"||p.prayer_request).map(p=>(
-                <div key={p.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
+                <div className="dashboard-followup-row" key={p.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
                   <div style={{width:36,height:36,borderRadius:"50%",background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:600,color:C.gold,flexShrink:0}}>
                     {p.full_name?.[0]}
                   </div>

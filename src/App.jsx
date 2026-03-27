@@ -34,6 +34,7 @@ const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { month:
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
+const TRASH_STORAGE_PREFIX = "shepherd-trash";
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const Icon = ({ d, size = 20 }) => (
@@ -57,6 +58,7 @@ const Icons = {
   x:        () => <Icon d="M18 6L6 18M6 6l12 12" />,
   pen:      () => <Icon d="M12 20h9M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />,
   bell:     () => <Icon d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />,
+  trash:    () => <Icon d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v6M14 11v6" />,
 };
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
   <svg
@@ -339,6 +341,7 @@ const STATUS_STYLES = {
   done: { label: "Done", accent: C.success, surface: "rgba(82,200,122,0.08)" },
 };
 const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
+const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
 const createEventRequestBlank = (profile = null) => ({
   event_name: "",
   event_format: "single",
@@ -814,10 +817,9 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
     {id:"workspaces",label:"Workspaces",I:Icons.workspace},
     {id:"notifications",label:"Notifications",I:Icons.bell},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
-    {id:"members",label:"People Care",I:Icons.heart},
     {id:"budget",label:"Budget",I:Icons.budget},
-    {id:"ministries",label:"Ministries",I:Icons.ministry},
     {id:"calendar",label:"Calendar",I:Icons.calendar},
+    {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
     <div className="app-sidebar" style={{width:collapsed?64:220,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"relative",overflow:"hidden"}}>
@@ -1105,6 +1107,45 @@ function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, 
               <button className="btn-outline" onClick={()=>{markRead(item.id); setActive(item.target || "tasks");}} style={{padding:"6px 10px",fontSize:12}}>
                 Open
               </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TrashPage({ trashItems, clearTrash }) {
+  const sortedItems = [...(trashItems || [])].sort((a, b) => new Date(b.deleted_at || 0) - new Date(a.deleted_at || 0));
+
+  return (
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
+        <div style={{justifySelf:"start",textAlign:"left"}}>
+          <h2 style={pageTitleStyle}>Trash</h2>
+          <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+            Deleted items are held here until you are ready to clear them.
+          </p>
+        </div>
+        <div className="page-actions" style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          <button className="btn-outline" onClick={clearTrash} disabled={sortedItems.length === 0}>
+            Clear Trash
+          </button>
+        </div>
+      </div>
+      <div className="card" style={{padding:22}}>
+        {sortedItems.length === 0 && <p style={{color:C.muted,fontSize:13}}>Trash is empty right now.</p>}
+        {sortedItems.map((item) => (
+          <div key={item.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{textAlign:"left"}}>
+              <div style={{fontSize:14,fontWeight:600,color:C.text}}>{item.title || "Untitled item"}</div>
+              <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>
+                {item.entity_label} from {item.source_label}
+                {item.deleted_by ? ` • deleted by ${item.deleted_by}` : ""}
+              </div>
+            </div>
+            <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+              {item.deleted_at ? new Date(item.deleted_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "—"}
             </div>
           </div>
         ))}
@@ -1425,7 +1466,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
   );
 }
 
-function EventsBoard({ profile, church, eventRequests, setEventRequests, setTasks }) {
+function EventsBoard({ profile, church, eventRequests, setEventRequests, setTasks, moveItemToTrash }) {
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
   const [formError, setFormError] = useState("");
@@ -1524,21 +1565,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
   const loadingRequests = !!church?.id && eventRequests === null;
   const requests = eventRequests || [];
   const publicEventRequestLink = typeof window !== "undefined" ? `${window.location.origin}/event-request` : "/event-request";
-  const demoEventRequest = {
-    id: "demo-event-request",
-    status: "new",
-    event_name: "Spring Worship Night",
-    contact_name: "Will Potts",
-    location_scope: "building",
-    location_areas: ["Sanctuary", "Kitchen / Dining Area"],
-    event_timing: "2026-05-15 • 6:30 PM - 8:30 PM",
-    event_format: "single",
-    av_request: true,
-    kitchen_use: true,
-    description: "A church-wide worship gathering with prayer, a short devotional, and light refreshments afterward.",
-    submitted_on: "2026-03-27",
-  };
-
   const copyPublicEventRequestLink = async () => {
     try {
       await navigator.clipboard.writeText(publicEventRequestLink);
@@ -1552,6 +1578,24 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
 
   const requestDetails = selectedRequest || null;
   const openRequest = (request) => setSelectedRequest(request);
+  const deleteRequest = async (request) => {
+    if (!request?.id) return;
+    moveItemToTrash?.({
+      entity_type: "event_request",
+      entity_label: "Event Request",
+      source: "events-board",
+      source_label: "Events Board",
+      title: request.event_name,
+      deleted_by: profile?.full_name || "Staff",
+      payload: request,
+    });
+    const { error } = await supabase.from("event_requests").delete().eq("id", request.id);
+    if (error) {
+      return;
+    }
+    setEventRequests((current) => (current || []).filter((entry) => entry.id !== request.id));
+    setSelectedRequest(null);
+  };
 
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
@@ -1616,16 +1660,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                         </div>
                       </button>
                     ))}
-                    {!loadingRequests && requests.length === 0 && column.id === "new" && (
-                      <button className="event-request-row" onClick={() => openRequest(demoEventRequest)} style={{padding:16,border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.surface,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
-                        <div style={{fontSize:20,fontWeight:600,color:C.text,lineHeight:1.15}}>{demoEventRequest.event_name}</div>
-                        <div className="event-request-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",textAlign:"right",gap:4}}>
-                          <div style={{fontSize:11,color:C.muted}}>Submitted by {demoEventRequest.contact_name}</div>
-                          <div style={{fontSize:11,color:C.muted}}>Submitted on {fmtDate(demoEventRequest.submitted_on)}</div>
-                        </div>
-                      </button>
-                    )}
-                    {!loadingRequests && requests.filter((request) => request.status === column.id).length === 0 && !(requests.length === 0 && column.id === "new") && (
+                    {!loadingRequests && requests.filter((request) => request.status === column.id).length === 0 && (
                       <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>
                         No requests in this column yet.
                       </div>
@@ -1724,6 +1759,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
               )}
               {canApproveEventRequests(profile) && requestDetails.status !== "declined" && (
                 <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "declined")}>Decline</button>
+              )}
+              {canApproveEventRequests(profile) && (
+                <button className="btn-outline" onClick={() => deleteRequest(requestDetails)} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                  Delete
+                </button>
               )}
             </div>
           </div>
@@ -2206,7 +2246,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
-function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
+function Tasks({ tasks, setTasks, churchId, profile, previewUsers, moveItemToTrash }) {
   const isPreview = churchId === "preview";
   const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
   const canCreateTasks = true;
@@ -2432,6 +2472,18 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
   };
 
   const del = async (id) => {
+    const taskToDelete = tasks.find((task) => task.id === id);
+    if (taskToDelete) {
+      moveItemToTrash?.({
+        entity_type: "task",
+        entity_label: "Task",
+        source: isContentTask(taskToDelete) ? "content-media-board" : "tasks",
+        source_label: isContentTask(taskToDelete) ? "Content & Media Board" : "Tasks",
+        title: taskToDelete.title,
+        deleted_by: profile?.full_name || "Staff",
+        payload: taskToDelete,
+      });
+    }
     if (isPreview) {
       setTasks(tasks.filter((t) => t.id !== id));
       return;
@@ -3063,6 +3115,7 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [ministries, setMinistries] = useState([]);
   const [eventRequests, setEventRequests] = useState(null);
+  const [trashItems, setTrashItems] = useState([]);
   const [previewUsers, setPreviewUsers] = useState([]);
   const [active, setActive] = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
@@ -3093,6 +3146,20 @@ export default function App() {
     if (typeof Notification === "undefined") return;
     const permission = await Notification.requestPermission();
     setBrowserPermission(permission);
+  };
+
+  const moveItemToTrash = (item) => {
+    if (!item) return;
+    const record = {
+      id: `${item.entity_type || "item"}-${item.payload?.id || Date.now()}-${Date.now()}`,
+      deleted_at: new Date().toISOString(),
+      ...item,
+    };
+    setTrashItems((current) => [record, ...(current || [])]);
+  };
+
+  const clearTrash = () => {
+    setTrashItems([]);
   };
 
   const loadData = async (uid) => {
@@ -3141,11 +3208,16 @@ export default function App() {
       if (storedPhoto) normalizedProfile = { ...normalizedProfile, photo_url: storedPhoto };
     }
     setProfile(normalizedProfile);
+    if (typeof window !== "undefined") {
+      const rawTrash = window.localStorage.getItem(getTrashStorageKey(prof?.church_id));
+      setTrashItems(rawTrash ? JSON.parse(rawTrash) : []);
+    }
     if (prof?.id && typeof window !== "undefined") {
       const raw = window.localStorage.getItem(getNotificationStorageKey(prof.id));
       setReadNotificationIds(raw ? JSON.parse(raw) : []);
     } else {
       setReadNotificationIds([]);
+      setTrashItems([]);
     }
     if (prof?.church_id) {
       const [ch, t, er, p, tr, m, staff] = await Promise.all([
@@ -3180,6 +3252,11 @@ export default function App() {
     if (!profile?.id) return;
     window.localStorage.setItem(getNotificationStorageKey(profile.id), JSON.stringify(readNotificationIds));
   }, [profile?.id, readNotificationIds]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !church?.id) return;
+    window.localStorage.setItem(getTrashStorageKey(church.id), JSON.stringify(trashItems));
+  }, [church?.id, trashItems]);
 
   useEffect(() => {
     if (typeof Notification === "undefined" || browserPermission !== "granted") return;
@@ -3255,11 +3332,12 @@ export default function App() {
     dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} />,
     workspaces: <Workspaces setActive={setActive}/>,
-    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks}/>,
+    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
     "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
     notifications: <NotificationsPage notifications={notifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
-    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} profile={profile} previewUsers={previewUsers}/>,
+    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash}/>,
+    trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} />,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} churchId={church?.id} profile={profile}/>,
     ministries: <Ministries ministries={ministries}/>,

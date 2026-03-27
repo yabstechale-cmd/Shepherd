@@ -111,13 +111,36 @@ const GS = () => (
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
     .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;max-height:90vh;overflow-y:auto}
     @media (max-width: 760px){
+      .app-shell{flex-direction:column}
+      .app-sidebar{width:100% !important;min-height:auto !important;border-right:none !important;border-bottom:1px solid ${C.border}}
+      .app-sidebar-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 12px !important}
+      .app-sidebar-nav .nav-item{margin-bottom:0;flex-shrink:0}
+      .app-sidebar-footer{padding:10px 12px !important}
+      .page-header{grid-template-columns:1fr !important}
+      .page-actions{justify-content:flex-start !important}
       .mobile-stack{grid-template-columns:1fr !important}
+      .mobile-three-stack{grid-template-columns:1fr !important}
+      .mobile-two-stack{grid-template-columns:1fr !important}
+      .mobile-calendar-layout{grid-template-columns:1fr !important}
+      .dashboard-team-row{grid-template-columns:1fr !important}
+      .dashboard-team-row-right{text-align:left !important}
+      .table-row{grid-template-columns:1fr !important}
+      .table-row > *{text-align:left !important}
+      .task-toolbar{overflow-x:auto;flex-wrap:nowrap !important;padding-bottom:4px}
+      .task-toolbar > *{flex-shrink:0}
+      .task-form-grid{grid-template-columns:1fr !important}
+      .member-form-grid{grid-template-columns:1fr !important}
+      .budget-form-grid{grid-template-columns:1fr !important}
+      .calendar-embed{height:420px !important}
+      .calendar-day-grid{gap:2px !important}
+      .calendar-day-cell{min-height:52px !important;padding:6px !important}
       .events-board-header{flex-direction:column;gap:16px}
       .events-board-actions{width:100%;justify-content:flex-start !important}
       .event-request-row{grid-template-columns:1fr !important}
       .event-request-meta{align-items:flex-start !important;text-align:left !important}
       .request-details-grid{grid-template-columns:1fr !important}
       .mobile-pad{padding:24px 18px !important}
+      .mobile-auth-glow{width:360px !important;height:360px !important;top:10% !important}
       .modal{padding:22px}
     }
   `}</style>
@@ -567,7 +590,7 @@ function AuthScreen() {
           </div>
         ))}
       </div>
-      <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:600,height:600,background:`radial-gradient(circle,${C.goldGlow} 0%,transparent 70%)`,pointerEvents:"none"}}/>
+      <div className="mobile-auth-glow" style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:600,height:600,background:`radial-gradient(circle,${C.goldGlow} 0%,transparent 70%)`,pointerEvents:"none"}}/>
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:64,height:64,borderRadius:18,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
@@ -668,7 +691,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
     {id:"calendar",label:"Calendar",I:Icons.calendar},
   ];
   return (
-    <div style={{width:collapsed?64:220,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"relative",overflow:"hidden"}}>
+    <div className="app-sidebar" style={{width:collapsed?64:220,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"relative",overflow:"hidden"}}>
       <svg style={{position:"absolute",bottom:40,right:collapsed?-10:20,width:80,opacity:.05}} viewBox="0 0 80 80" fill={C.gold}><path d="M30 0h20v30h30v20H50v30H30V50H0V30h30z"/></svg>
       <div style={{padding:collapsed?"20px 16px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"space-between"}}>
         {!collapsed && <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -679,7 +702,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
         </div>}
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4}}><Icons.menu/></button>
       </div>
-      <nav style={{padding:"12px 10px",flex:1}}>
+      <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1}}>
         {nav.map(({id,label,I: iconComponent})=>(
           <div key={id} className={`nav-item${active===id?" active":""}`} onClick={()=>setActive(id)} title={collapsed?label:""} style={{justifyContent:collapsed?"center":"flex-start"}}>
             <div style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
@@ -694,7 +717,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
           </div>
         ))}
       </nav>
-      <div style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`}}>
+      <div className="app-sidebar-footer" style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10}}>
           <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:13,fontWeight:600,color:"#0f1117"}}>
             {profile?.full_name?.[0]||"U"}
@@ -714,15 +737,15 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
 
 function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, setActive, browserPermission, enableBrowserNotifications }) {
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Notifications</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
             {unreadCount} unread notifications for your account
           </p>
         </div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+        <div className="page-actions" style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
           {browserPermission !== "granted" && (
             <button className="btn-outline" onClick={enableBrowserNotifications}>Enable Browser Alerts</button>
           )}
@@ -1505,7 +1528,7 @@ function PublicEventRequestPage() {
   };
 
   return (
-    <div className="fadeIn" style={{minHeight:"100vh",padding:"48px 20px",background:C.bg}}>
+    <div className="fadeIn mobile-pad" style={{minHeight:"100vh",padding:"48px 20px",background:C.bg}}>
       <div style={{maxWidth:860,margin:"0 auto"}}>
         <div className="card" style={{padding:28}}>
           <div style={{marginBottom:22,textAlign:"left"}}>
@@ -1581,7 +1604,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
     .slice(0, 4);
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1200}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
       <div style={{marginBottom:28}}>
         <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:42,fontWeight:500,color:C.text,letterSpacing:"0.01em"}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
         <p style={{color:C.muted,marginTop:4,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
@@ -1605,6 +1628,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {teamSummary.map((member) => (
               <div
+                className="dashboard-team-row"
                 key={member.id}
                 style={{
                   padding:16,
@@ -1640,7 +1664,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
                     <div style={{fontSize:13,color:C.muted}}>No active task right now.</div>
                   )}
                 </div>
-                <div style={{textAlign:"right"}}>
+                <div className="dashboard-team-row-right" style={{textAlign:"right"}}>
                   <div style={{fontSize:28,fontFamily:"'Young Serif Medium', Georgia, serif",color:member.inProgressTasks ? C.blue : C.gold}}>
                     {member.openTasks}
                   </div>
@@ -1678,6 +1702,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
         {GOOGLE_CALENDAR_EMBED_URL ? (
           <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:C.surface}}>
             <iframe
+              className="calendar-embed"
               title="Church Calendar"
               src={GOOGLE_CALENDAR_EMBED_URL}
               style={{width:"100%",height:560,border:"0",display:"block",background:"#fff"}}
@@ -1872,8 +1897,8 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
   };
 
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={{...displayHeadingStyle,fontSize:52,color:C.text}}>Tasks</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
@@ -1883,9 +1908,9 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
             {tasks.filter((task) => task.status !== "done" && isTaskForUser(task, profile?.full_name)).length} open items involve you
           </p>
         </div>
-        {canCreateTasks && <button className="btn-gold" onClick={openNew}><Icons.plus/>New Task</button>}
+        {canCreateTasks && <button className="btn-gold page-actions" onClick={openNew}><Icons.plus/>New Task</button>}
       </div>
-      <div style={{display:"flex",gap:10,marginBottom:22,flexWrap:"wrap"}}>
+      <div className="task-toolbar" style={{display:"flex",gap:10,marginBottom:22,flexWrap:"wrap"}}>
         <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2}}>
           {[
             { id: "mine", label: "My Tasks" },
@@ -1995,7 +2020,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Task Title</label>
                 <input className="input-field" placeholder="Task title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div className="task-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
                   <select className="input-field" value={form.ministry} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
@@ -2024,7 +2049,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
                   Requires Review Before Completion
                 </label>
                 {form.review_required && (
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                  <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
                     {teamNames.filter((name) => !samePerson(name, canAssignToAnyone ? form.assignee : profile?.full_name)).map((name) => (
                       <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
                         <input type="checkbox" checked={listIncludesPerson(form.reviewers || [], name)} onChange={()=>toggleReviewer(name)} />
@@ -2096,8 +2121,8 @@ function Members({ people, setPeople, churchId, profile }) {
   };
 
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
         <div>
           <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>People Care</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>Track pastoral care, prayer requests & follow-ups</p>
@@ -2137,7 +2162,7 @@ function Members({ people, setPeople, churchId, profile }) {
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <input className="input-field" placeholder="Full name" value={form.full_name||""} onChange={e=>setForm({...form,full_name:e.target.value})}/>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div className="member-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <input className="input-field" placeholder="Role (e.g. Worship Leader)" value={form.role||""} onChange={e=>setForm({...form,role:e.target.value})}/>
                 <select className="input-field" value={form.ministry||"Admin"} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
                   {TASK_CATEGORIES.map(m=><option key={m}>{m}</option>)}
@@ -2192,15 +2217,15 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
   };
 
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
         <div>
           <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Budget & Finance</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>Track ministry spending and income</p>
         </div>
         {canEditBudget && <button className="btn-gold" onClick={()=>setShowModal(true)}><Icons.plus/>Add Transaction</button>}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:28}}>
+      <div className="mobile-three-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:28}}>
         {[
           {label:"Total Income",value:fmt(income),color:C.success},
           {label:"Total Expenses",value:fmt(expense),color:C.danger},
@@ -2247,7 +2272,7 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <input className="input-field" placeholder="Description" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div className="budget-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <input className="input-field" placeholder="Amount ($)" type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
                 <input className="input-field" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
                 <select className="input-field" value={form.ministry} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
@@ -2272,7 +2297,7 @@ function Budget({ transactions, setTransactions, churchId, profile }) {
 // ── Ministries ─────────────────────────────────────────────────────────────
 function Ministries({ ministries }) {
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:24}}>
         <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Ministries</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>Overview of all ministry departments</p>
@@ -2313,25 +2338,25 @@ function CalendarView({ tasks }) {
   const upcoming = [...tasks].filter(t=>t.status!=="done").sort((a,b)=>new Date(a.due_date)-new Date(b.due_date));
 
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:24}}>
         <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>Calendar</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>{months[today.getMonth()]} {today.getFullYear()}</p>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:24}}>
+      <div className="mobile-calendar-layout" style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:24}}>
         <div className="card" style={{padding:20}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:10}}>
             {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
               <div key={d} style={{textAlign:"center",fontSize:11,color:C.muted,fontWeight:600,padding:"4px 0"}}>{d}</div>
             ))}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+          <div className="calendar-day-grid" style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
             {days.map((d,i)=>{
               const isToday = d.toDateString()===today.toDateString();
               const isMonth = d.getMonth()===today.getMonth();
               const dt = tasks.filter(t=>new Date(t.due_date).toDateString()===d.toDateString()&&t.status!=="done");
               return (
-                <div key={i} style={{minHeight:60,borderRadius:8,padding:"6px 8px",background:isToday?C.goldGlow:"transparent",border:`1px solid ${isToday?C.goldDim:"transparent"}`,opacity:isMonth?1:0.35}}>
+                <div className="calendar-day-cell" key={i} style={{minHeight:60,borderRadius:8,padding:"6px 8px",background:isToday?C.goldGlow:"transparent",border:`1px solid ${isToday?C.goldDim:"transparent"}`,opacity:isMonth?1:0.35}}>
                   <div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?C.gold:C.text,marginBottom:4}}>{d.getDate()}</div>
                   {dt.slice(0,2).map(t=>(
                     <div key={t.id} style={{fontSize:9,background:(CATEGORY_STYLES[t.ministry]?.color||C.blue)+"33",color:CATEGORY_STYLES[t.ministry]?.color||C.blue,borderRadius:3,padding:"1px 4px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
@@ -2549,7 +2574,7 @@ export default function App() {
   return (
     <>
       <GS/>
-      <div style={{display:"flex",minHeight:"100vh"}}>
+      <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
         <Sidebar active={active} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length}/>
         <main style={{flex:1,overflowY:"auto",background:C.bg}}>{pages[active]}</main>
       </div>

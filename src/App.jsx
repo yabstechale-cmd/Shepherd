@@ -1705,13 +1705,25 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
           <button className="btn-outline" onClick={()=>setActive("calendar")} style={{padding:"5px 12px",fontSize:12}}>Open calendar</button>
         </div>
         {GOOGLE_CALENDAR_EMBED_URL ? (
-          <div style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:C.surface}}>
-            <iframe
-              className="calendar-embed"
-              title="Church Calendar"
-              src={GOOGLE_CALENDAR_EMBED_URL}
-              style={{width:"100%",height:560,border:"0",display:"block",background:"#fff"}}
-            />
+          <div style={{border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,padding:20,textAlign:"left"}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,marginBottom:8}}>Connected Google Calendar</div>
+            <div style={{fontSize:12,color:C.muted,lineHeight:1.7,maxWidth:700}}>
+              Your church calendar is connected and ready. Open the calendar page for the full planning view without forcing the dashboard to reload around the embed.
+            </div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
+              <button className="btn-outline" onClick={()=>setActive("calendar")} style={{padding:"7px 12px",fontSize:12}}>
+                Open internal calendar
+              </button>
+              <a
+                href={GOOGLE_CALENDAR_EMBED_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-outline"
+                style={{padding:"7px 12px",fontSize:12,textDecoration:"none"}}
+              >
+                Open Google Calendar
+              </a>
+            </div>
           </div>
         ) : (
           <div style={{border:`1px dashed ${C.border}`,borderRadius:12,padding:20,background:C.surface}}>

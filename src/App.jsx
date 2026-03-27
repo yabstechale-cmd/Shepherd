@@ -97,8 +97,8 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
         strokeLinecap="round"
       />
     ))}
-    <rect x="47" y="18" width="26" height="88" rx="3" fill={color} />
-    <rect x="18" y="42" width="84" height="22" rx="3" fill={color} />
+    <rect x="47" y="14" width="26" height="96" rx="3" fill={color} />
+    <rect x="18" y="40" width="84" height="22" rx="3" fill={color} />
   </svg>
 );
 

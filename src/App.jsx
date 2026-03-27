@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
+import crossBrandImage from "./assets/branding/cross.avif";
 
 const C = {
   bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
@@ -57,30 +58,25 @@ const Icons = {
   pen:      () => <Icon d="M12 20h9M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />,
   bell:     () => <Icon d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />,
 };
-const StaffMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
-  <svg width={size} height={size} viewBox="0 0 64 64" fill="none" style={{display:"block",opacity}}>
-    <path
-      d="M42 8c-8 0-14 6-14 13 0 4 2 7 5 9-6 2-10 8-10 15 0 3 1 6 2 8m8-23v26"
-      stroke={color}
-      strokeWidth="5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M42 8c6 0 10 4 10 9 0 6-5 10-10 10-5 0-10-4-10-10"
-      stroke={color}
-      strokeWidth="5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M31 56c0 3 2 5 5 5s5-2 5-5"
-      stroke={color}
-      strokeWidth="5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
+const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
+  <div
+    aria-hidden="true"
+    style={{
+      width: size,
+      height: size,
+      display: "block",
+      opacity,
+      backgroundColor: color,
+      WebkitMaskImage: `url(${crossBrandImage})`,
+      maskImage: `url(${crossBrandImage})`,
+      WebkitMaskRepeat: "no-repeat",
+      maskRepeat: "no-repeat",
+      WebkitMaskPosition: "center",
+      maskPosition: "center",
+      WebkitMaskSize: "contain",
+      maskSize: "contain",
+    }}
+  />
 );
 
 const GS = () => (
@@ -634,7 +630,7 @@ function AuthScreen() {
       <div style={{position:"absolute",inset:0,opacity:.03}}>
         {[...Array(20)].map((_,i)=>(
           <div key={i} style={{position:"absolute",left:`${(i%5)*25}%`,top:`${Math.floor(i/5)*25}%`,width:60,height:60}}>
-            <StaffMark size={60} color={C.gold} opacity={1}/>
+            <BrandMark size={60} color={C.gold} opacity={1}/>
           </div>
         ))}
       </div>
@@ -642,7 +638,7 @@ function AuthScreen() {
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:64,height:64,borderRadius:18,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-            <StaffMark size={32} color={C.gold}/>
+            <BrandMark size={32} color={C.gold}/>
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
@@ -741,12 +737,12 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
   return (
     <div className="app-sidebar" style={{width:collapsed?64:220,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",bottom:40,right:collapsed?-10:20,width:80,opacity:.05}}>
-        <StaffMark size={80} color={C.gold}/>
+        <BrandMark size={80} color={C.gold}/>
       </div>
       <div style={{padding:collapsed?"20px 16px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"space-between"}}>
         {!collapsed && <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:32,height:32,borderRadius:8,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <StaffMark size={14} color={C.gold}/>
+            <BrandMark size={14} color={C.gold}/>
           </div>
           <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em"}}>Shepherd</span>
         </div>}
@@ -2572,7 +2568,7 @@ export default function App() {
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
           <div style={{marginBottom:16,display:"flex",justifyContent:"center"}}>
-            <StaffMark size={48} color={C.gold}/>
+            <BrandMark size={48} color={C.gold}/>
           </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>

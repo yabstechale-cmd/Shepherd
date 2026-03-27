@@ -112,6 +112,104 @@ alter table public.tasks add column if not exists created_at timestamptz not nul
 alter table public.tasks
   enable row level security;
 
+create table if not exists public.event_requests (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  status text not null default 'new',
+  requested_by text,
+  event_name text not null,
+  event_format text not null,
+  event_timing text not null,
+  single_date date,
+  single_start_time text,
+  single_end_time text,
+  multi_start_date date,
+  multi_end_date date,
+  multi_start_time text,
+  multi_end_time text,
+  recurring_start_date date,
+  recurring_start_time text,
+  recurring_end_time text,
+  recurring_frequency text,
+  setup_datetime timestamptz,
+  description text not null,
+  contact_name text not null,
+  phone text not null,
+  email text not null,
+  location_scope text not null,
+  location_areas text[] not null default '{}',
+  graphics_reference text,
+  av_request boolean not null default false,
+  av_request_details text,
+  tables_needed text,
+  tables_6ft_rectangular integer not null default 0,
+  tables_8ft_rectangular integer not null default 0,
+  tables_5ft_round integer not null default 0,
+  black_vinyl_tablecloths text,
+  white_linen_tablecloths text,
+  white_linen_agreement boolean not null default false,
+  pipe_and_drape text,
+  metal_folding_chairs_requested boolean not null default false,
+  metal_folding_chairs integer,
+  sanctuary_chairs text,
+  kitchen_use boolean not null default false,
+  drip_coffee_only boolean not null default false,
+  espresso_drinks boolean not null default false,
+  additional_information text,
+  submitted_on date not null default current_date,
+  signature text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.event_requests add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.event_requests add column if not exists status text not null default 'new';
+alter table public.event_requests add column if not exists requested_by text;
+alter table public.event_requests add column if not exists event_name text;
+alter table public.event_requests add column if not exists event_format text;
+alter table public.event_requests add column if not exists event_timing text;
+alter table public.event_requests add column if not exists single_date date;
+alter table public.event_requests add column if not exists single_start_time text;
+alter table public.event_requests add column if not exists single_end_time text;
+alter table public.event_requests add column if not exists multi_start_date date;
+alter table public.event_requests add column if not exists multi_end_date date;
+alter table public.event_requests add column if not exists multi_start_time text;
+alter table public.event_requests add column if not exists multi_end_time text;
+alter table public.event_requests add column if not exists recurring_start_date date;
+alter table public.event_requests add column if not exists recurring_start_time text;
+alter table public.event_requests add column if not exists recurring_end_time text;
+alter table public.event_requests add column if not exists recurring_frequency text;
+alter table public.event_requests add column if not exists setup_datetime timestamptz;
+alter table public.event_requests add column if not exists description text;
+alter table public.event_requests add column if not exists contact_name text;
+alter table public.event_requests add column if not exists phone text;
+alter table public.event_requests add column if not exists email text;
+alter table public.event_requests add column if not exists location_scope text;
+alter table public.event_requests add column if not exists location_areas text[] not null default '{}';
+alter table public.event_requests add column if not exists graphics_reference text;
+alter table public.event_requests add column if not exists av_request boolean not null default false;
+alter table public.event_requests add column if not exists av_request_details text;
+alter table public.event_requests add column if not exists tables_needed text;
+alter table public.event_requests add column if not exists tables_6ft_rectangular integer not null default 0;
+alter table public.event_requests add column if not exists tables_8ft_rectangular integer not null default 0;
+alter table public.event_requests add column if not exists tables_5ft_round integer not null default 0;
+alter table public.event_requests add column if not exists black_vinyl_tablecloths text;
+alter table public.event_requests add column if not exists white_linen_tablecloths text;
+alter table public.event_requests add column if not exists white_linen_agreement boolean not null default false;
+alter table public.event_requests add column if not exists pipe_and_drape text;
+alter table public.event_requests add column if not exists metal_folding_chairs_requested boolean not null default false;
+alter table public.event_requests add column if not exists metal_folding_chairs integer;
+alter table public.event_requests add column if not exists sanctuary_chairs text;
+alter table public.event_requests add column if not exists kitchen_use boolean not null default false;
+alter table public.event_requests add column if not exists drip_coffee_only boolean not null default false;
+alter table public.event_requests add column if not exists espresso_drinks boolean not null default false;
+alter table public.event_requests add column if not exists additional_information text;
+alter table public.event_requests add column if not exists submitted_on date not null default current_date;
+alter table public.event_requests add column if not exists signature text;
+alter table public.event_requests add column if not exists created_at timestamptz not null default now();
+
+alter table public.event_requests
+  enable row level security;
+
 create table if not exists public.people (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -380,6 +478,54 @@ with check (
         or p.role = 'senior_pastor'
         or assignee = p.full_name
       )
+  )
+);
+
+drop policy if exists "event requests public submit" on public.event_requests;
+create policy "event requests public submit"
+on public.event_requests
+for insert
+with check (
+  exists (
+    select 1
+    from public.churches c
+    where c.id = event_requests.church_id
+  )
+);
+
+drop policy if exists "event requests same church read" on public.event_requests;
+create policy "event requests same church read"
+on public.event_requests
+for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_requests.church_id
+  )
+);
+
+drop policy if exists "event requests admin update" on public.event_requests;
+create policy "event requests admin update"
+on public.event_requests
+for update
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_requests.church_id
+      and (p.can_see_admin_overview or p.role = 'senior_pastor')
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_requests.church_id
+      and (p.can_see_admin_overview or p.role = 'senior_pastor')
   )
 );
 

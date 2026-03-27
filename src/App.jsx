@@ -31,6 +31,8 @@ const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency:
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
+const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
+const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const Icon = ({ d, size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -44,6 +46,7 @@ const Icons = {
   budget:   () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
   ministry: () => <Icon d="M3 21V7l9-4 9 4v14M9 21V12h6v9" />,
   calendar: () => <Icon d="M3 4h18v18H3zM16 2v4M8 2v4M3 10h18" />,
+  workspace:() => <Icon d="M3 7a2 2 0 012-2h5l2 2h7a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />,
   logout:   () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
   plus:     () => <Icon d="M12 5v14M5 12h14" />,
   eye:      () => <Icon d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
@@ -51,6 +54,7 @@ const Icons = {
   menu:     () => <Icon d="M3 12h18M3 6h18M3 18h18" />,
   x:        () => <Icon d="M18 6L6 18M6 6l12 12" />,
   pen:      () => <Icon d="M12 20h9M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />,
+  bell:     () => <Icon d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />,
 };
 
 const GS = () => (
@@ -209,6 +213,161 @@ const STATUS_STYLES = {
   "in-progress": { label: "In Progress", accent: C.blue, surface: "rgba(91,143,232,0.08)" },
   "in-review": { label: "In Review", accent: C.purple, surface: "rgba(155,114,232,0.08)" },
   done: { label: "Done", accent: C.success, surface: "rgba(82,200,122,0.08)" },
+};
+const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
+const createEventRequestBlank = (profile = null) => ({
+  event_name: "",
+  event_format: "single",
+  event_timing: "",
+  single_date: "",
+  single_start_time: "",
+  single_end_time: "",
+  multi_start_date: "",
+  multi_end_date: "",
+  multi_start_time: "",
+  multi_end_time: "",
+  recurring_start_date: "",
+  recurring_start_time: "",
+  recurring_end_time: "",
+  recurring_frequency: "",
+  setup_datetime: "",
+  description: "",
+  contact_name: profile?.full_name || "",
+  phone: "",
+  email: profile?.email || "",
+  location_scope: "",
+  location_areas: [],
+  graphics_reference: "",
+  av_request: false,
+  av_request_details: "",
+  tables_needed: "",
+  tables_6ft_rectangular: "0",
+  tables_8ft_rectangular: "0",
+  tables_5ft_round: "0",
+  black_vinyl_tablecloths: "",
+  white_linen_tablecloths: "",
+  white_linen_agreement: false,
+  pipe_and_drape: "",
+  metal_folding_chairs_requested: false,
+  metal_folding_chairs: "",
+  sanctuary_chairs: "",
+  kitchen_use: false,
+  drip_coffee_only: false,
+  espresso_drinks: false,
+  additional_information: "",
+  submitted_on: new Date().toISOString().split("T")[0],
+  signature: profile?.full_name || "",
+});
+const buildEventTimingSummary = (form) => {
+  if (form.event_format === "single") {
+    if (!form.single_date || !form.single_start_time || !form.single_end_time) return "";
+    return `${form.single_date} • ${form.single_start_time} - ${form.single_end_time}`;
+  }
+  if (form.event_format === "multi") {
+    if (!form.multi_start_date || !form.multi_end_date || !form.multi_start_time || !form.multi_end_time) return "";
+    return `${form.multi_start_date} to ${form.multi_end_date} • ${form.multi_start_time} - ${form.multi_end_time}`;
+  }
+  if (form.event_format === "recurring") {
+    if (!form.recurring_start_date || !form.recurring_start_time || !form.recurring_end_time || !form.recurring_frequency) return "";
+    return `${form.recurring_start_date} • ${form.recurring_start_time} - ${form.recurring_end_time} • ${form.recurring_frequency}`;
+  }
+  return "";
+};
+const buildTablesSummary = (form) => {
+  const selections = [
+    { label: "6ft rectangular", value: parseInt(form.tables_6ft_rectangular || "0", 10) || 0 },
+    { label: "8ft rectangular", value: parseInt(form.tables_8ft_rectangular || "0", 10) || 0 },
+    { label: "5ft round", value: parseInt(form.tables_5ft_round || "0", 10) || 0 },
+  ].filter((entry) => entry.value > 0);
+
+  if (selections.length === 0) return "";
+  return selections.map((entry) => `${entry.value} ${entry.label}`).join(", ");
+};
+const getEventLocationSummary = (request) => {
+  if (request.location_scope === "building") {
+    if (Array.isArray(request.location_areas) && request.location_areas.length > 0) {
+      return `Building use requested: ${request.location_areas.join(", ")}`;
+    }
+    return "Building use requested";
+  }
+  if (request.location_scope === "off-campus") {
+    return "Off-campus event: announcement and graphics support only";
+  }
+  return request.location_scope || "Location not specified";
+};
+const getRelativeDueLabel = (date) => {
+  if (!date) return "No due date";
+  const today = new Date();
+  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const due = new Date(date);
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const diff = Math.round((dueDay - base) / 86400000);
+  if (diff === 0) return "Due today";
+  if (diff === 1) return "Due tomorrow";
+  if (diff < 0) return `Overdue since ${fmtDate(date)}`;
+  return `Due ${fmtDate(date)}`;
+};
+const buildNotifications = (tasks, profile) => {
+  if (!profile?.full_name) return [];
+  const fullName = profile.full_name;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfTomorrow = new Date(startOfToday);
+  endOfTomorrow.setDate(endOfTomorrow.getDate() + 2);
+
+  const items = [];
+
+  tasks.forEach((task) => {
+    const assignedToMe = samePerson(task.assignee, fullName);
+    const reviewerForMe = listIncludesPerson(task.reviewers, fullName) && !listIncludesPerson(task.review_approvals, fullName);
+    const createdAt = task.created_at ? new Date(task.created_at) : null;
+    const dueDate = task.due_date ? new Date(task.due_date) : null;
+    const dueDay = dueDate ? new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate()) : null;
+
+    if (assignedToMe && task.status !== "done" && createdAt && now.getTime() - createdAt.getTime() < 3 * 86400000) {
+      items.push({
+        id: `assigned-${task.id}`,
+        tone: C.blue,
+        title: "New task assigned",
+        detail: `${task.title} was assigned to you.`,
+        target: "tasks",
+        createdAt: createdAt.getTime(),
+      });
+    }
+
+    if (assignedToMe && task.status !== "done" && dueDay && dueDay.getTime() < startOfToday.getTime()) {
+      items.push({
+        id: `overdue-${task.id}`,
+        tone: C.danger,
+        title: "Task overdue",
+        detail: `${task.title} is overdue.`,
+        target: "tasks",
+        createdAt: dueDay.getTime(),
+      });
+    } else if (assignedToMe && task.status !== "done" && dueDay && dueDay.getTime() >= startOfToday.getTime() && dueDay.getTime() < endOfTomorrow.getTime()) {
+      items.push({
+        id: `due-${task.id}`,
+        tone: C.gold,
+        title: getRelativeDueLabel(task.due_date),
+        detail: `${task.title} needs attention soon.`,
+        target: "tasks",
+        createdAt: dueDay.getTime(),
+      });
+    }
+
+    if (reviewerForMe && task.status !== "done") {
+      items.push({
+        id: `review-${task.id}-${normalizeName(fullName)}`,
+        tone: C.purple,
+        title: "Review requested",
+        detail: `${task.title} is waiting on your review.`,
+        target: "tasks",
+        createdAt: dueDay?.getTime() || createdAt?.getTime() || now.getTime(),
+      });
+    }
+  });
+
+  return items.sort((a, b) => b.createdAt - a.createdAt);
 };
 
 // ── Auth ───────────────────────────────────────────────────────────────────
@@ -429,9 +588,11 @@ function AuthScreen() {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
-function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed }) {
+function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
+    {id:"workspaces",label:"Workspaces",I:Icons.workspace},
+    {id:"notifications",label:"Notifications",I:Icons.bell},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
     {id:"members",label:"People Care",I:Icons.heart},
     {id:"budget",label:"Budget",I:Icons.budget},
@@ -453,7 +614,15 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
       <nav style={{padding:"12px 10px",flex:1}}>
         {nav.map(({id,label,I: iconComponent})=>(
           <div key={id} className={`nav-item${active===id?" active":""}`} onClick={()=>setActive(id)} title={collapsed?label:""} style={{justifyContent:collapsed?"center":"flex-start"}}>
-            {iconComponent()}{!collapsed&&<span>{label}</span>}
+            <div style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
+              {iconComponent()}
+              {id === "notifications" && unreadCount > 0 && (
+                <span style={{position:"absolute",top:-6,right:-8,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </div>
+            {!collapsed&&<span>{label}</span>}
           </div>
         ))}
       </nav>
@@ -475,11 +644,761 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
   );
 }
 
+function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, setActive, browserPermission, enableBrowserNotifications }) {
+  return (
+    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
+        <div style={{justifySelf:"start",textAlign:"left"}}>
+          <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Notifications</h2>
+          <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+            {unreadCount} unread notifications for your account
+          </p>
+        </div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {browserPermission !== "granted" && (
+            <button className="btn-outline" onClick={enableBrowserNotifications}>Enable Browser Alerts</button>
+          )}
+          <button className="btn-gold" onClick={markAllRead}>Mark All Read</button>
+        </div>
+      </div>
+      <div className="card" style={{padding:22}}>
+        {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No notifications right now.</p>}
+        {notifications.map((item) => (
+          <div key={item.id} style={{display:"grid",gridTemplateColumns:"12px 1fr auto",gap:14,alignItems:"start",padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:6}} />
+            <div style={{textAlign:"left"}}>
+              <div style={{fontSize:14,fontWeight:600,color:C.text}}>{item.title}</div>
+              <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>{item.detail}</div>
+            </div>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <button className="btn-outline" onClick={()=>{markRead(item.id); setActive(item.target || "tasks");}} style={{padding:"6px 10px",fontSize:12}}>
+                Open
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EventRequestFormFields({ eventForm, setEventForm }) {
+  const toggleLocationArea = (area) => {
+    setEventForm((current) => ({
+      ...current,
+      location_areas: current.location_areas.includes(area)
+        ? current.location_areas.filter((entry) => entry !== area)
+        : [...current.location_areas, area],
+    }));
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Event Name <span style={{color:C.danger}}>*</span></label>
+        <input className="input-field" value={eventForm.event_name} onChange={(e)=>setEventForm({...eventForm,event_name:e.target.value})} />
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Event Point of Contact <span style={{color:C.danger}}>*</span></label>
+        <input className="input-field" value={eventForm.contact_name} onChange={(e)=>setEventForm({...eventForm,contact_name:e.target.value})} />
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Phone <span style={{color:C.danger}}>*</span></label>
+        <input className="input-field" value={eventForm.phone} onChange={(e)=>setEventForm({...eventForm,phone:e.target.value})} />
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Email <span style={{color:C.danger}}>*</span></label>
+        <input className="input-field" type="email" value={eventForm.email} onChange={(e)=>setEventForm({...eventForm,email:e.target.value})} />
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Event Type</label>
+        <select className="input-field" value={eventForm.event_format} onChange={(e)=>setEventForm({...eventForm,event_format:e.target.value,event_timing:""})} style={{background:C.surface}}>
+          <option value="single">Single</option>
+          <option value="multi">Multi-Day</option>
+          <option value="recurring">Recurring</option>
+        </select>
+        <div style={{display:"grid",gap:3,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,width:"100%",textAlign:"left",justifyItems:"start"}}>
+          <div style={{fontSize:12,color:C.text,lineHeight:1.35,width:"100%"}}><strong>Single:</strong> One event time frame on one day.</div>
+          <div style={{fontSize:12,color:C.text,lineHeight:1.35,width:"100%"}}><strong>Multi-Day:</strong> One event that runs across multiple days in a row.</div>
+          <div style={{fontSize:12,color:C.text,lineHeight:1.35,width:"100%"}}><strong>Recurring:</strong> One event time frame that repeats on a regular schedule.</div>
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Event Start/End Time <span style={{color:C.danger}}>*</span></label>
+        {eventForm.event_format === "single" && (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,width:"100%"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>Date <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="date" value={eventForm.single_date} onChange={(e)=>setEventForm({...eventForm,single_date:e.target.value})} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>Start Time <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="time" value={eventForm.single_start_time} onChange={(e)=>setEventForm({...eventForm,single_start_time:e.target.value})} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>End Time <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="time" value={eventForm.single_end_time} onChange={(e)=>setEventForm({...eventForm,single_end_time:e.target.value})} />
+            </div>
+          </div>
+        )}
+        {eventForm.event_format === "multi" && (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,width:"100%"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>Start Date <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="date" value={eventForm.multi_start_date} onChange={(e)=>setEventForm({...eventForm,multi_start_date:e.target.value})} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>End Date <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="date" value={eventForm.multi_end_date} onChange={(e)=>setEventForm({...eventForm,multi_end_date:e.target.value})} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>Start Time <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="time" value={eventForm.multi_start_time} onChange={(e)=>setEventForm({...eventForm,multi_start_time:e.target.value})} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>End Time <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="time" value={eventForm.multi_end_time} onChange={(e)=>setEventForm({...eventForm,multi_end_time:e.target.value})} />
+            </div>
+          </div>
+        )}
+        {eventForm.event_format === "recurring" && (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,width:"100%"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>Date <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="date" value={eventForm.recurring_start_date} onChange={(e)=>setEventForm({...eventForm,recurring_start_date:e.target.value})} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>How Often Does It Repeat? <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" placeholder="Every week, every month, first Wednesday..." value={eventForm.recurring_frequency} onChange={(e)=>setEventForm({...eventForm,recurring_frequency:e.target.value})} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>Start Time <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="time" value={eventForm.recurring_start_time} onChange={(e)=>setEventForm({...eventForm,recurring_start_time:e.target.value})} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:12,color:C.muted}}>End Time <span style={{color:C.danger}}>*</span></div>
+              <input className="input-field" type="time" value={eventForm.recurring_end_time} onChange={(e)=>setEventForm({...eventForm,recurring_end_time:e.target.value})} />
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Setup Date <span style={{color:C.danger}}>*</span></label>
+        <input className="input-field" type="datetime-local" value={eventForm.setup_datetime} onChange={(e)=>setEventForm({...eventForm,setup_datetime:e.target.value})} />
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Event Description & Purpose <span style={{color:C.danger}}>*</span></label>
+        <textarea className="input-field" rows={3} value={eventForm.description} onChange={(e)=>setEventForm({...eventForm,description:e.target.value})} style={{resize:"vertical"}} />
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Event Location <span style={{color:C.danger}}>*</span></label>
+        <div style={{fontSize:12,color:C.text,lineHeight:1.5,width:"100%"}}>
+          Is this a request for the building or just an announcement and graphics support?
+        </div>
+        <select className="input-field" value={eventForm.location_scope} onChange={(e)=>setEventForm({...eventForm,location_scope:e.target.value,location_areas:e.target.value === "building" ? eventForm.location_areas : []})} style={{background:C.surface}}>
+          <option value="">Select an option</option>
+          <option value="building">I want to use the building for my event</option>
+          <option value="off-campus">No, I would just like this to be announced because we are having the event off campus</option>
+        </select>
+        {eventForm.location_scope === "building" && (
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,width:"100%"}}>
+            <div style={{fontSize:12,color:C.text,lineHeight:1.5}}>
+              Which areas of the church would you like to use?
+              <span style={{color:C.danger}}> *</span>
+            </div>
+            <div style={{fontSize:11,color:C.muted,lineHeight:1.4}}>
+              Select all that apply.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+              {EVENT_LOCATION_AREA_OPTIONS.map((area) => (
+                <label key={area} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+                  <input type="checkbox" checked={eventForm.location_areas.includes(area)} onChange={()=>toggleLocationArea(area)} />
+                  {area}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Reference Photos / Graphics Direction</label>
+        <div style={{fontSize:12,color:C.text,lineHeight:1.5,width:"100%"}}>
+          In regards to art and graphics for slides and announcements, please send a few examples of artwork or styles you feel would work well with your event’s theme. This helps us align the design with your vision from the beginning. Once your event is approved, our graphic design team will begin creating the artwork. You can expect a first draft within one week. If major changes are needed, we are happy to make those adjustments within two business days. After the final artwork is approved, we will send you the files you need for sharing and posting, and we will take care of anything going on our website and app.
+        </div>
+        <textarea className="input-field" rows={2} placeholder="Paste links or describe the visual style you want." value={eventForm.graphics_reference} onChange={(e)=>setEventForm({...eventForm,graphics_reference:e.target.value})} style={{resize:"vertical"}} />
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:14,padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+        <div style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Additional Resources</div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Audio & Visual</div>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+              <input type="checkbox" checked={eventForm.av_request} onChange={(e)=>setEventForm({...eventForm,av_request:e.target.checked})} />
+              Request A/V support for this event
+            </label>
+            {eventForm.av_request && (
+              <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+                <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Describe Your A/V Needs</label>
+                <textarea className="input-field" rows={3} placeholder="Please describe the sound, slides, microphones, video, livestream, or other A/V support you need." value={eventForm.av_request_details} onChange={(e)=>setEventForm({...eventForm,av_request_details:e.target.value})} style={{resize:"vertical"}} />
+              </div>
+            )}
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Kitchen</div>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+              <input type="checkbox" checked={eventForm.kitchen_use} onChange={(e)=>setEventForm({...eventForm,kitchen_use:e.target.checked})} />
+              Request kitchen access for this event
+            </label>
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Coffee Shop</div>
+            <div style={{display:"grid",gap:6,fontSize:12,color:C.text,lineHeight:1.5,width:"100%",textAlign:"left",justifyItems:"start"}}>
+              <div style={{width:"100%",textAlign:"left"}}>A supply fee will be added for coffee service requests.</div>
+              <div style={{width:"100%",textAlign:"left"}}>Espresso drink service requires a minimum of two baristas, and that staffing is included in the coffee shop fee. Only trained individuals may operate or work inside the coffee shop, and this applies to both espresso service and drip coffee service.</div>
+            </div>
+            <div style={{display:"grid",gap:10,width:"100%"}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+                <input type="checkbox" checked={eventForm.drip_coffee_only} onChange={(e)=>setEventForm({...eventForm,drip_coffee_only:e.target.checked})} />
+                Drip Coffee Only
+              </label>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+                <input type="checkbox" checked={eventForm.espresso_drinks} onChange={(e)=>setEventForm({...eventForm,espresso_drinks:e.target.checked})} />
+                Espresso Drinks
+              </label>
+            </div>
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Tables Needed</div>
+            <div style={{fontSize:12,color:C.text,lineHeight:1.5,width:"100%"}}>
+              We currently have the following tables available. Select how many of each you would like to request.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,width:"100%"}}>
+              {[
+                ["tables_6ft_rectangular", "6ft Rectangular", 12],
+                ["tables_8ft_rectangular", "8ft Rectangular", 3],
+                ["tables_5ft_round", "5ft Round", 9],
+              ].map(([key, label, available]) => (
+                <div key={key} style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{fontSize:12,color:C.muted}}>{label} ({available} available)</div>
+                  <select className="input-field" value={eventForm[key]} onChange={(e)=>setEventForm({...eventForm,[key]:e.target.value})} style={{background:C.surface}}>
+                    {Array.from({ length: Number(available) + 1 }, (_, index) => (
+                      <option key={index} value={String(index)}>{index}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Tablecloths</div>
+            <div style={{display:"grid",gap:10,width:"100%"}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+                <input type="checkbox" checked={!!eventForm.black_vinyl_tablecloths} onChange={(e)=>setEventForm({...eventForm,black_vinyl_tablecloths:e.target.checked ? "requested" : ""})} />
+                Black Vinyl Tablecloths
+              </label>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+                <input type="checkbox" checked={!!eventForm.white_linen_tablecloths} onChange={(e)=>setEventForm({...eventForm,white_linen_tablecloths:e.target.checked ? "requested" : "",white_linen_agreement:e.target.checked ? eventForm.white_linen_agreement : false})} />
+                White Linen Tablecloths
+              </label>
+            </div>
+            {!!eventForm.white_linen_tablecloths && (
+              <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:C.text,marginLeft:28,fontStyle:"italic"}}>
+                <input type="checkbox" checked={eventForm.white_linen_agreement} onChange={(e)=>setEventForm({...eventForm,white_linen_agreement:e.target.checked})} style={{marginTop:2}} />
+                I agree to launder and press the white linen tablecloths after the event. <span style={{color:C.danger}}>*</span>
+              </label>
+            )}
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Pipe and Drape</div>
+            <input className="input-field" placeholder="Describe any pipe and drape needs for this event." value={eventForm.pipe_and_drape} onChange={(e)=>setEventForm({...eventForm,pipe_and_drape:e.target.value})} />
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Chairs</div>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+              <input type="checkbox" checked={eventForm.metal_folding_chairs_requested} onChange={(e)=>setEventForm({...eventForm,metal_folding_chairs_requested:e.target.checked,metal_folding_chairs:e.target.checked ? eventForm.metal_folding_chairs : ""})} />
+              Request metal folding chairs
+            </label>
+            {eventForm.metal_folding_chairs_requested && (
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>How many metal fold chairs do you need? <span style={{color:C.danger}}>*</span></label>
+                <input className="input-field" type="number" min="0" value={eventForm.metal_folding_chairs} onChange={(e)=>setEventForm({...eventForm,metal_folding_chairs:e.target.value})} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Additional Information to be noted</label>
+        <textarea className="input-field" rows={4} placeholder="Cleaning, music approvals, childcare, stage rules, fees, open/close building, due dates, decor team..." value={eventForm.additional_information} onChange={(e)=>setEventForm({...eventForm,additional_information:e.target.value})} style={{resize:"vertical"}} />
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-start",textAlign:"left",padding:"16px 18px",border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Items That May Need Admin Approval or Coordination</label>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.5,width:"100%",textAlign:"left"}}>
+          Depending on your event, the Administrator may need to review or coordinate the following details with you:
+        </div>
+        <ol style={{display:"grid",gap:8,fontSize:12,color:C.text,lineHeight:1.5,paddingLeft:18,margin:0,textAlign:"left",justifyItems:"start",width:"100%"}}>
+          <li>Building access, including who will open and close the church.</li>
+          <li>A/C scheduling for the spaces being used.</li>
+          <li>Food cleanup and how any excess food will be handled afterward.</li>
+          <li>Music, videos, or other media being used during the event.</li>
+          <li>Any fees, payments, or money being collected or distributed.</li>
+          <li>Childcare plans, including age groups, activities, and staffing needs.</li>
+          <li>Stage use, room use, or any special setup limitations that need to be addressed.</li>
+          <li>Any additional classroom or ministry-space guidelines connected to the event.</li>
+          <li>Building care expectations, including the no-glitter rule.</li>
+        </ol>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-start",textAlign:"left",padding:"16px 18px",border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Please Review Before Submitting</label>
+        <ol style={{display:"grid",gap:8,fontSize:12,color:C.text,lineHeight:1.5,paddingLeft:18,margin:0,textAlign:"left",justifyItems:"start"}}>
+          <li>Submission of this form does not guarantee approval of the event or use of the requested areas of the facility. Administration will follow up with you within one week.</li>
+          <li>Any sound or slide requests must be approved through Worship and AV. Our team will review what is possible and follow up with you ahead of time.</li>
+          <li>Staff can help support planning and room preparation, but your event team is responsible for setup, decorating, and teardown.</li>
+          <li>Your ministry is responsible for providing its own supplies and leaving the space fully cleaned after the event.</li>
+          <li>Administration will review any required cleaning procedures and other event logistics with you as needed.</li>
+        </ol>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-start",textAlign:"left",padding:"16px 18px",border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Planning Timeline</label>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.5,width:"100%",textAlign:"left"}}>
+          This is a general planning outline and may be adjusted by the Administrator based on your event timeline and needs.
+        </div>
+        <ol style={{display:"grid",gap:8,fontSize:12,color:C.text,lineHeight:1.5,paddingLeft:18,margin:0,textAlign:"left",justifyItems:"start"}}>
+          <li><strong>8 weeks out:</strong> Form is submitted, reviewed in staff meeting, and any servant-volunteer needs begin to be discussed. Ministry leads are contacted if approval is needed for someone to serve in areas like AV, coffee, or kitchen.</li>
+          <li><strong>7 weeks out:</strong> Updates are gathered for servant workers and artwork requests begin moving forward.</li>
+          <li><strong>6 weeks out:</strong> Meet with the Administrator to finalize setup, decorations, cleanup, building access, and any AV, coffee, speaker, or kitchen needs.</li>
+          <li><strong>5 weeks out:</strong> Graphics are approved through staff, team roles are clarified, and the event is created and tracked if needed.</li>
+          <li><strong>4 weeks out:</strong> Announcements are prepared and approved, and key people involved in setup, cleanup, decorating, or teaching connect with the Administrator and any other impacted staff or ministries.</li>
+          <li><strong>3 weeks out:</strong> Event announcements begin going out to the church.</li>
+          <li><strong>2 weeks out:</strong> Final team communication happens for any last-minute additions or changes, and reminders go out to the ministries affected by the event.</li>
+          <li><strong>1 week out:</strong> Staff is reminded, responsibilities are reviewed, and final building access details are confirmed.</li>
+        </ol>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+          <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Date Submitted <span style={{color:C.danger}}>*</span></label>
+          <input className="input-field" type="date" value={eventForm.submitted_on} onChange={(e)=>setEventForm({...eventForm,submitted_on:e.target.value})} />
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+          <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Signature <span style={{color:C.danger}}>*</span></label>
+          <input className="input-field" value={eventForm.signature} onChange={(e)=>setEventForm({...eventForm,signature:e.target.value})} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Workspaces({ profile, church }) {
+  const [selectedBoard, setSelectedBoard] = useState("events");
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [eventRequests, setEventRequests] = useState(null);
+  const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
+  const [formError, setFormError] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
+
+  const boards = [
+    {
+      id: "events",
+      name: "Events",
+      summary: "Requests, approvals, and event planning systems.",
+      systems: ["Event request form", "Approval queue", "Event logistics"],
+    },
+    {
+      id: "communications",
+      name: "Communications",
+      summary: "Creative, announcement, and publishing workflows.",
+      systems: ["Announcement planning", "Content review", "Publishing checklists"],
+    },
+    {
+      id: "operations",
+      name: "Operations",
+      summary: "Weekly systems that keep the church running behind the scenes.",
+      systems: ["Service prep", "Facility workflows", "Volunteer coordination"],
+    },
+  ];
+
+  const selected = boards.find((board) => board.id === selectedBoard) || boards[0];
+  const eventColumns = [
+    { id: "new", title: "New Event Requests", detail: "Incoming ministry requests waiting for admin review and scheduling." },
+    { id: "approved", title: "Approved Events", detail: "Confirmed events ready to be coordinated, staffed, and communicated." },
+    { id: "declined", title: "Declined Events", detail: "Requests that were not approved, with room for notes and follow-up." },
+  ];
+
+  useEffect(() => {
+    let active = true;
+    if (!church?.id) {
+      return () => {
+        active = false;
+      };
+    }
+
+    supabase
+      .from("event_requests")
+      .select("*")
+      .eq("church_id", church.id)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (!error) setEventRequests(data || []);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [church?.id]);
+
+  const saveEventRequest = async () => {
+    const eventTiming = buildEventTimingSummary(eventForm);
+    if (!eventForm.event_name || !eventTiming || !eventForm.setup_datetime || !eventForm.description || !eventForm.contact_name || !eventForm.phone || !eventForm.email || !eventForm.location_scope || !eventForm.signature) {
+      setFormError("Please complete the required fields before submitting this request.");
+      return;
+    }
+    if (eventForm.location_scope === "building" && eventForm.location_areas.length === 0) {
+      setFormError("Please select at least one church area for building-use requests.");
+      return;
+    }
+    if (eventForm.white_linen_tablecloths && !eventForm.white_linen_agreement) {
+      setFormError("Please agree to launder and press the white linen tablecloths before submitting.");
+      return;
+    }
+    if (eventForm.metal_folding_chairs_requested && !eventForm.metal_folding_chairs) {
+      setFormError("Please enter how many metal folding chairs you need.");
+      return;
+    }
+    if (!church?.id) {
+      setFormError("We could not find this church for event requests.");
+      return;
+    }
+    const request = {
+      ...eventForm,
+      church_id: church.id,
+      event_timing: eventTiming,
+      tables_needed: buildTablesSummary(eventForm),
+      status: "new",
+      requested_by: profile?.full_name || eventForm.contact_name,
+    };
+    setFormError("");
+    const { data, error } = await supabase.from("event_requests").insert(request).select().single();
+    if (error) {
+      setFormError(error.message || "We couldn't save that request.");
+      return;
+    }
+    setEventRequests((current) => [data, ...(current || [])]);
+    setShowEventForm(false);
+    setEventForm(createEventRequestBlank(profile));
+  };
+
+  const setEventRequestStatus = async (requestId, status) => {
+    const { data, error } = await supabase.from("event_requests").update({ status }).eq("id", requestId).select().single();
+    if (error) return;
+    setEventRequests((current) => current.map((request) => request.id === requestId ? data : request));
+  };
+
+  const loadingRequests = !!church?.id && eventRequests === null;
+  const requests = eventRequests || [];
+  const publicEventRequestLink = typeof window !== "undefined" ? `${window.location.origin}/event-request` : "/event-request";
+
+  const copyPublicEventRequestLink = async () => {
+    try {
+      await navigator.clipboard.writeText(publicEventRequestLink);
+      setCopyMessage("Public form link copied.");
+      window.setTimeout(() => setCopyMessage(""), 2200);
+    } catch {
+      setCopyMessage("Couldn't copy automatically. Use /event-request.");
+      window.setTimeout(() => setCopyMessage(""), 3000);
+    }
+  };
+
+  return (
+    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1200}}>
+      <div style={{marginBottom:28}}>
+        <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Workspaces</h2>
+        <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+          Build boards for the day-to-day, week-to-week, and event-to-event systems that shape church life.
+        </p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:20,alignItems:"start"}}>
+        <div className="card" style={{padding:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Boards</h3>
+            <button className="btn-outline" style={{padding:"6px 10px",fontSize:12}}>New Board</button>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {boards.map((board) => (
+              <button
+                key={board.id}
+                onClick={() => setSelectedBoard(board.id)}
+                style={{
+                  textAlign:"left",
+                  padding:"14px 16px",
+                  borderRadius:12,
+                  border:`1px solid ${selectedBoard === board.id ? C.goldDim : C.border}`,
+                  background:selectedBoard === board.id ? C.goldGlow : C.surface,
+                  color:C.text,
+                  cursor:"pointer"
+                }}
+              >
+                <div style={{fontSize:15,fontWeight:600}}>{board.name}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.5}}>{board.summary}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="card" style={{padding:22}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+            <div>
+              <h3 style={{...displayHeadingStyle,fontSize:32,color:C.text}}>{selected.name} Board</h3>
+              <p style={{color:C.muted,fontSize:13,marginTop:4,maxWidth:560}}>
+                {selected.id === "events"
+                  ? "This board will hold the event request system, approvals flow, and the operational steps needed to move events from idea to calendar."
+                  : selected.summary}
+              </p>
+              {selected.id === "events" && copyMessage && (
+                <div style={{fontSize:12,color:C.success,marginTop:8}}>{copyMessage}</div>
+              )}
+            </div>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+              {selected.id === "events" && (
+                <button className="btn-outline" onClick={copyPublicEventRequestLink}>
+                  Copy Public Form Link
+                </button>
+              )}
+              <button className="btn-gold" onClick={() => {
+                if (selected.id === "events") {
+                  setEventForm(createEventRequestBlank(profile));
+                  setFormError("");
+                  setShowEventForm(true);
+                }
+              }}>
+                {selected.id === "events" ? "New Event Request" : "Open Board"}
+              </button>
+            </div>
+          </div>
+          {selected.id === "events" ? (
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:16}}>
+              {eventColumns.map((column) => (
+                <div key={column.title} style={{padding:18,border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
+                  <div style={{...displayHeadingStyle,fontSize:22,color:C.text}}>{column.title}</div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginTop:8}}>{column.detail}</div>
+                  <div style={{marginTop:18,display:"flex",flexDirection:"column",gap:12}}>
+                    {loadingRequests && (
+                      <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>
+                        Loading requests...
+                      </div>
+                    )}
+                    {requests.filter((request) => request.status === column.id).map((request) => (
+                      <div key={request.id} style={{padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+                        <div style={{fontSize:14,fontWeight:600,color:C.text}}>{request.event_name}</div>
+                        <div style={{fontSize:11,color:C.muted,marginTop:4}}>{request.contact_name} • {getEventLocationSummary(request)}</div>
+                        <div style={{fontSize:11,color:C.muted,marginTop:4,lineHeight:1.5}}>{request.event_timing}</div>
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+                          <span className="badge tag-events">{request.event_format}</span>
+                          {request.av_request && <span className="badge" style={{background:"rgba(91,143,232,.12)",color:C.blue,border:`1px solid rgba(91,143,232,.3)`}}>A/V</span>}
+                          {request.kitchen_use && <span className="badge" style={{background:"rgba(89,185,138,.12)",color:C.success,border:`1px solid rgba(89,185,138,.3)`}}>Kitchen</span>}
+                        </div>
+                        <div style={{fontSize:11,color:C.muted,marginTop:10,lineHeight:1.6}}>{request.description}</div>
+                        <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
+                          {column.id !== "approved" && <button className="btn-outline" onClick={() => setEventRequestStatus(request.id, "approved")} style={{padding:"6px 10px",fontSize:12}}>Approve</button>}
+                          {column.id !== "declined" && <button className="btn-outline" onClick={() => setEventRequestStatus(request.id, "declined")} style={{padding:"6px 10px",fontSize:12}}>Decline</button>}
+                          {column.id !== "new" && <button className="btn-outline" onClick={() => setEventRequestStatus(request.id, "new")} style={{padding:"6px 10px",fontSize:12}}>Move to New</button>}
+                        </div>
+                      </div>
+                    ))}
+                    {!loadingRequests && requests.filter((request) => request.status === column.id).length === 0 && (
+                      <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>
+                        No requests in this column yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{padding:"24px 18px",border:`1px dashed ${C.border}`,borderRadius:14,background:C.surface}}>
+              <div style={{fontSize:14,fontWeight:600,color:C.text}}>Planned systems</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
+                {selected.systems.map((system) => (
+                  <span key={system} className="badge" style={{background:C.card,color:C.text,border:`1px solid ${C.border}`}}>
+                    {system}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{marginTop:20,padding:18,border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
+            <div style={{fontSize:12,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:10}}>Workspace Owner</div>
+            <div style={{fontSize:14,color:C.text}}>{profile?.full_name || "Staff"}</div>
+            <div style={{fontSize:12,color:C.muted,marginTop:4}}>
+              Boards can become the home for recurring systems, forms, approvals, and church operations.
+            </div>
+          </div>
+        </div>
+      </div>
+      {showEventForm && (
+        <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowEventForm(false)}>
+          <div className="modal fadeIn" style={{maxWidth:760}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>New Event Request</h3>
+              <button onClick={()=>setShowEventForm(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
+            </div>
+            <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
+            {formError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{formError}</div>}
+            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
+              <button className="btn-outline" onClick={()=>setShowEventForm(false)}>Cancel</button>
+              <button className="btn-gold" onClick={saveEventRequest}>Submit Request</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PublicEventRequestPage() {
+  const [churchCode, setChurchCode] = useState("");
+  const [churchRecord, setChurchRecord] = useState(null);
+  const [lookupError, setLookupError] = useState("");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [eventForm, setEventForm] = useState(() => createEventRequestBlank());
+  const [submitError, setSubmitError] = useState("");
+  const [submitMessage, setSubmitMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const code = churchCode.trim();
+
+    if (code.length < AUTH_CODE_LENGTH) {
+      return () => {
+        active = false;
+      };
+    }
+
+    fetchChurchAccess(code)
+      .then(({ church }) => {
+        if (!active) return;
+        setChurchRecord(church);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setChurchRecord(null);
+        setLookupError(err.message || "We couldn't find that church code.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLookupLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [churchCode]);
+
+  const submitEventRequest = async () => {
+    const eventTiming = buildEventTimingSummary(eventForm);
+    if (!churchRecord?.id) {
+      setSubmitError("Enter a valid church code before submitting the form.");
+      return;
+    }
+    if (!eventForm.event_name || !eventTiming || !eventForm.setup_datetime || !eventForm.description || !eventForm.contact_name || !eventForm.phone || !eventForm.email || !eventForm.location_scope || !eventForm.signature) {
+      setSubmitError("Please complete the required fields before submitting this request.");
+      return;
+    }
+    if (eventForm.location_scope === "building" && eventForm.location_areas.length === 0) {
+      setSubmitError("Please select at least one church area for building-use requests.");
+      return;
+    }
+    if (eventForm.white_linen_tablecloths && !eventForm.white_linen_agreement) {
+      setSubmitError("Please agree to launder and press the white linen tablecloths before submitting.");
+      return;
+    }
+    if (eventForm.metal_folding_chairs_requested && !eventForm.metal_folding_chairs) {
+      setSubmitError("Please enter how many metal folding chairs you need.");
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitError("");
+    setSubmitMessage("");
+    const payload = {
+      ...eventForm,
+      church_id: churchRecord.id,
+      event_timing: eventTiming,
+      tables_needed: buildTablesSummary(eventForm),
+      status: "new",
+      requested_by: eventForm.contact_name,
+    };
+    const { error } = await supabase.from("event_requests").insert(payload);
+    if (error) {
+      setSubmitError(error.message || "We couldn't submit that request.");
+      setSubmitting(false);
+      return;
+    }
+    setSubmitMessage("Your event request has been submitted. The Administrator will follow up within one week.");
+    setEventForm(createEventRequestBlank());
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="fadeIn" style={{minHeight:"100vh",padding:"48px 20px",background:C.bg}}>
+      <div style={{maxWidth:860,margin:"0 auto"}}>
+        <div className="card" style={{padding:28}}>
+          <div style={{marginBottom:22,textAlign:"left"}}>
+            <h1 style={{...displayHeadingStyle,fontSize:42,color:C.text}}>Event Request Form</h1>
+            <p style={{color:C.muted,fontSize:13,marginTop:6}}>
+              Enter your church code to submit an event request. Once submitted, it will automatically appear in the church's Events board for review.
+            </p>
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:22,textAlign:"left"}}>
+            <label style={{fontSize:14,fontWeight:600,color:C.text}}>Church Code <span style={{color:C.danger}}>*</span></label>
+            <input className="input-field" value={churchCode} onChange={(e)=>{
+              const next = e.target.value;
+              setChurchCode(next);
+              if (next.trim().length < AUTH_CODE_LENGTH) {
+                setChurchRecord(null);
+                setLookupError("");
+                setLookupLoading(false);
+                setSubmitError("");
+                setSubmitMessage("");
+              } else {
+                setLookupLoading(true);
+                setLookupError("");
+              }
+            }} maxLength={AUTH_CODE_LENGTH} placeholder="Enter your church code" />
+            {lookupLoading && <div style={{fontSize:12,color:C.muted}}>Looking up church...</div>}
+            {churchRecord && <div style={{fontSize:12,color:C.success}}>Submitting for {churchRecord.name}</div>}
+            {lookupError && <div style={{fontSize:12,color:C.danger}}>{lookupError}</div>}
+          </div>
+
+          {churchRecord && (
+            <>
+              <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
+              {submitError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{submitError}</div>}
+              {submitMessage && <div style={{marginTop:14,fontSize:12,color:C.success,textAlign:"left"}}>{submitMessage}</div>}
+              <div style={{display:"flex",justifyContent:"flex-end",marginTop:22}}>
+                <button className="btn-gold" onClick={submitEventRequest} disabled={submitting} style={{opacity:submitting ? 0.8 : 1}}>
+                  {submitting ? "Submitting..." : "Submit Request"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, people, setActive, profile, previewUsers }) {
+function Dashboard({ tasks, people, setActive, profile, previewUsers, notifications, markNotificationRead }) {
   const greeting = getTimeOfDayGreeting();
   const dailyVerse = getDailyVerse();
-  const today = new Date();
   const teamSummary = previewUsers.map((user) => {
     const assigned = tasks.filter((task) => samePerson(task.assignee, user.full_name));
     const currentTask =
@@ -502,35 +1421,6 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers }) {
     .filter((task) => ["Admin", "Operations", "Finances"].includes(task.ministry))
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
     .slice(0, 4);
-  const notifications = [
-    ...tasks
-      .filter((task) => samePerson(task.assignee, profile?.full_name) && task.status !== "done" && task.due_date && new Date(task.due_date) < today)
-      .map((task) => ({
-        id: `overdue-${task.id}`,
-        tone: C.danger,
-        title: "Overdue task",
-        detail: `${task.title} was due ${fmtDate(task.due_date)}.`,
-      })),
-    ...tasks
-      .filter((task) => samePerson(task.assignee, profile?.full_name) && task.status === "todo")
-      .slice(0, 3)
-      .map((task) => ({
-        id: `todo-${task.id}`,
-        tone: C.blue,
-        title: "Ready to start",
-        detail: `${task.title} is waiting in ${task.ministry}.`,
-      })),
-    ...people
-      .filter((person) => person.status === "follow-up" || person.prayer_request)
-      .slice(0, 2)
-      .map((person) => ({
-        id: `person-${person.id}`,
-        tone: C.gold,
-        title: "People care follow-up",
-        detail: `${person.full_name} needs attention${person.prayer_request ? `: ${person.prayer_request}` : "."}`,
-      })),
-  ].slice(0, 5);
-
   return (
     <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1200}}>
       <div style={{marginBottom:28}}>
@@ -609,12 +1499,15 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers }) {
         </div>
         {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No new notifications right now.</p>}
         {notifications.map((item) => (
-          <div key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
+          <div key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`,alignItems:"flex-start"}}>
             <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:5,flexShrink:0}} />
-            <div>
+            <div style={{textAlign:"left"}}>
               <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
               <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
             </div>
+            <button className="btn-outline" onClick={()=>{markNotificationRead(item.id); setActive(item.target || "tasks");}} style={{padding:"5px 10px",fontSize:12,marginLeft:"auto"}}>
+              Open
+            </button>
           </div>
         ))}
       </div>
@@ -771,16 +1664,6 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
     setShowModal(false);
   };
 
-  const cycleStatus = async (task) => {
-    const next = {
-      todo: "in-progress",
-      "in-progress": task.review_required ? "in-review" : "done",
-      "in-review": "done",
-      done: "todo",
-    }[task.status];
-    await setTaskStatus(task, next);
-  };
-
   const setTaskStatus = async (task, nextStatus) => {
     if (nextStatus === "done" && task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))) {
       return;
@@ -879,31 +1762,41 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
               {groupedTasks[statusKey].map((task) => (
                 <div key={task.id} style={{padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"flex",flexDirection:"column",minHeight:220}}>
                   <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
-                    <div style={{textAlign:"left"}}>
-                      <div style={{fontSize:14,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none"}}>{task.title}</div>
-                      <div style={{fontSize:11,color:C.muted,marginTop:4}}>Assigned to {task.assignee}</div>
-                      <div style={{fontSize:11,color:C.muted,marginTop:3}}>Due {fmtDate(task.due_date)}</div>
-                      {task.notes && <div style={{fontSize:11,color:C.muted,marginTop:6,lineHeight:1.5}}>{task.notes}</div>}
+                    <div style={{textAlign:"left",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:4}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{fontSize:14,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none"}}>{task.title}</div>
+                        {canEditTask(profile, task) && (
+                          <button onClick={()=>openEdit(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:0,display:"inline-flex",alignItems:"center"}}>
+                            <Icons.pen />
+                          </button>
+                        )}
+                      </div>
+                      <div style={{fontSize:11,color:C.muted}}>Assigned to {task.assignee}</div>
+                      {task.notes && <div style={{fontSize:11,color:C.muted,marginTop:2,lineHeight:1.5}}>{task.notes}</div>}
                     </div>
-                    {canEditTask(profile, task) && (
-                      <button onClick={()=>openEdit(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:0,display:"inline-flex",alignItems:"center"}}>
-                        <Icons.pen />
-                      </button>
-                    )}
+                    <div style={{display:"flex",flexDirection:"column",justifyContent:"flex-start",alignItems:"flex-end",fontSize:12,color:C.muted,gap:6}}>
+                      {canEditTask(profile, task) ? (
+                        <select className="input-field" value={task.status} onChange={(e)=>setTaskStatus(task, e.target.value)} style={{width:132,background:C.card,padding:"6px 10px",fontSize:12}}>
+                          <option value="todo">Not Started</option>
+                          <option value="in-progress">In Progress</option>
+                          <option value="in-review">In Review</option>
+                          <option value="done" disabled={task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))}>Done</option>
+                        </select>
+                      ) : (
+                        <span>{STATUS_STYLES[task.status]?.label || "Not Started"}</span>
+                      )}
+                      <div style={{fontSize:11,color:C.muted}}>Due {fmtDate(task.due_date)}</div>
+                    </div>
                   </div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,marginTop:"auto",paddingTop:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,marginTop:"auto",paddingTop:16}}>
                     {canEditTask(profile, task) ? (
-                      <div style={{display:"flex",justifyContent:"flex-start",gap:16,fontSize:12}}>
-                        <button onClick={()=>cycleStatus(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.gold,fontSize:12,padding:0}}>
-                          Move to next
-                        </button>
+                      <div style={{display:"flex",justifyContent:"flex-start",alignItems:"flex-end",fontSize:12,alignSelf:"flex-end"}}>
                         <button onClick={()=>del(task.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:12,padding:0}}>
                           Delete
                         </button>
                       </div>
                     ) : <div />}
                     <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                      <span className={`badge ${getTag(task.ministry)}`}>{task.ministry}</span>
                       {listIncludesPerson(task.reviewers, profile?.full_name) && !samePerson(task.assignee, profile?.full_name) && (
                         <span className="badge" style={{background:"rgba(91,143,232,.12)",color:C.blue,border:`1px solid rgba(91,143,232,.3)`}}>
                           Reviewer
@@ -914,19 +1807,8 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
                           Review {task.review_approvals.length}/{task.reviewers.length}
                         </span>
                       )}
+                      <span className={`badge ${getTag(task.ministry)}`}>{task.ministry}</span>
                     </div>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginTop:12,fontSize:12,color:C.muted}}>
-                    {canEditTask(profile, task) ? (
-                      <select className="input-field" value={task.status} onChange={(e)=>setTaskStatus(task, e.target.value)} style={{width:132,background:C.card,padding:"6px 10px",fontSize:12}}>
-                        <option value="todo">Not Started</option>
-                        <option value="in-progress">In Progress</option>
-                        <option value="in-review">In Review</option>
-                        <option value="done" disabled={task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))}>Done</option>
-                      </select>
-                    ) : (
-                      <span>{STATUS_STYLES[task.status]?.label || "Not Started"}</span>
-                    )}
                   </div>
                   {canReviewTask(profile, task) && !listIncludesPerson(task.review_approvals, profile?.full_name) && (
                     <div style={{marginTop:10}}>
@@ -1323,6 +2205,7 @@ function CalendarView({ tasks }) {
 
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
+  const isPublicEventRequestRoute = typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "") === "/event-request";
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [church, setChurch] = useState(null);
@@ -1334,6 +2217,26 @@ export default function App() {
   const [active, setActive] = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [readNotificationIds, setReadNotificationIds] = useState([]);
+  const [browserPermission, setBrowserPermission] = useState(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+
+  const notifications = buildNotifications(tasks, profile);
+  const unreadNotifications = notifications.filter((item) => !readNotificationIds.includes(item.id));
+
+  const markNotificationRead = (id) => {
+    if (!id) return;
+    setReadNotificationIds((current) => current.includes(id) ? current : [...current, id]);
+  };
+
+  const markAllNotificationsRead = () => {
+    setReadNotificationIds((current) => [...new Set([...current, ...notifications.map((item) => item.id)])]);
+  };
+
+  const enableBrowserNotifications = async () => {
+    if (typeof Notification === "undefined") return;
+    const permission = await Notification.requestPermission();
+    setBrowserPermission(permission);
+  };
 
   const loadData = async (uid) => {
     setLoading(true);
@@ -1366,6 +2269,12 @@ export default function App() {
     }
 
     setProfile(prof ? normalizeAccessUser(prof) : null);
+    if (prof?.id && typeof window !== "undefined") {
+      const raw = window.localStorage.getItem(getNotificationStorageKey(prof.id));
+      setReadNotificationIds(raw ? JSON.parse(raw) : []);
+    } else {
+      setReadNotificationIds([]);
+    }
     if (prof?.church_id) {
       const [ch, t, p, tr, m, staff] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
@@ -1391,6 +2300,20 @@ export default function App() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    window.localStorage.setItem(getNotificationStorageKey(profile.id), JSON.stringify(readNotificationIds));
+  }, [profile?.id, readNotificationIds]);
+
+  useEffect(() => {
+    if (typeof Notification === "undefined" || browserPermission !== "granted") return;
+    unreadNotifications.slice(0, 3).forEach((item) => {
+      if (readNotificationIds.includes(`shown:${item.id}`)) return;
+      new Notification(item.title, { body: item.detail });
+      setReadNotificationIds((current) => current.includes(`shown:${item.id}`) ? current : [...current, `shown:${item.id}`]);
+    });
+  }, [browserPermission, unreadNotifications, readNotificationIds]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1428,6 +2351,15 @@ export default function App() {
     </>
   );
 
+  if (isPublicEventRequestRoute) {
+    return (
+      <>
+        <GS/>
+        <PublicEventRequestPage/>
+      </>
+    );
+  }
+
   if (!session) {
     return (
       <>
@@ -1438,7 +2370,9 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers}/>,
+    dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
+    workspaces: <Workspaces profile={profile} church={church}/>,
+    notifications: <NotificationsPage notifications={notifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} profile={profile} previewUsers={previewUsers}/>,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} churchId={church?.id} profile={profile}/>,
@@ -1450,7 +2384,7 @@ export default function App() {
     <>
       <GS/>
       <div style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar active={active} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed}/>
+        <Sidebar active={active} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length}/>
         <main style={{flex:1,overflowY:"auto",background:C.bg}}>{pages[active]}</main>
       </div>
     </>

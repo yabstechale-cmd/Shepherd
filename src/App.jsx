@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 
@@ -2409,9 +2409,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [browserPermission, setBrowserPermission] = useState(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+  const shownNotificationIdsRef = useRef(new Set());
 
-  const notifications = buildNotifications(tasks, eventRequests, profile);
-  const unreadNotifications = notifications.filter((item) => !readNotificationIds.includes(item.id));
+  const notifications = useMemo(
+    () => buildNotifications(tasks, eventRequests, profile),
+    [tasks, eventRequests, profile]
+  );
+  const unreadNotifications = useMemo(
+    () => notifications.filter((item) => !readNotificationIds.includes(item.id)),
+    [notifications, readNotificationIds]
+  );
 
   const markNotificationRead = (id) => {
     if (!id) return;
@@ -2501,12 +2508,17 @@ export default function App() {
 
   useEffect(() => {
     if (typeof Notification === "undefined" || browserPermission !== "granted") return;
-    unreadNotifications.slice(0, 3).forEach((item) => {
-      if (readNotificationIds.includes(`shown:${item.id}`)) return;
+    const unseen = unreadNotifications
+      .slice(0, 3)
+      .filter((item) => !shownNotificationIdsRef.current.has(item.id));
+
+    if (unseen.length === 0) return;
+
+    unseen.forEach((item) => {
       new Notification(item.title, { body: item.detail });
-      setReadNotificationIds((current) => current.includes(`shown:${item.id}`) ? current : [...current, `shown:${item.id}`]);
+      shownNotificationIdsRef.current.add(item.id);
     });
-  }, [browserPermission, unreadNotifications, readNotificationIds]);
+  }, [browserPermission, unreadNotifications]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {

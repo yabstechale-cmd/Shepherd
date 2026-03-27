@@ -232,6 +232,24 @@ const getTimeOfDayGreeting = () => {
   return "Good evening";
 };
 const GOOGLE_CALENDAR_EMBED_URL = import.meta.env.VITE_GOOGLE_CALENDAR_EMBED_URL || "";
+const getGoogleCalendarDirectUrl = (embedUrl) => {
+  if (!embedUrl) return "";
+  try {
+    const parsed = new URL(embedUrl);
+    const src = parsed.searchParams.get("src");
+    const ctz = parsed.searchParams.get("ctz");
+    if (src) {
+      const direct = new URL("https://calendar.google.com/calendar/u/0/r");
+      direct.searchParams.set("cid", src);
+      if (ctz) direct.searchParams.set("ctz", ctz);
+      return direct.toString();
+    }
+    return embedUrl;
+  } catch {
+    return embedUrl;
+  }
+};
+const GOOGLE_CALENDAR_DIRECT_URL = getGoogleCalendarDirectUrl(GOOGLE_CALENDAR_EMBED_URL);
 const DAILY_VERSES = [
   { text: "Commit your works to the Lord, and your thoughts will be established.", reference: "Proverbs 16:3 NKJV" },
   { text: "Let all that you do be done with love.", reference: "1 Corinthians 16:14 NKJV" },
@@ -1715,7 +1733,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
                 Open internal calendar
               </button>
               <a
-                href={GOOGLE_CALENDAR_EMBED_URL}
+                href={GOOGLE_CALENDAR_DIRECT_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="btn-outline"

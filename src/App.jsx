@@ -29,6 +29,7 @@ const CATEGORY_STYLES = {
 const getTag = (name) => CATEGORY_STYLES[name]?.tag || "tag-admin";
 const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.abs(n || 0));
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
+const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) : "—";
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
@@ -109,6 +110,16 @@ const GS = () => (
     .table-row:last-child{border-bottom:none}
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
     .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;max-height:90vh;overflow-y:auto}
+    @media (max-width: 760px){
+      .mobile-stack{grid-template-columns:1fr !important}
+      .events-board-header{flex-direction:column;gap:16px}
+      .events-board-actions{width:100%;justify-content:flex-start !important}
+      .event-request-row{grid-template-columns:1fr !important}
+      .event-request-meta{align-items:flex-start !important;text-align:left !important}
+      .request-details-grid{grid-template-columns:1fr !important}
+      .mobile-pad{padding:24px 18px !important}
+      .modal{padding:22px}
+    }
   `}</style>
 );
 
@@ -136,7 +147,15 @@ const canEditTask = (profile, task) => canManageAllTasks(profile) || samePerson(
 const canReviewTask = (profile, task) => task?.review_required && listIncludesPerson(task?.reviewers, profile?.full_name);
 const canManagePeople = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
 const canManageBudget = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor" || profile?.full_name === "Joel";
+const canApproveEventRequests = (profile) => profile?.role === "admin";
 const isTaskForUser = (task, fullName) => samePerson(task?.assignee, fullName) || listIncludesPerson(task?.reviewers, fullName);
+const isEventApplicant = (profile, request) => {
+  if (!profile || !request) return false;
+  const profileEmail = normalizeName(profile.email);
+  const requestEmail = normalizeName(request.email);
+  if (profileEmail && requestEmail && profileEmail === requestEmail) return true;
+  return samePerson(profile.full_name, request.contact_name);
+};
 const getStoredCategoryOrder = () => {
   if (typeof window === "undefined") return TASK_CATEGORIES;
   const raw = window.localStorage.getItem(CATEGORY_STORAGE_KEY);
@@ -295,6 +314,22 @@ const getEventLocationSummary = (request) => {
   }
   return request.location_scope || "Location not specified";
 };
+const getEventDateSummary = (request) => {
+  if (request.event_format === "single") {
+    return request.single_date ? `${fmtShortDate(request.single_date)}${request.single_start_time && request.single_end_time ? ` • ${request.single_start_time} - ${request.single_end_time}` : ""}` : (request.event_timing || "—");
+  }
+  if (request.event_format === "multi") {
+    return request.multi_start_date && request.multi_end_date
+      ? `${fmtShortDate(request.multi_start_date)} - ${fmtShortDate(request.multi_end_date)}${request.multi_start_time && request.multi_end_time ? ` • ${request.multi_start_time} - ${request.multi_end_time}` : ""}`
+      : (request.event_timing || "—");
+  }
+  if (request.event_format === "recurring") {
+    return request.recurring_start_date
+      ? `${fmtShortDate(request.recurring_start_date)}${request.recurring_start_time && request.recurring_end_time ? ` • ${request.recurring_start_time} - ${request.recurring_end_time}` : ""}${request.recurring_frequency ? ` • ${request.recurring_frequency}` : ""}`
+      : (request.event_timing || "—");
+  }
+  return request.event_timing || "—";
+};
 const getRelativeDueLabel = (date) => {
   if (!date) return "No due date";
   const today = new Date();
@@ -307,7 +342,7 @@ const getRelativeDueLabel = (date) => {
   if (diff < 0) return `Overdue since ${fmtDate(date)}`;
   return `Due ${fmtDate(date)}`;
 };
-const buildNotifications = (tasks, profile) => {
+const buildNotifications = (tasks, eventRequests, profile) => {
   if (!profile?.full_name) return [];
   const fullName = profile.full_name;
   const now = new Date();
@@ -365,6 +400,39 @@ const buildNotifications = (tasks, profile) => {
         createdAt: dueDay?.getTime() || createdAt?.getTime() || now.getTime(),
       });
     }
+  });
+
+  if (profile.can_see_admin_overview || profile.role === "senior_pastor") {
+    (eventRequests || []).forEach((request) => {
+      if (request.status !== "new") return;
+      const createdAt = request.created_at ? new Date(request.created_at) : null;
+      if (!createdAt) return;
+      if (now.getTime() - createdAt.getTime() > 7 * 86400000) return;
+      items.push({
+        id: `event-request-${request.id}`,
+        tone: C.gold,
+        title: "New event request submitted",
+        detail: `${request.contact_name} submitted ${request.event_name}.`,
+        target: "events-board",
+        createdAt: createdAt.getTime(),
+      });
+    });
+  }
+
+  (eventRequests || []).forEach((request) => {
+    if (!isEventApplicant(profile, request)) return;
+    if (!["approved", "declined"].includes(request.status)) return;
+    const decisionAt = request.decided_at ? new Date(request.decided_at) : null;
+    if (!decisionAt) return;
+    if (now.getTime() - decisionAt.getTime() > 14 * 86400000) return;
+    items.push({
+      id: `event-decision-${request.id}-${request.status}`,
+      tone: request.status === "approved" ? C.success : C.danger,
+      title: request.status === "approved" ? "Event request approved" : "Event request denied",
+      detail: `${request.event_name} has been ${request.status === "approved" ? "approved" : "denied"}.`,
+      target: "events-board",
+      createdAt: decisionAt.getTime(),
+    });
   });
 
   return items.sort((a, b) => b.createdAt - a.createdAt);
@@ -726,7 +794,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
       <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
         <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Event Start/End Time <span style={{color:C.danger}}>*</span></label>
         {eventForm.event_format === "single" && (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,width:"100%"}}>
+          <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,width:"100%"}}>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <div style={{fontSize:12,color:C.muted}}>Date <span style={{color:C.danger}}>*</span></div>
               <input className="input-field" type="date" value={eventForm.single_date} onChange={(e)=>setEventForm({...eventForm,single_date:e.target.value})} />
@@ -742,7 +810,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
           </div>
         )}
         {eventForm.event_format === "multi" && (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,width:"100%"}}>
+          <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,width:"100%"}}>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <div style={{fontSize:12,color:C.muted}}>Start Date <span style={{color:C.danger}}>*</span></div>
               <input className="input-field" type="date" value={eventForm.multi_start_date} onChange={(e)=>setEventForm({...eventForm,multi_start_date:e.target.value})} />
@@ -762,7 +830,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
           </div>
         )}
         {eventForm.event_format === "recurring" && (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,width:"100%"}}>
+          <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,width:"100%"}}>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <div style={{fontSize:12,color:C.muted}}>Date <span style={{color:C.danger}}>*</span></div>
               <input className="input-field" type="date" value={eventForm.recurring_start_date} onChange={(e)=>setEventForm({...eventForm,recurring_start_date:e.target.value})} />
@@ -809,7 +877,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
             <div style={{fontSize:11,color:C.muted,lineHeight:1.4}}>
               Select all that apply.
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+            <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
               {EVENT_LOCATION_AREA_OPTIONS.map((area) => (
                 <label key={area} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
                   <input type="checkbox" checked={eventForm.location_areas.includes(area)} onChange={()=>toggleLocationArea(area)} />
@@ -875,7 +943,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
             <div style={{fontSize:12,color:C.text,lineHeight:1.5,width:"100%"}}>
               We currently have the following tables available. Select how many of each you would like to request.
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,width:"100%"}}>
+            <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,width:"100%"}}>
               {[
                 ["tables_6ft_rectangular", "6ft Rectangular", 12],
                 ["tables_8ft_rectangular", "8ft Rectangular", 3],
@@ -980,7 +1048,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
           <li><strong>1 week out:</strong> Staff is reminded, responsibilities are reviewed, and final building access details are confirmed.</li>
         </ol>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
           <label style={{fontSize:14,fontWeight:600,color:C.text,width:"100%",textAlign:"left"}}>Date Submitted <span style={{color:C.danger}}>*</span></label>
           <input className="input-field" type="date" value={eventForm.submitted_on} onChange={(e)=>setEventForm({...eventForm,submitted_on:e.target.value})} />
@@ -994,64 +1062,17 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
   );
 }
 
-function Workspaces({ profile, church }) {
-  const [selectedBoard, setSelectedBoard] = useState("events");
+function EventsBoard({ profile, church, eventRequests, setEventRequests, setTasks }) {
   const [showEventForm, setShowEventForm] = useState(false);
-  const [eventRequests, setEventRequests] = useState(null);
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
   const [formError, setFormError] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
-
-  const boards = [
-    {
-      id: "events",
-      name: "Events",
-      summary: "Requests, approvals, and event planning systems.",
-      systems: ["Event request form", "Approval queue", "Event logistics"],
-    },
-    {
-      id: "communications",
-      name: "Communications",
-      summary: "Creative, announcement, and publishing workflows.",
-      systems: ["Announcement planning", "Content review", "Publishing checklists"],
-    },
-    {
-      id: "operations",
-      name: "Operations",
-      summary: "Weekly systems that keep the church running behind the scenes.",
-      systems: ["Service prep", "Facility workflows", "Volunteer coordination"],
-    },
-  ];
-
-  const selected = boards.find((board) => board.id === selectedBoard) || boards[0];
+  const [selectedRequest, setSelectedRequest] = useState(null);
   const eventColumns = [
     { id: "new", title: "New Event Requests", detail: "Incoming ministry requests waiting for admin review and scheduling." },
     { id: "approved", title: "Approved Events", detail: "Confirmed events ready to be coordinated, staffed, and communicated." },
     { id: "declined", title: "Declined Events", detail: "Requests that were not approved, with room for notes and follow-up." },
   ];
-
-  useEffect(() => {
-    let active = true;
-    if (!church?.id) {
-      return () => {
-        active = false;
-      };
-    }
-
-    supabase
-      .from("event_requests")
-      .select("*")
-      .eq("church_id", church.id)
-      .order("created_at", { ascending: false })
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (!error) setEventRequests(data || []);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [church?.id]);
 
   const saveEventRequest = async () => {
     const eventTiming = buildEventTimingSummary(eventForm);
@@ -1095,14 +1116,65 @@ function Workspaces({ profile, church }) {
   };
 
   const setEventRequestStatus = async (requestId, status) => {
-    const { data, error } = await supabase.from("event_requests").update({ status }).eq("id", requestId).select().single();
+    if (requestId === "demo-event-request") {
+      setSelectedRequest((current) => current ? { ...current, status, decided_at: new Date().toISOString() } : current);
+      return;
+    }
+    const existingRequest = requests.find((request) => request.id === requestId);
+    const decisionPayload = {
+      status,
+      decided_at: new Date().toISOString(),
+      decided_by: profile?.full_name || null,
+    };
+    if (
+      status === "approved"
+      && existingRequest
+      && existingRequest.graphics_reference
+      && !existingRequest.graphics_task_created
+    ) {
+      const taskPayload = {
+        church_id: church?.id,
+        title: `Create graphics for ${existingRequest.event_name}`,
+        ministry: "Events",
+        assignee: "Yabs",
+        due_date: existingRequest.setup_datetime ? String(existingRequest.setup_datetime).split("T")[0] : null,
+        status: "todo",
+        review_required: false,
+        reviewers: [],
+        review_approvals: [],
+        notes: `Design request from event submission.\n\nEvent: ${existingRequest.event_name}\nSubmitted by: ${existingRequest.contact_name}\nEvent date: ${existingRequest.event_timing}\nGraphics direction: ${existingRequest.graphics_reference}`,
+      };
+      const { data: createdTask } = await supabase.from("tasks").insert(taskPayload).select().single();
+      if (createdTask) {
+        decisionPayload.graphics_task_created = true;
+        decisionPayload.graphics_task_id = createdTask.id;
+        setTasks((current) => [normalizeTask(createdTask), ...(current || [])]);
+      }
+    }
+
+    const { data, error } = await supabase.from("event_requests").update(decisionPayload).eq("id", requestId).select().single();
     if (error) return;
     setEventRequests((current) => current.map((request) => request.id === requestId ? data : request));
+    setSelectedRequest((current) => current?.id === requestId ? data : current);
   };
 
   const loadingRequests = !!church?.id && eventRequests === null;
   const requests = eventRequests || [];
   const publicEventRequestLink = typeof window !== "undefined" ? `${window.location.origin}/event-request` : "/event-request";
+  const demoEventRequest = {
+    id: "demo-event-request",
+    status: "new",
+    event_name: "Spring Worship Night",
+    contact_name: "Will Potts",
+    location_scope: "building",
+    location_areas: ["Sanctuary", "Kitchen / Dining Area"],
+    event_timing: "2026-05-15 • 6:30 PM - 8:30 PM",
+    event_format: "single",
+    av_request: true,
+    kitchen_use: true,
+    description: "A church-wide worship gathering with prayer, a short devotional, and light refreshments afterward.",
+    submitted_on: "2026-03-27",
+  };
 
   const copyPublicEventRequestLink = async () => {
     try {
@@ -1115,73 +1187,36 @@ function Workspaces({ profile, church }) {
     }
   };
 
+  const requestDetails = selectedRequest || null;
+  const openRequest = (request) => setSelectedRequest(request);
+
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1200}}>
-      <div style={{marginBottom:28}}>
-        <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Workspaces</h2>
-        <p style={{color:C.muted,fontSize:13,marginTop:4}}>
-          Build boards for the day-to-day, week-to-week, and event-to-event systems that shape church life.
-        </p>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:20,alignItems:"start"}}>
-        <div className="card" style={{padding:18}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Boards</h3>
-            <button className="btn-outline" style={{padding:"6px 10px",fontSize:12}}>New Board</button>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
+      <div className="card" style={{padding:22}}>
+        <div className="events-board-header" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+          <div style={{textAlign:"left"}}>
+            <h3 style={{...displayHeadingStyle,fontSize:44,color:C.text,textAlign:"left"}}>Events Board</h3>
+            <p style={{color:C.muted,fontSize:13,marginTop:8,maxWidth:560,textAlign:"left",lineHeight:1.55}}>
+              Manage event requests, approvals, and the follow-through needed to move each event from submission to calendar-ready planning.
+            </p>
+            {copyMessage && (
+              <div style={{fontSize:12,color:C.success,marginTop:8}}>{copyMessage}</div>
+            )}
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {boards.map((board) => (
-              <button
-                key={board.id}
-                onClick={() => setSelectedBoard(board.id)}
-                style={{
-                  textAlign:"left",
-                  padding:"14px 16px",
-                  borderRadius:12,
-                  border:`1px solid ${selectedBoard === board.id ? C.goldDim : C.border}`,
-                  background:selectedBoard === board.id ? C.goldGlow : C.surface,
-                  color:C.text,
-                  cursor:"pointer"
-                }}
-              >
-                <div style={{fontSize:15,fontWeight:600}}>{board.name}</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.5}}>{board.summary}</div>
-              </button>
-            ))}
+          <div className="events-board-actions" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button className="btn-outline" onClick={copyPublicEventRequestLink}>
+              Copy Public Form Link
+            </button>
+            <button className="btn-gold" onClick={() => {
+              setEventForm(createEventRequestBlank(profile));
+              setFormError("");
+              setShowEventForm(true);
+            }}>
+              New Event Request
+            </button>
           </div>
         </div>
-        <div className="card" style={{padding:22}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
-            <div>
-              <h3 style={{...displayHeadingStyle,fontSize:32,color:C.text}}>{selected.name} Board</h3>
-              <p style={{color:C.muted,fontSize:13,marginTop:4,maxWidth:560}}>
-                {selected.id === "events"
-                  ? "This board will hold the event request system, approvals flow, and the operational steps needed to move events from idea to calendar."
-                  : selected.summary}
-              </p>
-              {selected.id === "events" && copyMessage && (
-                <div style={{fontSize:12,color:C.success,marginTop:8}}>{copyMessage}</div>
-              )}
-            </div>
-            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-              {selected.id === "events" && (
-                <button className="btn-outline" onClick={copyPublicEventRequestLink}>
-                  Copy Public Form Link
-                </button>
-              )}
-              <button className="btn-gold" onClick={() => {
-                if (selected.id === "events") {
-                  setEventForm(createEventRequestBlank(profile));
-                  setFormError("");
-                  setShowEventForm(true);
-                }
-              }}>
-                {selected.id === "events" ? "New Event Request" : "Open Board"}
-              </button>
-            </div>
-          </div>
-          {selected.id === "events" ? (
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16}}>
               {eventColumns.map((column) => (
                 <div key={column.title} style={{padding:18,border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
                   <div style={{...displayHeadingStyle,fontSize:22,color:C.text}}>{column.title}</div>
@@ -1193,24 +1228,24 @@ function Workspaces({ profile, church }) {
                       </div>
                     )}
                     {requests.filter((request) => request.status === column.id).map((request) => (
-                      <div key={request.id} style={{padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
-                        <div style={{fontSize:14,fontWeight:600,color:C.text}}>{request.event_name}</div>
-                        <div style={{fontSize:11,color:C.muted,marginTop:4}}>{request.contact_name} • {getEventLocationSummary(request)}</div>
-                        <div style={{fontSize:11,color:C.muted,marginTop:4,lineHeight:1.5}}>{request.event_timing}</div>
-                        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
-                          <span className="badge tag-events">{request.event_format}</span>
-                          {request.av_request && <span className="badge" style={{background:"rgba(91,143,232,.12)",color:C.blue,border:`1px solid rgba(91,143,232,.3)`}}>A/V</span>}
-                          {request.kitchen_use && <span className="badge" style={{background:"rgba(89,185,138,.12)",color:C.success,border:`1px solid rgba(89,185,138,.3)`}}>Kitchen</span>}
+                      <button className="event-request-row" key={request.id} onClick={() => openRequest(request)} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.card,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
+                        <div style={{...displayHeadingStyle,fontSize:28,color:C.text,lineHeight:1.1}}>{request.event_name}</div>
+                        <div className="event-request-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",textAlign:"right",gap:4}}>
+                          <div style={{fontSize:11,color:C.muted}}>Submitted by {request.contact_name}</div>
+                          <div style={{fontSize:11,color:C.muted}}>Submitted on {fmtDate(request.submitted_on || request.created_at)}</div>
                         </div>
-                        <div style={{fontSize:11,color:C.muted,marginTop:10,lineHeight:1.6}}>{request.description}</div>
-                        <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
-                          {column.id !== "approved" && <button className="btn-outline" onClick={() => setEventRequestStatus(request.id, "approved")} style={{padding:"6px 10px",fontSize:12}}>Approve</button>}
-                          {column.id !== "declined" && <button className="btn-outline" onClick={() => setEventRequestStatus(request.id, "declined")} style={{padding:"6px 10px",fontSize:12}}>Decline</button>}
-                          {column.id !== "new" && <button className="btn-outline" onClick={() => setEventRequestStatus(request.id, "new")} style={{padding:"6px 10px",fontSize:12}}>Move to New</button>}
-                        </div>
-                      </div>
+                      </button>
                     ))}
-                    {!loadingRequests && requests.filter((request) => request.status === column.id).length === 0 && (
+                    {!loadingRequests && requests.length === 0 && column.id === "new" && (
+                      <button className="event-request-row" onClick={() => openRequest(demoEventRequest)} style={{padding:16,border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.card,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
+                        <div style={{...displayHeadingStyle,fontSize:28,color:C.text,lineHeight:1.1}}>{demoEventRequest.event_name}</div>
+                        <div className="event-request-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",textAlign:"right",gap:4}}>
+                          <div style={{fontSize:11,color:C.muted}}>Submitted by {demoEventRequest.contact_name}</div>
+                          <div style={{fontSize:11,color:C.muted}}>Submitted on {fmtDate(demoEventRequest.submitted_on)}</div>
+                        </div>
+                      </button>
+                    )}
+                    {!loadingRequests && requests.filter((request) => request.status === column.id).length === 0 && !(requests.length === 0 && column.id === "new") && (
                       <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>
                         No requests in this column yet.
                       </div>
@@ -1218,26 +1253,6 @@ function Workspaces({ profile, church }) {
                   </div>
                 </div>
               ))}
-            </div>
-          ) : (
-            <div style={{padding:"24px 18px",border:`1px dashed ${C.border}`,borderRadius:14,background:C.surface}}>
-              <div style={{fontSize:14,fontWeight:600,color:C.text}}>Planned systems</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
-                {selected.systems.map((system) => (
-                  <span key={system} className="badge" style={{background:C.card,color:C.text,border:`1px solid ${C.border}`}}>
-                    {system}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          <div style={{marginTop:20,padding:18,border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
-            <div style={{fontSize:12,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:10}}>Workspace Owner</div>
-            <div style={{fontSize:14,color:C.text}}>{profile?.full_name || "Staff"}</div>
-            <div style={{fontSize:12,color:C.muted,marginTop:4}}>
-              Boards can become the home for recurring systems, forms, approvals, and church operations.
-            </div>
-          </div>
         </div>
       </div>
       {showEventForm && (
@@ -1256,6 +1271,150 @@ function Workspaces({ profile, church }) {
           </div>
         </div>
       )}
+      {requestDetails && (
+        <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setSelectedRequest(null)}>
+          <div className="modal fadeIn" style={{maxWidth:760}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text,textAlign:"left"}}>{requestDetails.event_name}</h3>
+              <button onClick={()=>setSelectedRequest(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
+            </div>
+            <div style={{display:"grid",gap:14,textAlign:"left"}}>
+              <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Submitted by</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.contact_name}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Submitted on</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{fmtDate(requestDetails.submitted_on || requestDetails.created_at)}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Event Type</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.event_format}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Event Date</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{getEventDateSummary(requestDetails)}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Setup Date</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.setup_datetime ? new Date(requestDetails.setup_datetime).toLocaleString("en-US") : "—"}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Location</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{getEventLocationSummary(requestDetails)}</div>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Contact Details</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.phone} • {requestDetails.email}</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Event Description & Purpose</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.description || "—"}</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Graphics Direction</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.graphics_reference || "—"}</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Additional Resources</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.7,whiteSpace:"pre-line"}}>
+                  {[
+                    requestDetails.av_request ? `Audio & Visual: ${requestDetails.av_request_details || "Requested"}` : null,
+                    requestDetails.kitchen_use ? "Kitchen: Requested" : null,
+                    requestDetails.drip_coffee_only ? "Coffee Shop: Drip Coffee Only" : null,
+                    requestDetails.espresso_drinks ? "Coffee Shop: Espresso Drinks" : null,
+                    requestDetails.tables_needed ? `Tables Needed: ${requestDetails.tables_needed}` : null,
+                    requestDetails.black_vinyl_tablecloths ? "Black Vinyl Tablecloths: Requested" : null,
+                    requestDetails.white_linen_tablecloths ? "White Linen Tablecloths: Requested" : null,
+                    requestDetails.pipe_and_drape ? `Pipe and Drape: ${requestDetails.pipe_and_drape}` : null,
+                    requestDetails.metal_folding_chairs_requested ? `Metal Folding Chairs: ${requestDetails.metal_folding_chairs || "Requested"}` : null,
+                  ].filter(Boolean).join("\n") || "No additional resources requested."}
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Additional Information</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.additional_information || "—"}</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
+              {canApproveEventRequests(profile) && requestDetails.status !== "approved" && (
+                <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "approved")}>Approve</button>
+              )}
+              {canApproveEventRequests(profile) && requestDetails.status !== "declined" && (
+                <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "declined")}>Decline</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Workspaces({ setActive }) {
+  const boards = [
+    {
+      id: "events-board",
+      name: "Events",
+      summary: "Requests, approvals, and event planning frameworks.",
+      systems: ["Event request form", "Approval queue", "Event logistics"],
+    },
+    {
+      id: "communications-board",
+      name: "Communications",
+      summary: "Creative, announcement, and publishing workflows.",
+      systems: ["Announcement planning", "Content review", "Publishing checklists"],
+    },
+    {
+      id: "operations-board",
+      name: "Operations",
+      summary: "Weekly frameworks that keep the church running behind the scenes.",
+      systems: ["Service prep", "Facility workflows", "Volunteer coordination"],
+    },
+  ];
+
+  return (
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div style={{marginBottom:28}}>
+        <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Workspaces</h2>
+        <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+      Open a board to work inside a dedicated ministry framework.
+        </p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:18}}>
+        {boards.map((board) => (
+          <button
+            key={board.id}
+            onClick={() => setActive(board.id)}
+            className="card"
+            style={{padding:22,textAlign:"left",cursor:"pointer",background:C.card,border:`1px solid ${C.border}`,display:"flex",flexDirection:"column",minHeight:180}}
+          >
+            <div style={{...displayHeadingStyle,fontSize:28,color:C.text}}>{board.name}</div>
+            <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>{board.summary}</div>
+            <div style={{fontSize:12,color:C.gold,marginTop:"auto",alignSelf:"flex-end",textAlign:"right"}}>Open board</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlaceholderBoard({ title, summary, systems }) {
+  return (
+    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="card" style={{padding:24}}>
+        <h2 style={{...displayHeadingStyle,fontSize:38,color:C.text}}>{title}</h2>
+        <p style={{color:C.muted,fontSize:13,marginTop:6,maxWidth:620}}>{summary}</p>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:18}}>
+          {systems.map((system) => (
+            <span key={system} className="badge" style={{background:C.surface,color:C.text,border:`1px solid ${C.border}`}}>
+              {system}
+            </span>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2213,6 +2372,7 @@ export default function App() {
   const [people, setPeople] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [ministries, setMinistries] = useState([]);
+  const [eventRequests, setEventRequests] = useState(null);
   const [previewUsers, setPreviewUsers] = useState([]);
   const [active, setActive] = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
@@ -2220,7 +2380,7 @@ export default function App() {
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [browserPermission, setBrowserPermission] = useState(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
 
-  const notifications = buildNotifications(tasks, profile);
+  const notifications = buildNotifications(tasks, eventRequests, profile);
   const unreadNotifications = notifications.filter((item) => !readNotificationIds.includes(item.id));
 
   const markNotificationRead = (id) => {
@@ -2276,9 +2436,10 @@ export default function App() {
       setReadNotificationIds([]);
     }
     if (prof?.church_id) {
-      const [ch, t, p, tr, m, staff] = await Promise.all([
+      const [ch, t, er, p, tr, m, staff] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+        supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("people").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
         supabase.from("ministries").select("*").eq("church_id", prof.church_id),
@@ -2286,6 +2447,7 @@ export default function App() {
       ]);
       setChurch(ch.data);
       setTasks((t.data || []).map(normalizeTask));
+      setEventRequests(er.data || []);
       setPeople(p.data || []);
       setTransactions(tr.data || []);
       setMinistries(m.data || []);
@@ -2293,6 +2455,7 @@ export default function App() {
     } else {
       setChurch(null);
       setTasks([]);
+      setEventRequests(null);
       setPeople([]);
       setTransactions([]);
       setMinistries([]);
@@ -2371,7 +2534,10 @@ export default function App() {
 
   const pages = {
     dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
-    workspaces: <Workspaces profile={profile} church={church}/>,
+    workspaces: <Workspaces setActive={setActive}/>,
+    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks}/>,
+    "communications-board": <PlaceholderBoard title="Communications Board" summary="This board will hold creative, announcement, and publishing frameworks in their own dedicated workspace." systems={["Announcement planning", "Content review", "Publishing checklists"]} />,
+    "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
     notifications: <NotificationsPage notifications={notifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} profile={profile} previewUsers={previewUsers}/>,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} profile={profile}/>,

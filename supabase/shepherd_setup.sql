@@ -116,6 +116,8 @@ create table if not exists public.event_requests (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
   status text not null default 'new',
+  decided_at timestamptz,
+  decided_by text,
   requested_by text,
   event_name text not null,
   event_format text not null,
@@ -156,6 +158,8 @@ create table if not exists public.event_requests (
   drip_coffee_only boolean not null default false,
   espresso_drinks boolean not null default false,
   additional_information text,
+  graphics_task_created boolean not null default false,
+  graphics_task_id uuid references public.tasks(id) on delete set null,
   submitted_on date not null default current_date,
   signature text not null,
   created_at timestamptz not null default now()
@@ -163,6 +167,8 @@ create table if not exists public.event_requests (
 
 alter table public.event_requests add column if not exists church_id uuid references public.churches(id) on delete cascade;
 alter table public.event_requests add column if not exists status text not null default 'new';
+alter table public.event_requests add column if not exists decided_at timestamptz;
+alter table public.event_requests add column if not exists decided_by text;
 alter table public.event_requests add column if not exists requested_by text;
 alter table public.event_requests add column if not exists event_name text;
 alter table public.event_requests add column if not exists event_format text;
@@ -203,6 +209,8 @@ alter table public.event_requests add column if not exists kitchen_use boolean n
 alter table public.event_requests add column if not exists drip_coffee_only boolean not null default false;
 alter table public.event_requests add column if not exists espresso_drinks boolean not null default false;
 alter table public.event_requests add column if not exists additional_information text;
+alter table public.event_requests add column if not exists graphics_task_created boolean not null default false;
+alter table public.event_requests add column if not exists graphics_task_id uuid references public.tasks(id) on delete set null;
 alter table public.event_requests add column if not exists submitted_on date not null default current_date;
 alter table public.event_requests add column if not exists signature text;
 alter table public.event_requests add column if not exists created_at timestamptz not null default now();
@@ -516,7 +524,7 @@ using (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = event_requests.church_id
-      and (p.can_see_admin_overview or p.role = 'senior_pastor')
+      and p.role = 'admin'
   )
 )
 with check (
@@ -525,7 +533,7 @@ with check (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = event_requests.church_id
-      and (p.can_see_admin_overview or p.role = 'senior_pastor')
+      and p.role = 'admin'
   )
 );
 

@@ -9,10 +9,11 @@ const C = {
   blue: "#5b8fe8", purple: "#9b72e8",
 };
 
-const TASK_CATEGORIES = ["Admin", "Events", "Services", "Worship", "Missions", "Men's", "Women's", "Young Adults", "Youth", "Kids", "Finances", "Operations"];
+const TASK_CATEGORIES = ["Admin", "Content/Art", "Events", "Services", "Worship", "Missions", "Men's", "Women's", "Young Adults", "Youth", "Kids", "Finances", "Operations"];
 const SORTED_TASK_CATEGORIES = [...TASK_CATEGORIES].sort((a, b) => a.localeCompare(b));
 const CATEGORY_STYLES = {
   Admin: { tag: "tag-admin", color: "#5b8fe8" },
+  "Content/Art": { tag: "tag-content-art", color: "#d98952" },
   Events: { tag: "tag-events", color: "#e8a45b" },
   Services: { tag: "tag-services", color: "#c9a84c" },
   Worship: { tag: "tag-worship", color: "#9b72e8" },
@@ -47,7 +48,7 @@ const Icons = {
   budget:   () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
   ministry: () => <Icon d="M3 21V7l9-4 9 4v14M9 21V12h6v9" />,
   calendar: () => <Icon d="M3 4h18v18H3zM16 2v4M8 2v4M3 10h18" />,
-  workspace:() => <Icon d="M4 4h12v12H4zM16 8h4M16 12h4M8 16v4M12 16v4M4 20h8" />,
+  workspace:() => <Icon d="M9 3L7 21M17 3l-2 18M3 9h18M1 17h18" />,
   logout:   () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
   plus:     () => <Icon d="M12 5v14M5 12h14" />,
   eye:      () => <Icon d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
@@ -133,6 +134,7 @@ const GS = () => (
     .tag-worship{background:rgba(155,114,232,.15);color:#b89af0;border:1px solid rgba(155,114,232,.3)}
     .tag-youth{background:rgba(82,200,122,.15);color:#52c87a;border:1px solid rgba(82,200,122,.3)}
     .tag-admin{background:rgba(91,143,232,.15);color:#5b8fe8;border:1px solid rgba(91,143,232,.3)}
+    .tag-content-art{background:rgba(217,137,82,.15);color:#d98952;border:1px solid rgba(217,137,82,.3)}
     .tag-pastoral{background:rgba(201,168,76,.15);color:#c9a84c;border:1px solid rgba(201,168,76,.3)}
     .tag-board{background:rgba(224,82,82,.15);color:#e05252;border:1px solid rgba(224,82,82,.3)}
     .tag-outreach{background:rgba(232,164,91,.15);color:#e8a45b;border:1px solid rgba(232,164,91,.3)}
@@ -175,8 +177,9 @@ const GS = () => (
       .dashboard-team-row-right{text-align:left !important}
       .table-row{grid-template-columns:1fr !important}
       .table-row > *{text-align:left !important}
-      .task-toolbar{overflow-x:auto;flex-wrap:nowrap !important;padding-bottom:4px}
-      .task-toolbar > *{flex-shrink:0}
+      .task-toolbar{flex-direction:column;align-items:stretch !important}
+      .task-filter-group{overflow-x:auto;max-width:100%;padding-bottom:4px}
+      .task-filter-group::-webkit-scrollbar{height:6px}
       .task-form-grid{grid-template-columns:1fr !important}
       .member-form-grid{grid-template-columns:1fr !important}
       .budget-form-grid{grid-template-columns:1fr !important}
@@ -208,6 +211,7 @@ const normalizeTask = (task) => ({
   reviewers: Array.isArray(task?.reviewers) ? task.reviewers : [],
   review_approvals: Array.isArray(task?.review_approvals) ? task.review_approvals : [],
   review_required: task?.review_required ?? false,
+  comments: Array.isArray(task?.comments) ? task.comments : [],
 });
 const normalizeName = (value) => (value || "").trim().toLowerCase();
 const samePerson = (left, right) => normalizeName(left) !== "" && normalizeName(left) === normalizeName(right);
@@ -216,7 +220,7 @@ const listIncludesPerson = (list, fullName) => Array.isArray(list) && list.some(
 const roleLabel = (profile) => profile?.title || profile?.role || "Staff";
 const canManageAllTasks = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
 const canEditTask = (profile, task) => canManageAllTasks(profile) || samePerson(task?.assignee, profile?.full_name);
-const canReviewTask = (profile, task) => task?.review_required && listIncludesPerson(task?.reviewers, profile?.full_name);
+const canReviewTask = (profile, task) => task?.review_required && task?.status === "in-review" && listIncludesPerson(task?.reviewers, profile?.full_name);
 const canManagePeople = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
 const canManageBudget = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor" || profile?.full_name === "Joel";
 const canApproveEventRequests = (profile) => profile?.role === "admin";
@@ -432,6 +436,37 @@ const getRelativeDueLabel = (date) => {
   if (diff < 0) return `Overdue since ${fmtDate(date)}`;
   return `Due ${fmtDate(date)}`;
 };
+const commentMentionsProfile = (comment, profile) => {
+  if (!comment?.body || !profile?.full_name) return false;
+  const body = comment.body.toLowerCase();
+  const fullName = profile.full_name.trim().toLowerCase();
+  const firstName = (profile.full_name.split(" ")[0] || "").trim().toLowerCase();
+  return body.includes(`@${fullName}`) || (firstName && body.includes(`@${firstName}`));
+};
+const renderCommentBody = (body) => {
+  const parts = String(body || "").split(/(@[a-zA-Z]+(?:\s[a-zA-Z]+)?)/g);
+  return parts.map((part, index) => {
+    if (/^@[a-zA-Z]+(?:\s[a-zA-Z]+)?$/.test(part)) {
+      return (
+        <span
+          key={`${part}-${index}`}
+          style={{
+            color: C.gold,
+            fontWeight: 600,
+            background: C.goldGlow,
+            borderRadius: 6,
+            padding: "1px 5px",
+            display: "inline-block",
+            margin: "0 1px",
+          }}
+        >
+          {part.trim()}
+        </span>
+      );
+    }
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+};
 const buildNotifications = (tasks, eventRequests, profile) => {
   if (!profile?.full_name) return [];
   const fullName = profile.full_name;
@@ -480,7 +515,7 @@ const buildNotifications = (tasks, eventRequests, profile) => {
       });
     }
 
-    if (reviewerForMe && task.status !== "done") {
+    if (reviewerForMe && task.status === "in-review") {
       items.push({
         id: `review-${task.id}-${normalizeName(fullName)}`,
         tone: C.purple,
@@ -490,6 +525,22 @@ const buildNotifications = (tasks, eventRequests, profile) => {
         createdAt: dueDay?.getTime() || createdAt?.getTime() || now.getTime(),
       });
     }
+
+    (task.comments || []).forEach((comment) => {
+      if (!commentMentionsProfile(comment, profile)) return;
+      if (samePerson(comment.author, fullName)) return;
+      const commentDate = comment.created_at ? new Date(comment.created_at) : null;
+      if (!commentDate) return;
+      if (now.getTime() - commentDate.getTime() > 14 * 86400000) return;
+      items.push({
+        id: `comment-mention-${task.id}-${comment.id}-${normalizeName(fullName)}`,
+        tone: C.blue,
+        title: "You were mentioned in a task",
+        detail: `${comment.author} mentioned you in ${task.title}.`,
+        target: "tasks",
+        createdAt: commentDate.getTime(),
+      });
+    });
   });
 
   if (profile.can_see_admin_overview || profile.role === "senior_pastor") {
@@ -1813,19 +1864,55 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
 // ── Tasks ──────────────────────────────────────────────────────────────────
 function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
   const isPreview = churchId === "preview";
+  const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
   const canCreateTasks = true;
   const canAssignToAnyone = profile?.full_name === "Shannan";
   const [mFilter, setMFilter] = useState("All");
   const [aFilter, setAFilter] = useState("mine");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:"",review_required:false,reviewers:[],review_approvals:[]};
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentCursor, setCommentCursor] = useState(0);
+  const commentInputRef = useRef(null);
+  const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:"",share_link:"",review_required:false,reviewers:[],review_approvals:[],comments:[]};
   const [form, setForm] = useState(blank);
   const [orderedCategories, setOrderedCategories] = useState(() => getStoredCategoryOrder());
   const teamNames = previewUsers?.map((user) => user.full_name) || [];
   const allowedAssignees = canAssignToAnyone ? teamNames : [profile?.full_name].filter(Boolean);
+  const sampleAssignees = teamNames.length > 0 ? teamNames : [profile?.full_name || "Yabs", "Eric Souza", "Shannan", "Will Potts", "Joel"];
+  const sampleTasks = [
+    { id: "sample-1", title: "Finalize Sunday announcement slides", ministry: "Worship", assignee: sampleAssignees[3] || sampleAssignees[0], due_date: "2026-03-30", status: "todo", notes: "Pull approved graphics and confirm lyric moments.", share_link:"https://drive.google.com/", review_required: true, reviewers: [sampleAssignees[0] || "Yabs"], review_approvals: [], comments:[{id:"c1",author:sampleAssignees[3] || "Will Potts",body:"Need the final export by Thursday for rehearsal.",created_at:"2026-03-27T10:00:00"}] },
+    { id: "sample-2", title: "Order supplies for youth hangout", ministry: "Youth", assignee: sampleAssignees[0], due_date: "2026-04-01", status: "todo", notes: "Snacks, cups, and guest check-in tags.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
+    { id: "sample-3", title: "Meet with missions team leader", ministry: "Missions", assignee: sampleAssignees[4] || sampleAssignees[0], due_date: "2026-03-29", status: "in-progress", notes: "Review spring outreach budget and volunteer needs.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
+    { id: "sample-4", title: "Draft Easter social graphics", ministry: "Content/Art", assignee: sampleAssignees[3] || sampleAssignees[0], due_date: "2026-04-03", status: "in-review", notes: "Waiting on final approval before exporting story sizes.", share_link:"https://www.figma.com/", review_required: true, reviewers: [sampleAssignees[0], sampleAssignees[1] || "Eric Souza", sampleAssignees[2] || "Shannan"], review_approvals: [sampleAssignees[2] || "Shannan"], comments:[{id:"c2",author:sampleAssignees[2] || "Shannan",body:"Looks strong. Once Eric signs off we can schedule the post.",created_at:"2026-03-27T12:15:00"}] },
+    { id: "sample-5", title: "Review coffee volunteer schedule", ministry: "Operations", assignee: sampleAssignees[2] || sampleAssignees[0], due_date: "2026-03-28", status: "in-progress", notes: "Make sure both services are covered.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
+    { id: "sample-6", title: "Reconcile event reimbursement receipts", ministry: "Finances", assignee: sampleAssignees[4] || sampleAssignees[0], due_date: "2026-03-27", status: "done", notes: "Filed and ready for records.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
+    { id: "sample-7", title: "Follow up with men’s breakfast leader", ministry: "Men's", assignee: sampleAssignees[1] || sampleAssignees[0], due_date: "2026-04-02", status: "todo", notes: "Confirm room setup and serving volunteers.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
+    { id: "sample-8", title: "Confirm nursery classroom rotation", ministry: "Kids", assignee: sampleAssignees[2] || sampleAssignees[0], due_date: "2026-03-31", status: "done", notes: "Updated for the next four Sundays.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
+  ].map(normalizeTask);
+  const boardTasks = isLocalhost && tasks.length === 0 ? sampleTasks : tasks;
+  const mentionableNames = [...new Set((teamNames.length > 0 ? teamNames : sampleAssignees).filter(Boolean))];
 
-  const filtered = tasks.filter((t) => {
+  const getMentionContext = (value, cursor) => {
+    const beforeCursor = value.slice(0, cursor);
+    const match = beforeCursor.match(/(?:^|\s)@([a-zA-Z][a-zA-Z\s]*)$/);
+    if (!match) return null;
+    const query = match[1];
+    const tokenStart = cursor - query.length - 1;
+    return {
+      query,
+      start: tokenStart,
+      end: cursor,
+    };
+  };
+
+  const mentionContext = getMentionContext(commentDraft, commentCursor);
+  const mentionSuggestions = mentionContext
+    ? mentionableNames.filter((name) => name.toLowerCase().includes(mentionContext.query.trim().toLowerCase()) && !samePerson(name, profile?.full_name)).slice(0, 5)
+    : [];
+
+  const filtered = boardTasks.filter((t) => {
     const ministryMatch = mFilter === "All" || t.ministry === mFilter;
     const isMine = isTaskForUser(t, profile?.full_name);
     const assigneeMatch =
@@ -1840,7 +1927,15 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
     setForm({ ...blank, ministry: orderedCategories[0] || "Admin", assignee: profile?.full_name || blank.assignee });
     setShowModal(true);
   };
-  const openEdit = (t) => { setEditing(t); setForm(normalizeTask(t)); setShowModal(true); };
+  const openEdit = (t) => { setEditing(t); setForm(normalizeTask(t)); setShowModal(true); setSelectedTask(null); };
+  const openTask = (task) => {
+    setSelectedTask(normalizeTask(task));
+    setCommentDraft("");
+  };
+
+  const syncTaskInView = (updatedTask) => {
+    setSelectedTask((current) => current?.id === updatedTask.id ? normalizeTask(updatedTask) : current);
+  };
 
   const save = async () => {
     if (!form.title) return;
@@ -1860,7 +1955,19 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
       setShowModal(false);
       return;
     }
-    const dbPayload = { ...safeForm, church_id: churchId };
+    const dbPayload = {
+      title: safeForm.title,
+      ministry: safeForm.ministry,
+      assignee: safeForm.assignee,
+      due_date: safeForm.due_date,
+      status: safeForm.status,
+      notes: safeForm.notes,
+      share_link: safeForm.share_link,
+      review_required: safeForm.review_required,
+      reviewers: safeForm.reviewers,
+      review_approvals: safeForm.review_approvals,
+      church_id: churchId,
+    };
     if (editing) {
       let result = await supabase.from("tasks").update(safeForm).eq("id",editing.id).select().single();
       if (result.error && /review_required|reviewers|review_approvals/i.test(result.error.message || "")) {
@@ -1871,6 +1978,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
           due_date: safeForm.due_date,
           status: safeForm.status,
           notes: safeForm.notes,
+          share_link: safeForm.share_link,
         };
         result = await supabase.from("tasks").update(fallbackPayload).eq("id", editing.id).select().single();
       }
@@ -1885,6 +1993,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
           due_date: safeForm.due_date,
           status: safeForm.status,
           notes: safeForm.notes,
+          share_link: safeForm.share_link,
           church_id: churchId,
         };
         result = await supabase.from("tasks").insert(fallbackPayload).select().single();
@@ -1899,11 +2008,14 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
       return;
     }
     if (isPreview) {
-      setTasks(tasks.map((t) => t.id === task.id ? { ...t, status: nextStatus } : t));
+      const updated = normalizeTask({ ...task, status: nextStatus });
+      setTasks(tasks.map((t) => t.id === task.id ? updated : t));
+      syncTaskInView(updated);
       return;
     }
     const { data } = await supabase.from("tasks").update({status:nextStatus}).eq("id",task.id).select().single();
     setTasks(tasks.map(t=>t.id===task.id?normalizeTask(data):t));
+    syncTaskInView(data);
   };
 
   const toggleReviewer = (name) => {
@@ -1918,12 +2030,50 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
 
   const approveReview = async (task) => {
     const approvals = [...new Set([...(task.review_approvals || []), profile?.full_name].filter(Boolean))];
+    const allApproved = task.reviewers.length > 0 && task.reviewers.every((name) => listIncludesPerson(approvals, name));
+    const nextStatus = allApproved ? "done" : task.status;
     if (isPreview) {
-      setTasks(tasks.map((entry) => entry.id === task.id ? normalizeTask({ ...entry, review_approvals: approvals }) : entry));
+      const updated = normalizeTask({ ...task, review_approvals: approvals, status: nextStatus });
+      setTasks(tasks.map((entry) => entry.id === task.id ? updated : entry));
+      syncTaskInView(updated);
       return;
     }
-    const { data } = await supabase.from("tasks").update({ review_approvals: approvals }).eq("id", task.id).select().single();
+    const { data } = await supabase.from("tasks").update({ review_approvals: approvals, status: nextStatus }).eq("id", task.id).select().single();
     setTasks(tasks.map((entry) => entry.id === task.id ? normalizeTask(data) : entry));
+    syncTaskInView(data);
+  };
+
+  const addComment = () => {
+    if (!selectedTask || !commentDraft.trim()) return;
+    const nextComment = {
+      id: `comment-${Date.now()}`,
+      author: profile?.full_name || "Staff",
+      body: commentDraft.trim(),
+      created_at: new Date().toISOString(),
+    };
+    const updated = normalizeTask({
+      ...selectedTask,
+      comments: [...(selectedTask.comments || []), nextComment],
+    });
+    setSelectedTask(updated);
+    setCommentDraft("");
+    setCommentCursor(0);
+    setTasks((current) => current.map((task) => task.id === updated.id ? updated : task));
+  };
+
+  const insertMention = (name) => {
+    const context = getMentionContext(commentDraft, commentCursor);
+    if (!context) return;
+    const nextValue = `${commentDraft.slice(0, context.start)}@${name} ${commentDraft.slice(context.end)}`;
+    setCommentDraft(nextValue);
+    setCommentCursor(context.start + name.length + 2);
+    window.requestAnimationFrame(() => {
+      const textarea = commentInputRef.current;
+      if (!textarea) return;
+      const nextCursor = context.start + name.length + 2;
+      textarea.focus();
+      textarea.setSelectionRange(nextCursor, nextCursor);
+    });
   };
 
   const del = async (id) => {
@@ -1948,16 +2098,16 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={{...displayHeadingStyle,fontSize:52,color:C.text}}>Tasks</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
-            {tasks.filter(t=>t.status!=="done").length} open tasks across the church team
+            {boardTasks.filter(t=>t.status!=="done").length} open tasks across the church team
           </p>
           <p style={{color:C.gold,fontSize:12,marginTop:6}}>
-            {tasks.filter((task) => task.status !== "done" && isTaskForUser(task, profile?.full_name)).length} open items involve you
+            {boardTasks.filter((task) => task.status !== "done" && isTaskForUser(task, profile?.full_name)).length} open items involve you
           </p>
         </div>
         {canCreateTasks && <button className="btn-gold page-actions" onClick={openNew}><Icons.plus/>New Task</button>}
       </div>
       <div className="task-toolbar" style={{display:"flex",gap:10,marginBottom:22,flexWrap:"wrap"}}>
-        <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2}}>
+        <div className="task-filter-group" style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2}}>
           {[
             { id: "mine", label: "My Tasks" },
             { id: "team", label: "Others" },
@@ -1972,7 +2122,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
             </button>
           ))}
         </div>
-        <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2}}>
+        <div className="task-filter-group" style={{display:"flex",flexWrap:"wrap",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2,maxWidth:"100%"}}>
           {["All", ...SORTED_TASK_CATEGORIES].map(m=>(
             <button key={m} onClick={()=>setMFilter(m)} style={{padding:"6px 10px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:mFilter===m?C.card:"transparent",color:mFilter===m?C.text:C.muted}}>{m}</button>
           ))}
@@ -1990,48 +2140,18 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               {groupedTasks[statusKey].map((task) => (
-                <div key={task.id} style={{padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"flex",flexDirection:"column",minHeight:220}}>
-                  <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
-                    <div style={{textAlign:"left",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:4}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <div style={{fontSize:14,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none"}}>{task.title}</div>
-                        {canEditTask(profile, task) && (
-                          <button onClick={()=>openEdit(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:0,display:"inline-flex",alignItems:"center"}}>
-                            <Icons.pen />
-                          </button>
-                        )}
-                      </div>
-                      <div style={{fontSize:11,color:C.muted}}>Assigned to {task.assignee}</div>
-                      {task.notes && <div style={{fontSize:11,color:C.muted,marginTop:2,lineHeight:1.5}}>{task.notes}</div>}
-                    </div>
-                    <div style={{display:"flex",flexDirection:"column",justifyContent:"flex-start",alignItems:"flex-end",fontSize:12,color:C.muted,gap:6}}>
-                      {canEditTask(profile, task) ? (
-                        <select className="input-field" value={task.status} onChange={(e)=>setTaskStatus(task, e.target.value)} style={{width:132,background:C.card,padding:"6px 10px",fontSize:12}}>
-                          <option value="todo">Not Started</option>
-                          <option value="in-progress">In Progress</option>
-                          <option value="in-review">In Review</option>
-                          <option value="done" disabled={task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))}>Done</option>
-                        </select>
-                      ) : (
-                        <span>{STATUS_STYLES[task.status]?.label || "Not Started"}</span>
-                      )}
-                      <div style={{fontSize:11,color:C.muted}}>Due {fmtDate(task.due_date)}</div>
-                    </div>
+                <button
+                  key={task.id}
+                  onClick={() => openTask(task)}
+                  style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}
+                >
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{fontSize:20,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none"}}>{task.title}</div>
+                    <div style={{fontSize:11,color:C.muted}}>Assigned to {task.assignee}</div>
                   </div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,marginTop:"auto",paddingTop:16}}>
-                    {canEditTask(profile, task) ? (
-                      <div style={{display:"flex",justifyContent:"flex-start",alignItems:"flex-end",fontSize:12,alignSelf:"flex-end"}}>
-                        <button onClick={()=>del(task.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:12,padding:0}}>
-                          Delete
-                        </button>
-                      </div>
-                    ) : <div />}
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,textAlign:"right"}}>
+                    <div style={{fontSize:11,color:C.muted}}>Due {fmtDate(task.due_date)}</div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                      {listIncludesPerson(task.reviewers, profile?.full_name) && !samePerson(task.assignee, profile?.full_name) && (
-                        <span className="badge" style={{background:"rgba(91,143,232,.12)",color:C.blue,border:`1px solid rgba(91,143,232,.3)`}}>
-                          Reviewer
-                        </span>
-                      )}
                       {task.review_required && (
                         <span className="badge" style={{background:C.goldGlow,color:C.gold,border:`1px solid ${C.goldDim}`}}>
                           Review {task.review_approvals.length}/{task.reviewers.length}
@@ -2040,14 +2160,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
                       <span className={`badge ${getTag(task.ministry)}`}>{task.ministry}</span>
                     </div>
                   </div>
-                  {canReviewTask(profile, task) && !listIncludesPerson(task.review_approvals, profile?.full_name) && (
-                    <div style={{marginTop:10}}>
-                      <button onClick={()=>approveReview(task)} style={{background:"none",border:"none",cursor:"pointer",color:C.blue,fontSize:12,padding:0}}>
-                        Approve Review
-                      </button>
-                    </div>
-                  )}
-                </div>
+                </button>
               ))}
               {groupedTasks[statusKey].length===0 && <div style={{padding:"28px 12px",textAlign:"center",color:C.muted,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:12}}>No tasks in {STATUS_STYLES[statusKey].label.toLowerCase()}.</div>}
             </div>
@@ -2095,14 +2208,24 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
                   Requires Review Before Completion
                 </label>
                 {form.review_required && (
-                  <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-                    {teamNames.filter((name) => !samePerson(name, canAssignToAnyone ? form.assignee : profile?.full_name)).map((name) => (
-                      <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
-                        <input type="checkbox" checked={listIncludesPerson(form.reviewers || [], name)} onChange={()=>toggleReviewer(name)} />
+                  <>
+                    <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                      {teamNames.map((name) => {
+                        const assignedName = canAssignToAnyone ? form.assignee : profile?.full_name;
+                        const isAssignedPerson = samePerson(name, assignedName);
+                        return (
+                      <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:isAssignedPerson ? C.muted : C.text,opacity:isAssignedPerson ? 0.72 : 1}}>
+                        <input type="checkbox" checked={listIncludesPerson(form.reviewers || [], name)} onChange={()=>toggleReviewer(name)} disabled={isAssignedPerson} />
                         {name}
+                        {isAssignedPerson && <span style={{fontSize:11,color:C.muted}}>(Assigned)</span>}
                       </label>
-                    ))}
-                  </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                      The assigned person cannot review their own task, but every staff member is shown here for visibility.
+                    </div>
+                  </>
                 )}
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -2113,6 +2236,146 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
             <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
               <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
               <button className="btn-gold" onClick={save}>Save Task</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedTask && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelectedTask(null)}>
+          <div className="modal fadeIn" style={{maxWidth:760}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+              <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text,textAlign:"left"}}>{selectedTask.title}</h3>
+              <button onClick={()=>setSelectedTask(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
+            </div>
+            <div style={{display:"grid",gap:16,textAlign:"left"}}>
+              <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Assigned To</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{selectedTask.assignee}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Status</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{STATUS_STYLES[selectedTask.status]?.label || "Not Started"}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Ministry</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{selectedTask.ministry}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Due Date</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{fmtDate(selectedTask.due_date)}</div>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Task Details</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{selectedTask.notes || "No additional notes yet."}</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Shared Link</div>
+                {selectedTask.share_link ? (
+                  <div style={{marginTop:6}}>
+                    <a href={selectedTask.share_link} target="_blank" rel="noreferrer" style={{fontSize:13,color:C.gold,textDecoration:"none",wordBreak:"break-all"}}>
+                      {selectedTask.share_link}
+                    </a>
+                  </div>
+                ) : (
+                  <div style={{fontSize:13,color:C.muted,marginTop:4}}>No digital link attached yet.</div>
+                )}
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Review Workflow</div>
+                {selectedTask.review_required ? (
+                  <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+                    {selectedTask.reviewers.map((reviewer) => {
+                      const approved = listIncludesPerson(selectedTask.review_approvals, reviewer);
+                      const isCurrentReviewer = samePerson(reviewer, profile?.full_name);
+                      return (
+                        <div key={reviewer} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                          <div>
+                            <div style={{fontSize:13,color:C.text}}>{reviewer}</div>
+                            {isCurrentReviewer && !approved && (
+                              <div style={{fontSize:11,color:C.gold,marginTop:3}}>Awaiting your review</div>
+                            )}
+                          </div>
+                          <div style={{fontSize:12,color:approved ? C.success : C.muted}}>{approved ? "Approved" : "Pending review"}</div>
+                        </div>
+                      );
+                    })}
+                    {canReviewTask(profile, selectedTask) && !listIncludesPerson(selectedTask.review_approvals, profile?.full_name) && (
+                      <button className="btn-outline" onClick={()=>approveReview(selectedTask)} style={{justifyContent:"center",marginTop:6}}>
+                        Approve Review
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{fontSize:13,color:C.muted,marginTop:6}}>This task does not require review.</div>
+                )}
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Comments</div>
+                <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:8}}>
+                  {(selectedTask.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).length > 0 ? (selectedTask.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).map((comment) => (
+                    <div key={comment.id} style={{padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                        <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
+                        <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+                          {new Date(comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                        </div>
+                      </div>
+                      <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body)}</div>
+                    </div>
+                  )) : (
+                    <div style={{fontSize:13,color:C.muted}}>No comments yet.</div>
+                  )}
+                  <div style={{position:"relative"}}>
+                    <textarea
+                      ref={commentInputRef}
+                      className="input-field"
+                      rows={3}
+                      placeholder="Leave a comment or revision note..."
+                      value={commentDraft}
+                      onChange={(e)=>{setCommentDraft(e.target.value); setCommentCursor(e.target.selectionStart);}}
+                      onKeyUp={(e)=>setCommentCursor(e.currentTarget.selectionStart)}
+                      onClick={(e)=>setCommentCursor(e.currentTarget.selectionStart)}
+                      style={{resize:"vertical"}}
+                    />
+                    {mentionSuggestions.length > 0 && (
+                      <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 6px)",border:`1px solid ${C.border}`,borderRadius:12,background:C.card,boxShadow:"0 12px 28px rgba(0,0,0,.28)",zIndex:20,overflow:"hidden"}}>
+                        {mentionSuggestions.map((name) => (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => insertMention(name)}
+                            style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"left",background:"transparent",border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",color:C.text,fontSize:13}}
+                          >
+                            @{name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstName` or `@Full Name` to notify someone in this task.</div>
+                  <button className="btn-gold" onClick={addComment} style={{alignSelf:"flex-end"}}>Add Comment</button>
+                </div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              {canEditTask(profile, selectedTask) && (
+                <button className="btn-outline" onClick={()=>openEdit(selectedTask)}>Edit Task</button>
+              )}
+              {canEditTask(profile, selectedTask) ? (
+                <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,background:C.card,padding:"8px 10px",fontSize:12}}>
+                  <option value="todo">Not Started</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="in-review">In Review</option>
+                  <option value="done" disabled={selectedTask.review_required && selectedTask.reviewers.some((name) => !listIncludesPerson(selectedTask.review_approvals, name))}>Done</option>
+                </select>
+              ) : null}
+              {canEditTask(profile, selectedTask) && (
+                <button className="btn-outline" onClick={()=>{del(selectedTask.id); setSelectedTask(null);}} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         </div>

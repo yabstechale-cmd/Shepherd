@@ -57,6 +57,31 @@ const Icons = {
   pen:      () => <Icon d="M12 20h9M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />,
   bell:     () => <Icon d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />,
 };
+const StaffMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
+  <svg width={size} height={size} viewBox="0 0 64 64" fill="none" style={{display:"block",opacity}}>
+    <path
+      d="M42 8c-8 0-14 6-14 13 0 4 2 7 5 9-6 2-10 8-10 15 0 3 1 6 2 8m8-23v26"
+      stroke={color}
+      strokeWidth="5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M42 8c6 0 10 4 10 9 0 6-5 10-10 10-5 0-10-4-10-10"
+      stroke={color}
+      strokeWidth="5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M31 56c0 3 2 5 5 5s5-2 5-5"
+      stroke={color}
+      strokeWidth="5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 
 const GS = () => (
   <style>{`
@@ -609,7 +634,7 @@ function AuthScreen() {
       <div style={{position:"absolute",inset:0,opacity:.03}}>
         {[...Array(20)].map((_,i)=>(
           <div key={i} style={{position:"absolute",left:`${(i%5)*25}%`,top:`${Math.floor(i/5)*25}%`,width:60,height:60}}>
-            <svg viewBox="0 0 60 60" fill={C.gold}><path d="M25 0h10v25h25v10H35v25H25V35H0V25h25z"/></svg>
+            <StaffMark size={60} color={C.gold} opacity={1}/>
           </div>
         ))}
       </div>
@@ -617,7 +642,7 @@ function AuthScreen() {
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:64,height:64,borderRadius:18,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-            <svg width="32" height="32" viewBox="0 0 32 32" fill={C.gold}><path d="M13 0h6v13h13v6H19v13h-6V19H0v-6h13z"/></svg>
+            <StaffMark size={32} color={C.gold}/>
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
@@ -715,11 +740,13 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
   ];
   return (
     <div className="app-sidebar" style={{width:collapsed?64:220,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"relative",overflow:"hidden"}}>
-      <svg style={{position:"absolute",bottom:40,right:collapsed?-10:20,width:80,opacity:.05}} viewBox="0 0 80 80" fill={C.gold}><path d="M30 0h20v30h30v20H50v30H30V50H0V30h30z"/></svg>
+      <div style={{position:"absolute",bottom:40,right:collapsed?-10:20,width:80,opacity:.05}}>
+        <StaffMark size={80} color={C.gold}/>
+      </div>
       <div style={{padding:collapsed?"20px 16px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"space-between"}}>
         {!collapsed && <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:32,height:32,borderRadius:8,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill={C.gold}><path d="M5.5 0h3v5.5H14v3H8.5V14h-3V8.5H0v-3h5.5z"/></svg>
+            <StaffMark size={14} color={C.gold}/>
           </div>
           <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em"}}>Shepherd</span>
         </div>}
@@ -1717,41 +1744,6 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
           </div>
         ))}
       </div>
-      <div className="card" style={{padding:22,marginBottom:20}}>
-        <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <h3 style={{...displayHeadingStyle,fontSize:24,color:C.text}}>Calendar</h3>
-          <button className="btn-outline" onClick={()=>setActive("calendar")} style={{padding:"5px 12px",fontSize:12}}>Open calendar</button>
-        </div>
-        {GOOGLE_CALENDAR_EMBED_URL ? (
-          <div style={{border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,padding:20,textAlign:"left"}}>
-            <div style={{fontSize:14,fontWeight:600,color:C.text,marginBottom:8}}>Connected Google Calendar</div>
-            <div style={{fontSize:12,color:C.muted,lineHeight:1.7,maxWidth:700}}>
-              Your church calendar is connected and ready. Open the calendar page for the full planning view without forcing the dashboard to reload around the embed.
-            </div>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
-              <button className="btn-outline" onClick={()=>setActive("calendar")} style={{padding:"7px 12px",fontSize:12}}>
-                Open internal calendar
-              </button>
-              <a
-                href={GOOGLE_CALENDAR_DIRECT_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="btn-outline"
-                style={{padding:"7px 12px",fontSize:12,textDecoration:"none"}}
-              >
-                Open Google Calendar
-              </a>
-            </div>
-          </div>
-        ) : (
-          <div style={{border:`1px dashed ${C.border}`,borderRadius:12,padding:20,background:C.surface}}>
-            <div style={{fontSize:13,fontWeight:500,color:C.text,marginBottom:8}}>Google Calendar not connected yet.</div>
-            <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-              Add `VITE_GOOGLE_CALENDAR_EMBED_URL` to your local `.env` and Vercel environment settings with your church Google Calendar embed link to show it here.
-            </div>
-          </div>
-        )}
-      </div>
       <div>
         <div className="card" style={{padding:22}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -2579,7 +2571,9 @@ export default function App() {
       <GS/>
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
-          <svg width="48" height="48" viewBox="0 0 32 32" fill={C.gold} style={{marginBottom:16}}><path d="M13 0h6v13h13v6H19v13h-6V19H0v-6h13z"/></svg>
+          <div style={{marginBottom:16,display:"flex",justifyContent:"center"}}>
+            <StaffMark size={48} color={C.gold}/>
+          </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>
       </div>

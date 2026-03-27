@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
-import crossBrandImage from "./assets/branding/cross.avif";
 
 const C = {
   bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
@@ -59,24 +58,48 @@ const Icons = {
   bell:     () => <Icon d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />,
 };
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
-  <div
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 120 120"
+    fill="none"
     aria-hidden="true"
-    style={{
-      width: size,
-      height: size,
-      display: "block",
-      opacity,
-      backgroundColor: color,
-      WebkitMaskImage: `url(${crossBrandImage})`,
-      maskImage: `url(${crossBrandImage})`,
-      WebkitMaskRepeat: "no-repeat",
-      maskRepeat: "no-repeat",
-      WebkitMaskPosition: "center",
-      maskPosition: "center",
-      WebkitMaskSize: "contain",
-      maskSize: "contain",
-    }}
-  />
+    style={{ display: "block", opacity }}
+  >
+    {[
+      [60, 6, 60, 24],
+      [78, 10, 74, 26],
+      [96, 18, 86, 32],
+      [108, 32, 92, 44],
+      [114, 50, 96, 54],
+      [114, 70, 96, 66],
+      [108, 88, 92, 76],
+      [96, 102, 86, 88],
+      [78, 110, 74, 94],
+      [60, 114, 60, 96],
+      [42, 110, 46, 94],
+      [24, 102, 34, 88],
+      [12, 88, 28, 76],
+      [6, 70, 24, 66],
+      [6, 50, 24, 54],
+      [12, 32, 28, 44],
+      [24, 18, 34, 32],
+      [42, 10, 46, 26],
+    ].map(([x1, y1, x2, y2], index) => (
+      <line
+        key={index}
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        stroke={color}
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+    ))}
+    <rect x="48" y="26" width="24" height="74" rx="3" fill={color} />
+    <rect x="18" y="48" width="84" height="24" rx="3" fill={color} />
+  </svg>
 );
 
 const GS = () => (

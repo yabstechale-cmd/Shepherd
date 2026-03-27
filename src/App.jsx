@@ -839,16 +839,211 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
       </nav>
       <div className="app-sidebar-footer" style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10}}>
-          <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:13,fontWeight:600,color:"#0f1117"}}>
-            {profile?.full_name?.[0]||"U"}
+          <button
+            onClick={()=>setActive("account")}
+            style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left"}}
+          >
+          <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:13,fontWeight:600,color:"#0f1117",overflow:"hidden"}}>
+            {profile?.photo_url ? (
+              <img src={profile.photo_url} alt={profile.full_name || "User"} style={{width:"100%",height:"100%",objectFit:"cover"}} />
+            ) : (
+              profile?.full_name?.[0]||"U"
+            )}
           </div>
           {!collapsed && <>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:500,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile?.full_name||"User"}</div>
               <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{roleLabel(profile)} • {church?.name||""}</div>
             </div>
+          </>}
+          </button>
+          {!collapsed && <>
             <button onClick={onLogout} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.logout/></button>
           </>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountPage({ profile, setProfile }) {
+  const [photoMessage, setPhotoMessage] = useState("");
+  const [emailForm, setEmailForm] = useState({ nextEmail: profile?.email || "", currentPassword: "" });
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", password: "", confirmPassword: "" });
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [resetMessage, setResetMessage] = useState("");
+  const [resetError, setResetError] = useState("");
+
+  const handlePhotoUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const photoUrl = String(reader.result || "");
+      if (typeof window !== "undefined" && profile?.id) {
+        window.localStorage.setItem(`shepherd-profile-photo:${profile.id}`, photoUrl);
+      }
+      setProfile((current) => current ? { ...current, photo_url: photoUrl } : current);
+      setPhotoMessage("Profile photo updated locally.");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const updateEmail = async () => {
+    setEmailError("");
+    setEmailMessage("");
+    if (!emailForm.nextEmail.trim()) {
+      setEmailError("Enter a new email address.");
+      return;
+    }
+    if (!emailForm.currentPassword) {
+      setEmailError("Enter your current password to verify this change.");
+      return;
+    }
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: profile?.email || "",
+      password: emailForm.currentPassword,
+    });
+    if (verifyError) {
+      setEmailError("Your current password was incorrect.");
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ email: emailForm.nextEmail.trim() });
+    if (error) {
+      setEmailError(error.message || "We couldn't update that email.");
+      return;
+    }
+    await supabase.from("profiles").update({ email: emailForm.nextEmail.trim() }).eq("id", profile.id);
+    if (profile?.staff_id) {
+      await supabase.from("church_staff").update({ email: emailForm.nextEmail.trim() }).eq("id", profile.staff_id);
+    }
+    setProfile((current) => current ? { ...current, email: emailForm.nextEmail.trim() } : current);
+    setEmailForm({ nextEmail: emailForm.nextEmail.trim(), currentPassword: "" });
+    setEmailMessage("Email update started. Check the new inbox and complete the verification step before the change is finalized.");
+  };
+
+  const updatePassword = async () => {
+    setPasswordError("");
+    setPasswordMessage("");
+    if (!passwordForm.currentPassword) {
+      setPasswordError("Enter your current password to verify this change.");
+      return;
+    }
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: profile?.email || "",
+      password: passwordForm.currentPassword,
+    });
+    if (verifyError) {
+      setPasswordError("Your current password was incorrect.");
+      return;
+    }
+    if (!passwordForm.password || passwordForm.password.length < 6) {
+      setPasswordError("Use a password with at least 6 characters.");
+      return;
+    }
+    if (passwordForm.password !== passwordForm.confirmPassword) {
+      setPasswordError("Your passwords do not match.");
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ password: passwordForm.password });
+    if (error) {
+      setPasswordError(error.message || "We couldn't update that password.");
+      return;
+    }
+    setPasswordForm({ currentPassword: "", password: "", confirmPassword: "" });
+    setPasswordMessage("Password updated after verification.");
+  };
+
+  const sendPasswordReset = async () => {
+    setResetError("");
+    setResetMessage("");
+    if (!profile?.email) {
+      setResetError("There is no email attached to this account yet.");
+      return;
+    }
+    const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      profile.email,
+      redirectTo ? { redirectTo } : undefined
+    );
+    if (error) {
+      setResetError(error.message || "We couldn't send that reset email.");
+      return;
+    }
+    setResetMessage("Password reset email sent. Use the link in that email to choose a new password.");
+  };
+
+  return (
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:980}}>
+      <div style={{marginBottom:24,textAlign:"left"}}>
+        <h2 style={{...displayHeadingStyle,fontSize:44,color:C.text}}>Account</h2>
+        <p style={{color:C.muted,fontSize:13,marginTop:4}}>Manage your profile photo, email, password, and account recovery.</p>
+      </div>
+      <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:18}}>
+        <div className="card" style={{padding:22,textAlign:"left"}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center"}}>
+            <div style={{width:112,height:112,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",fontSize:34,fontWeight:700,color:"#0f1117"}}>
+              {profile?.photo_url ? <img src={profile.photo_url} alt={profile.full_name || "User"} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : (profile?.full_name?.[0] || "U")}
+            </div>
+            <div style={{marginTop:14,fontSize:18,fontWeight:600,color:C.text}}>{profile?.full_name || "User"}</div>
+            <div style={{marginTop:4,fontSize:12,color:C.muted}}>{roleLabel(profile)}</div>
+            <label className="btn-outline" style={{marginTop:18,cursor:"pointer"}}>
+              Add Profile Picture
+              <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{display:"none"}} />
+            </label>
+            {photoMessage && <div style={{marginTop:10,fontSize:12,color:C.success}}>{photoMessage}</div>}
+          </div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:18}}>
+          <div className="card" style={{padding:22,textAlign:"left"}}>
+            <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>Email</h3>
+            <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Change the email attached to your Shepherd account. We verify this with your current password first, and the new inbox should still confirm the change.</p>
+            <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+              <input className="input-field" type="email" value={emailForm.nextEmail} onChange={(e)=>setEmailForm({...emailForm,nextEmail:e.target.value})} placeholder="New email address" />
+              <input className="input-field" type="password" value={emailForm.currentPassword} onChange={(e)=>setEmailForm({...emailForm,currentPassword:e.target.value})} placeholder="Current password" />
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                If you do not remember your current password, use the recovery helper below first.
+              </div>
+              {emailError && <div style={{fontSize:12,color:C.danger}}>{emailError}</div>}
+              {emailMessage && <div style={{fontSize:12,color:C.success}}>{emailMessage}</div>}
+              <div style={{display:"flex",justifyContent:"flex-end"}}>
+                <button className="btn-gold" onClick={updateEmail}>Change Email</button>
+              </div>
+            </div>
+          </div>
+          <div className="card" style={{padding:22,textAlign:"left"}}>
+            <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>Password</h3>
+            <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Update your password for future logins. We verify the current password before allowing the new one.</p>
+            <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+              <input className="input-field" type="password" value={passwordForm.currentPassword} onChange={(e)=>setPasswordForm({...passwordForm,currentPassword:e.target.value})} placeholder="Current password" />
+              <input className="input-field" type="password" value={passwordForm.password} onChange={(e)=>setPasswordForm({...passwordForm,password:e.target.value})} placeholder="New password" />
+              <input className="input-field" type="password" value={passwordForm.confirmPassword} onChange={(e)=>setPasswordForm({...passwordForm,confirmPassword:e.target.value})} placeholder="Confirm new password" />
+              {passwordError && <div style={{fontSize:12,color:C.danger}}>{passwordError}</div>}
+              {passwordMessage && <div style={{fontSize:12,color:C.success}}>{passwordMessage}</div>}
+              <div style={{display:"flex",justifyContent:"flex-end"}}>
+                <button className="btn-gold" onClick={updatePassword}>Change Password</button>
+              </div>
+            </div>
+          </div>
+          <div className="card" style={{padding:22,textAlign:"left"}}>
+            <h3 style={{...displayHeadingStyle,fontSize:28,color:C.text}}>Password Recovery</h3>
+            <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+              If you cannot remember your current password, send yourself a reset email. Use the link in that email to create a new password, then come back here for any secure account changes you still need to make.
+            </p>
+            <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+              <div style={{fontSize:12,color:C.muted}}>
+                Reset email will be sent to <span style={{color:C.text,fontWeight:600}}>{profile?.email || "the email on this account"}</span>.
+              </div>
+              <div style={{display:"flex",justifyContent:"flex-end"}}>
+                <button className="btn-outline" onClick={sendPasswordReset}>Send Password Reset Email</button>
+              </div>
+              {resetError && <div style={{fontSize:12,color:C.danger}}>{resetError}</div>}
+              {resetMessage && <div style={{fontSize:12,color:C.success}}>{resetMessage}</div>}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2769,7 +2964,12 @@ export default function App() {
       }
     }
 
-    setProfile(prof ? normalizeAccessUser(prof) : null);
+    let normalizedProfile = prof ? normalizeAccessUser(prof) : null;
+    if (typeof window !== "undefined" && normalizedProfile?.id) {
+      const storedPhoto = window.localStorage.getItem(`shepherd-profile-photo:${normalizedProfile.id}`);
+      if (storedPhoto) normalizedProfile = { ...normalizedProfile, photo_url: storedPhoto };
+    }
+    setProfile(normalizedProfile);
     if (prof?.id && typeof window !== "undefined") {
       const raw = window.localStorage.getItem(getNotificationStorageKey(prof.id));
       setReadNotificationIds(raw ? JSON.parse(raw) : []);
@@ -2882,6 +3082,7 @@ export default function App() {
 
   const pages = {
     dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
+    account: <AccountPage profile={profile} setProfile={setProfile} />,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks}/>,
     "communications-board": <PlaceholderBoard title="Communications Board" summary="This board will hold creative, announcement, and publishing frameworks in their own dedicated workspace." systems={["Announcement planning", "Content review", "Publishing checklists"]} />,

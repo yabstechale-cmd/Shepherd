@@ -332,12 +332,6 @@ const sectionTitleStyle = {
   fontSize: 30,
   color: C.text,
 };
-const itemTitleStyle = {
-  ...displayHeadingStyle,
-  fontSize: 22,
-  color: C.text,
-  lineHeight: 1.15,
-};
 const STATUS_STYLES = {
   todo: { label: "Not Started", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
   "in-progress": { label: "In Progress", accent: C.blue, surface: "rgba(91,143,232,0.08)" },
@@ -1438,9 +1432,9 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
   const [copyMessage, setCopyMessage] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
   const eventColumns = [
-    { id: "new", title: "New Event Requests", detail: "Incoming ministry requests waiting for admin review and scheduling." },
-    { id: "approved", title: "Approved Events", detail: "Confirmed events ready to be coordinated, staffed, and communicated." },
-    { id: "declined", title: "Declined Events", detail: "Requests that were not approved, with room for notes and follow-up." },
+    { id: "new", title: "New Event Requests", detail: "Incoming ministry requests waiting for admin review and scheduling.", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
+    { id: "approved", title: "Approved Events", detail: "Confirmed events ready to be coordinated, staffed, and communicated.", accent: C.success, surface: "rgba(82,200,122,0.08)" },
+    { id: "declined", title: "Declined Events", detail: "Requests that were not approved, with room for notes and follow-up.", accent: C.danger, surface: "rgba(224,82,82,0.08)" },
   ];
 
   const saveEventRequest = async () => {
@@ -1587,9 +1581,26 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16}}>
               {eventColumns.map((column) => (
-                <div key={column.title} style={{padding:18,border:`1px solid ${C.border}`,borderRadius:14,background:C.surface}}>
-                  <div style={sectionTitleStyle}>{column.title}</div>
-                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginTop:8}}>{column.detail}</div>
+                <div
+                  key={column.title}
+                  className="card"
+                  style={{
+                    padding:16,
+                    minHeight:420,
+                    borderTop:`3px solid ${column.accent}`,
+                    background:`linear-gradient(180deg, ${column.surface} 0%, ${C.card} 24%)`,
+                  }}
+                >
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
+                    <div style={{textAlign:"left"}}>
+                      <div style={{fontSize:15,fontWeight:600,color:column.accent}}>{column.title}</div>
+                      <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                        {requests.filter((request) => request.status === column.id).length} requests
+                      </div>
+                    </div>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:column.accent,flexShrink:0}} />
+                  </div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginTop:0,textAlign:"left"}}>{column.detail}</div>
                   <div style={{marginTop:18,display:"flex",flexDirection:"column",gap:12}}>
                     {loadingRequests && (
                       <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>
@@ -1597,8 +1608,8 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                       </div>
                     )}
                     {requests.filter((request) => request.status === column.id).map((request) => (
-                      <button className="event-request-row" key={request.id} onClick={() => openRequest(request)} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.card,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
-                        <div style={itemTitleStyle}>{request.event_name}</div>
+                      <button className="event-request-row" key={request.id} onClick={() => openRequest(request)} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
+                        <div style={{fontSize:20,fontWeight:600,color:C.text,lineHeight:1.15}}>{request.event_name}</div>
                         <div className="event-request-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",textAlign:"right",gap:4}}>
                           <div style={{fontSize:11,color:C.muted}}>Submitted by {request.contact_name}</div>
                           <div style={{fontSize:11,color:C.muted}}>Submitted on {fmtDate(request.submitted_on || request.created_at)}</div>
@@ -1606,8 +1617,8 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                       </button>
                     ))}
                     {!loadingRequests && requests.length === 0 && column.id === "new" && (
-                      <button className="event-request-row" onClick={() => openRequest(demoEventRequest)} style={{padding:16,border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.card,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
-                        <div style={itemTitleStyle}>{demoEventRequest.event_name}</div>
+                      <button className="event-request-row" onClick={() => openRequest(demoEventRequest)} style={{padding:16,border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.surface,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
+                        <div style={{fontSize:20,fontWeight:600,color:C.text,lineHeight:1.15}}>{demoEventRequest.event_name}</div>
                         <div className="event-request-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",textAlign:"right",gap:4}}>
                           <div style={{fontSize:11,color:C.muted}}>Submitted by {demoEventRequest.contact_name}</div>
                           <div style={{fontSize:11,color:C.muted}}>Submitted on {fmtDate(demoEventRequest.submitted_on)}</div>
@@ -2205,6 +2216,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [taskFormError, setTaskFormError] = useState("");
   const [commentDraft, setCommentDraft] = useState("");
   const [commentCursor, setCommentCursor] = useState(0);
   const commentInputRef = useRef(null);
@@ -2257,10 +2269,11 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
 
   const openNew = () => {
     setEditing(null);
+    setTaskFormError("");
     setForm({ ...blank, ministry: orderedCategories[0] || "Admin", assignee: profile?.full_name || blank.assignee });
     setShowModal(true);
   };
-  const openEdit = (t) => { setEditing(t); setForm(normalizeTask(t)); setShowModal(true); setSelectedTask(null); };
+  const openEdit = (t) => { setEditing(t); setTaskFormError(""); setForm(normalizeTask(t)); setShowModal(true); setSelectedTask(null); };
   const openTask = (task) => {
     setSelectedTask(normalizeTask(task));
     setCommentDraft("");
@@ -2271,7 +2284,11 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
   };
 
   const save = async () => {
-    if (!form.title) return;
+    setTaskFormError("");
+    if (!form.title) {
+      setTaskFormError("Please enter a task title.");
+      return;
+    }
     rememberCategory(form.ministry);
     setOrderedCategories(getStoredCategoryOrder());
     const safeAssignee = canAssignToAnyone ? form.assignee : profile?.full_name;
@@ -2295,15 +2312,14 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
       due_date: safeForm.due_date,
       status: safeForm.status,
       notes: safeForm.notes,
-      share_link: safeForm.share_link,
       review_required: safeForm.review_required,
       reviewers: safeForm.reviewers,
       review_approvals: safeForm.review_approvals,
       church_id: churchId,
     };
     if (editing) {
-      let result = await supabase.from("tasks").update(safeForm).eq("id",editing.id).select().single();
-      if (result.error && /review_required|reviewers|review_approvals/i.test(result.error.message || "")) {
+      let result = await supabase.from("tasks").update(dbPayload).eq("id",editing.id).select().single();
+      if (result.error && /review_required|reviewers|review_approvals|share_link/i.test(result.error.message || "")) {
         const fallbackPayload = {
           title: safeForm.title,
           ministry: safeForm.ministry,
@@ -2311,14 +2327,17 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
           due_date: safeForm.due_date,
           status: safeForm.status,
           notes: safeForm.notes,
-          share_link: safeForm.share_link,
         };
         result = await supabase.from("tasks").update(fallbackPayload).eq("id", editing.id).select().single();
+      }
+      if (result.error) {
+        setTaskFormError(result.error.message || "We couldn't save that task.");
+        return;
       }
       if (result.data) setTasks(tasks.map(t=>t.id===editing.id?normalizeTask(result.data):t));
     } else {
       let result = await supabase.from("tasks").insert(dbPayload).select().single();
-      if (result.error && /review_required|reviewers|review_approvals/i.test(result.error.message || "")) {
+      if (result.error && /review_required|reviewers|review_approvals|share_link/i.test(result.error.message || "")) {
         const fallbackPayload = {
           title: safeForm.title,
           ministry: safeForm.ministry,
@@ -2326,10 +2345,13 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
           due_date: safeForm.due_date,
           status: safeForm.status,
           notes: safeForm.notes,
-          share_link: safeForm.share_link,
           church_id: churchId,
         };
         result = await supabase.from("tasks").insert(fallbackPayload).select().single();
+      }
+      if (result.error) {
+        setTaskFormError(result.error.message || "We couldn't save that task.");
+        return;
       }
       if (result.data) setTasks([...tasks,normalizeTask(result.data)]);
     }
@@ -2561,11 +2583,12 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers }) {
                   </>
                 )}
               </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Notes</label>
                 <textarea className="input-field" placeholder="Notes (optional)" rows={3} value={form.notes||""} onChange={e=>setForm({...form,notes:e.target.value})} style={{resize:"vertical"}}/>
               </div>
             </div>
+            {taskFormError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{taskFormError}</div>}
             <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
               <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
               <button className="btn-gold" onClick={save}>Save Task</button>

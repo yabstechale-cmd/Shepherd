@@ -47,7 +47,7 @@ const Icons = {
   budget:   () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
   ministry: () => <Icon d="M3 21V7l9-4 9 4v14M9 21V12h6v9" />,
   calendar: () => <Icon d="M3 4h18v18H3zM16 2v4M8 2v4M3 10h18" />,
-  workspace:() => <Icon d="M3 7a2 2 0 012-2h5l2 2h7a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />,
+  workspace:() => <Icon d="M4 4h12v12H4zM16 8h4M16 12h4M8 16v4M12 16v4M4 20h8" />,
   logout:   () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
   plus:     () => <Icon d="M12 5v14M5 12h14" />,
   eye:      () => <Icon d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 100 6 3 3 0 000-6z" />,

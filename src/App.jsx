@@ -227,17 +227,37 @@ const isChurchAccountAdmin = (profile, church) =>
     || (church?.account_admin_email && samePerson(church.account_admin_email, profile.email))
     || profile?.is_account_admin
   );
+const isStaffAccountAdmin = (staffUser, church) =>
+  !!staffUser && (
+    !!staffUser?.is_account_admin
+    || (church?.account_admin_user_id && church.account_admin_user_id === staffUser.auth_user_id)
+    || (church?.account_admin_email && samePerson(church.account_admin_email, staffUser.email))
+  );
+const hasChurchAdminRole = (profile) =>
+  ["church_administrator", "admin", "senior_pastor"].includes(profile?.role)
+  || samePerson(profile?.title, "Church Administrator")
+  || samePerson(profile?.title, "Senior Pastor");
+const hasAdministrativeOversight = (profile, church) =>
+  !!profile && (
+    profile?.canSeeAdminOverview
+    || profile?.can_see_admin_overview
+    || hasChurchAdminRole(profile)
+    || isChurchAccountAdmin(profile, church)
+  );
 const shouldShowChurchTeam = (profile, church) =>
   canManageChurchTeam(profile, church)
+  || canEditChurchTeam(profile, church)
   || (!church?.account_admin_user_id && !church?.account_admin_email);
 const canManageChurchTeam = (profile, church) =>
   isChurchAccountAdmin(profile, church) || profile?.role === "executive_pastor";
-const canManageAllTasks = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
-const canEditTask = (profile, task) => canManageAllTasks(profile) || samePerson(task?.assignee, profile?.full_name);
+const canEditChurchTeam = (profile, church) => hasAdministrativeOversight(profile, church);
+const canDeleteChurchAccount = (profile, church) => hasAdministrativeOversight(profile, church);
+const canManageAllTasks = (profile, church) => hasAdministrativeOversight(profile, church);
+const canEditTask = (profile, church, task) => canManageAllTasks(profile, church) || samePerson(task?.assignee, profile?.full_name);
 const canReviewTask = (profile, task) => task?.review_required && task?.status === "in-review" && listIncludesPerson(task?.reviewers, profile?.full_name);
-const canManagePeople = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
-const canManageBudget = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor" || profileHasMinistry(profile, "Finances");
-const canApproveEventRequests = (profile) => profile?.role === "admin";
+const canManagePeople = (profile, church) => hasAdministrativeOversight(profile, church);
+const canManageBudget = (profile, church) => hasAdministrativeOversight(profile, church) || profileHasMinistry(profile, "Finances");
+const canApproveEventRequests = (profile, church) => hasAdministrativeOversight(profile, church);
 const isTaskForUser = (task, fullName) => samePerson(task?.assignee, fullName) || listIncludesPerson(task?.reviewers, fullName);
 const isContentTask = (task) => task?.ministry === "Content/Art";
 const isEventApplicant = (profile, request) => {
@@ -597,7 +617,7 @@ const buildNotifications = (tasks, eventRequests, profile) => {
     });
   });
 
-  if (profile.can_see_admin_overview || profile.role === "senior_pastor") {
+  if (hasAdministrativeOversight(profile, null)) {
     (eventRequests || []).forEach((request) => {
       if (request.status !== "new") return;
       const createdAt = request.created_at ? new Date(request.created_at) : null;
@@ -1013,7 +1033,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
   );
 }
 
-function AccountPage({ profile, setProfile }) {
+function AccountPage({ profile, setProfile, church }) {
   const [photoMessage, setPhotoMessage] = useState("");
   const [emailForm, setEmailForm] = useState({ nextEmail: profile?.email || "", currentPassword: "" });
   const [emailMessage, setEmailMessage] = useState("");
@@ -1024,6 +1044,10 @@ function AccountPage({ profile, setProfile }) {
   const [resetMessage, setResetMessage] = useState("");
   const [resetError, setResetError] = useState("");
   const [authEmail, setAuthEmail] = useState(profile?.email || "");
+  const [deleteForm, setDeleteForm] = useState({ churchName: "", currentPassword: "" });
+  const [deleteMessage, setDeleteMessage] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deletingChurch, setDeletingChurch] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1137,6 +1161,45 @@ function AccountPage({ profile, setProfile }) {
     setResetMessage("Password reset email sent. Use the link in that email to choose a new password.");
   };
 
+  const deleteChurchAccount = async () => {
+    setDeleteError("");
+    setDeleteMessage("");
+    if (!canDeleteChurchAccount(profile, church)) {
+      setDeleteError("Only the Church Administrator or Senior Pastor can delete this church account.");
+      return;
+    }
+    if (!church?.id) {
+      setDeleteError("We couldn't find this church account.");
+      return;
+    }
+    if (!deleteForm.churchName.trim() || deleteForm.churchName.trim() !== (church?.name || "")) {
+      setDeleteError("Type the church name exactly to confirm deletion.");
+      return;
+    }
+    if (!deleteForm.currentPassword) {
+      setDeleteError("Enter your current password to confirm this deletion.");
+      return;
+    }
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: authEmail || profile?.email || "",
+      password: deleteForm.currentPassword,
+    });
+    if (verifyError) {
+      setDeleteError("Your current password was incorrect.");
+      return;
+    }
+    setDeletingChurch(true);
+    const { error } = await supabase.rpc("delete_church_account", { p_church_id: church.id });
+    setDeletingChurch(false);
+    if (error) {
+      setDeleteError(error.message || "We couldn't delete this church account.");
+      return;
+    }
+    setDeleteMessage("Church account deleted. Signing out...");
+    await supabase.auth.signOut();
+    if (typeof window !== "undefined") window.location.reload();
+  };
+
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:980}}>
       <div style={{marginBottom:24,textAlign:"left"}}>
@@ -1205,6 +1268,36 @@ function AccountPage({ profile, setProfile }) {
               {resetMessage && <div style={{fontSize:12,color:C.success}}>{resetMessage}</div>}
             </div>
           </div>
+          {canDeleteChurchAccount(profile, church) && (
+            <div className="card" style={{padding:22,textAlign:"left",border:`1px solid rgba(224,82,82,.35)`}}>
+              <h3 style={{...sectionTitleStyle,color:C.danger}}>Delete Church Account</h3>
+              <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                This permanently removes <span style={{color:C.text,fontWeight:600}}>{church?.name || "this church"}</span> from Shepherd, including staff access, tasks, boards, and stored church data. If you do not remember your password, use Password Recovery above first.
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+                <input
+                  className="input-field"
+                  value={deleteForm.churchName}
+                  onChange={(e)=>setDeleteForm({...deleteForm,churchName:e.target.value})}
+                  placeholder={`Type "${church?.name || "church name"}" to confirm`}
+                />
+                <input
+                  className="input-field"
+                  type="password"
+                  value={deleteForm.currentPassword}
+                  onChange={(e)=>setDeleteForm({...deleteForm,currentPassword:e.target.value})}
+                  placeholder="Current password"
+                />
+                {deleteError && <div style={{fontSize:12,color:C.danger}}>{deleteError}</div>}
+                {deleteMessage && <div style={{fontSize:12,color:C.success}}>{deleteMessage}</div>}
+                <div style={{display:"flex",justifyContent:"flex-end"}}>
+                  <button className="btn-outline" onClick={deleteChurchAccount} disabled={deletingChurch} style={{borderColor:C.danger,color:C.danger}}>
+                    {deletingChurch ? "Deleting..." : "Delete Church Account"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1288,14 +1381,51 @@ function TrashPage({ trashItems, clearTrash }) {
   );
 }
 
-function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
+function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const blank = { first_name: "", last_name: "", role: "youth_pastor", title: getRoleTemplate("youth_pastor").title };
+  const blank = { first_name: "", last_name: "", role: "youth_pastor", title: getRoleTemplate("youth_pastor").title, oversight: "standard" };
   const [form, setForm] = useState(blank);
+  const [editingMemberId, setEditingMemberId] = useState(null);
+
+  const applyOversight = (payload, oversight) => {
+    if (oversight === "admin") {
+      return {
+        ...payload,
+        can_see_team_overview: true,
+        can_see_admin_overview: true,
+        read_only_oversight: false,
+      };
+    }
+    if (oversight === "read-only") {
+      return {
+        ...payload,
+        can_see_team_overview: true,
+        can_see_admin_overview: false,
+        read_only_oversight: true,
+      };
+    }
+    return {
+      ...payload,
+      can_see_team_overview: true,
+      can_see_admin_overview: false,
+      read_only_oversight: false,
+    };
+  };
+
+  const getOversightValue = (user) => {
+    if (isStaffAccountAdmin(user, church)) return "admin";
+    if (user?.can_see_admin_overview) return "admin";
+    if (user?.read_only_oversight) return "read-only";
+    return "standard";
+  };
 
   const saveStaffMember = async () => {
     setError("");
+    if (!canEditChurchTeam(profile, church)) {
+      setError("Only the Church Administrator or Senior Pastor can manage the church team.");
+      return;
+    }
     if (!church?.id) {
       setError("We couldn't find this church yet.");
       return;
@@ -1307,6 +1437,7 @@ function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
     const roleTemplate = getRoleTemplate(form.role);
     const fullName = `${form.first_name.trim()} ${form.last_name.trim()}`.trim();
     const payload = {
+      id: editingMemberId || undefined,
       church_id: church.id,
       full_name: fullName,
       role: form.role,
@@ -1316,10 +1447,11 @@ function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
       can_see_admin_overview: roleTemplate.canSeeAdminOverview,
       read_only_oversight: false,
     };
+    const finalPayload = applyOversight(payload, form.oversight);
     setSaving(true);
     const { data, error: saveError } = await supabase
       .from("church_staff")
-      .upsert(payload, { onConflict: "church_id,full_name" })
+      .upsert(finalPayload, { onConflict: "church_id,full_name" })
       .select()
       .single();
     setSaving(false);
@@ -1327,11 +1459,56 @@ function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
       setError(saveError.message || "We couldn't save that team member.");
       return;
     }
+    await supabase
+      .from("profiles")
+      .update({
+        full_name: data.full_name,
+        role: data.role,
+        title: data.title,
+        ministries: data.ministries,
+        can_see_team_overview: data.can_see_team_overview,
+        can_see_admin_overview: data.can_see_admin_overview,
+        read_only_oversight: data.read_only_oversight,
+      })
+      .eq("staff_id", data.id);
     setPreviewUsers((current) => {
       const others = (current || []).filter((entry) => entry.id !== data.id);
       return [...others, normalizeAccessUser(data)].sort((a, b) => a.full_name.localeCompare(b.full_name));
     });
+    setEditingMemberId(null);
     setForm(blank);
+  };
+
+  const startEditingMember = (user) => {
+    const [firstName = "", ...rest] = (user.full_name || "").split(" ");
+    setEditingMemberId(user.id);
+    setForm({
+      first_name: firstName,
+      last_name: rest.join(" "),
+      role: user.role || "youth_pastor",
+      title: user.title || getRoleTemplate(user.role || "youth_pastor").title,
+      oversight: getOversightValue(user),
+    });
+  };
+
+  const removeStaffMember = async (user) => {
+    if (!canEditChurchTeam(profile, church)) {
+      setError("Only the Church Administrator or Senior Pastor can remove staff members.");
+      return;
+    }
+    if (!window.confirm(`Remove ${user.full_name} from ${church?.name || "this church"}?`)) return;
+    setError("");
+    await supabase.from("profiles").delete().eq("staff_id", user.id);
+    const { error: deleteError } = await supabase.from("church_staff").delete().eq("id", user.id);
+    if (deleteError) {
+      setError(deleteError.message || "We couldn't remove that staff member.");
+      return;
+    }
+    setPreviewUsers((current) => (current || []).filter((entry) => entry.id !== user.id));
+    if (editingMemberId === user.id) {
+      setEditingMemberId(null);
+      setForm(blank);
+    }
   };
 
   return (
@@ -1346,7 +1523,7 @@ function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
       </div>
       <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"380px 1fr",gap:18}}>
         <div className="card" style={{padding:22,textAlign:"left"}}>
-          <h3 style={sectionTitleStyle}>Add Team Member</h3>
+          <h3 style={sectionTitleStyle}>{editingMemberId ? "Edit Team Member" : "Add Team Member"}</h3>
           <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
             <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <input className="input-field" placeholder="First name" value={form.first_name} onChange={(e)=>setForm({...form,first_name:e.target.value})}/>
@@ -1365,10 +1542,25 @@ function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
+            <select
+              className="input-field"
+              value={form.oversight}
+              onChange={(e)=>setForm({...form,oversight:e.target.value})}
+              style={{background:C.surface}}
+            >
+              <option value="standard">Standard Access</option>
+              <option value="read-only">Read-Only Oversight</option>
+              <option value="admin">Administrative Oversight</option>
+            </select>
             {error && <div style={{fontSize:12,color:C.danger}}>{error}</div>}
-            <div style={{display:"flex",justifyContent:"flex-end"}}>
-              <button className="btn-gold" onClick={saveStaffMember} disabled={saving}>
-                {saving ? "Saving..." : "Add Team Member"}
+            <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+              {editingMemberId && (
+                <button className="btn-outline" onClick={()=>{setEditingMemberId(null); setForm(blank);}}>
+                  Cancel
+                </button>
+              )}
+              <button className="btn-gold" onClick={saveStaffMember} disabled={saving || !canEditChurchTeam(profile, church)}>
+                {saving ? "Saving..." : editingMemberId ? "Save Changes" : "Add Team Member"}
               </button>
             </div>
           </div>
@@ -1382,8 +1574,19 @@ function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
                 <div>
                   <div style={{fontSize:14,fontWeight:600,color:C.text}}>{user.full_name}</div>
                   <div style={{fontSize:12,color:C.muted,marginTop:4}}>{user.title}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:4}}>
+                    {isStaffAccountAdmin(user, church) || user.can_see_admin_overview ? "Administrative Oversight" : user.read_only_oversight ? "Read-Only Oversight" : "Standard Access"}
+                  </div>
                 </div>
-                <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>{(user.ministries || []).join(", ") || "No ministry assigned"}</div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+                  <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>{(user.ministries || []).join(", ") || "No ministry assigned"}</div>
+                  {canEditChurchTeam(profile, church) && (
+                    <div style={{display:"flex",gap:8}}>
+                      <button className="btn-outline" onClick={()=>startEditingMember(user)} style={{padding:"5px 10px",fontSize:12}}>Edit</button>
+                      <button className="btn-outline" onClick={()=>removeStaffMember(user)} style={{padding:"5px 10px",fontSize:12,borderColor:C.danger,color:C.danger}}>Remove</button>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -1999,13 +2202,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
               </div>
             </div>
             <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
-              {canApproveEventRequests(profile) && requestDetails.status !== "approved" && (
+              {canApproveEventRequests(profile, church) && requestDetails.status !== "approved" && (
                 <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "approved")}>Approve</button>
               )}
-              {canApproveEventRequests(profile) && requestDetails.status !== "declined" && (
+              {canApproveEventRequests(profile, church) && requestDetails.status !== "declined" && (
                 <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "declined")}>Decline</button>
               )}
-              {canApproveEventRequests(profile) && (
+              {canApproveEventRequests(profile, church) && (
                 <button className="btn-outline" onClick={() => deleteRequest(requestDetails)} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
                   Delete
                 </button>
@@ -2066,14 +2269,15 @@ function Workspaces({ setActive }) {
   );
 }
 
-function ContentMediaBoard({ tasks, setActive }) {
+function ContentMediaBoard({ tasks, setActive, previewUsers }) {
   const isLocalhost = typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
-  const sampleAssignees = ["Yabs", "Will Potts", "Eric Souza", "Shannan"];
+  const sampleAssignees = previewUsers?.map((user) => user.full_name).filter(Boolean);
+  const demoAssignees = sampleAssignees?.length > 0 ? sampleAssignees : ["Team Member 1", "Team Member 2", "Team Member 3", "Team Member 4"];
   const demoContentTasks = [
-    { id: "content-demo-1", title: "Build Easter announcement slides", assignee: sampleAssignees[0], ministry: "Content/Art", status: "todo", due_date: "2026-03-31", review_required: false },
-    { id: "content-demo-2", title: "Edit Sunday bumper video", assignee: sampleAssignees[0], ministry: "Content/Art", status: "in-progress", due_date: "2026-03-29", review_required: false },
-    { id: "content-demo-3", title: "Review youth camp promo reel", assignee: sampleAssignees[0], ministry: "Content/Art", status: "in-review", due_date: "2026-03-30", review_required: true },
-    { id: "content-demo-4", title: "Publish women's breakfast flyer", assignee: sampleAssignees[1], ministry: "Content/Art", status: "done", due_date: "2026-03-25", review_required: false },
+    { id: "content-demo-1", title: "Build Easter announcement slides", assignee: demoAssignees[0], ministry: "Content/Art", status: "todo", due_date: "2026-03-31", review_required: false },
+    { id: "content-demo-2", title: "Edit Sunday bumper video", assignee: demoAssignees[0], ministry: "Content/Art", status: "in-progress", due_date: "2026-03-29", review_required: false },
+    { id: "content-demo-3", title: "Review youth camp promo reel", assignee: demoAssignees[0], ministry: "Content/Art", status: "in-review", due_date: "2026-03-30", review_required: true },
+    { id: "content-demo-4", title: "Publish women's breakfast flyer", assignee: demoAssignees[1] || demoAssignees[0], ministry: "Content/Art", status: "done", due_date: "2026-03-25", review_required: false },
   ].map(normalizeTask);
 
   const sourceTasks = tasks.length === 0 && isLocalhost ? demoContentTasks : tasks;
@@ -2327,7 +2531,8 @@ function PublicEventRequestPage() {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, people, setActive, profile, previewUsers, notifications, markNotificationRead }) {
+function Dashboard({ tasks, people, setActive, profile, church, previewUsers, notifications, markNotificationRead }) {
+  const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const greeting = getTimeOfDayGreeting();
   const dailyVerse = getDailyVerse();
   const teamSummary = previewUsers.map((user) => {
@@ -2361,7 +2566,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
             ? profile?.readOnlyOversight
               ? "You can see the whole church team's workload this week in read-only mode."
               : `${dailyVerse.text} ${dailyVerse.reference}`
-            : profile?.canSeeAdminOverview
+            : hasAdminOversight
               ? "You can see the full church workload with an administrative operations lens."
               : `Here is your ministry workload and the shared church picture for ${roleLabel(profile)}.`}
         </p>
@@ -2370,7 +2575,7 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
         <div className="card" style={{padding:22,marginBottom:20}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <h3 style={sectionTitleStyle}>
-              {profile?.canSeeAdminOverview ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
+              {hasAdminOversight ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
             </h3>
             <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open task board</button>
           </div>
@@ -2447,11 +2652,11 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
         <div className="card" style={{padding:22}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <h3 style={sectionTitleStyle}>
-              {profile?.canSeeAdminOverview ? "Admin Watchlist" : "Pastoral Follow-ups"}
+              {hasAdminOversight ? "Admin Watchlist" : "Pastoral Follow-ups"}
             </h3>
             <button className="btn-outline" onClick={()=>setActive("members")} style={{padding:"5px 12px",fontSize:12}}>View all</button>
           </div>
-          {profile?.canSeeAdminOverview ? (
+          {hasAdminOversight ? (
             <>
               {recentAdminWork.map((task) => (
                 <div className="dashboard-followup-row" key={task.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
@@ -2491,11 +2696,11 @@ function Dashboard({ tasks, people, setActive, profile, previewUsers, notificati
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
-function Tasks({ tasks, setTasks, churchId, profile, previewUsers, moveItemToTrash }) {
+function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveItemToTrash }) {
   const isPreview = churchId === "preview";
   const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
   const canCreateTasks = true;
-  const canAssignToAnyone = profile?.role === "admin";
+  const canAssignToAnyone = hasAdministrativeOversight(profile, church);
   const [mFilter, setMFilter] = useState("All");
   const [aFilter, setAFilter] = useState("mine");
   const [showModal, setShowModal] = useState(false);
@@ -2820,7 +3025,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers, moveItemToTra
         ))}
       </div>
       {showModal&&(
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
           <div className="modal fadeIn">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h3 style={sectionTitleStyle}>{editing?"Edit Task":"New Task"}</h3>
@@ -3013,10 +3218,10 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers, moveItemToTra
               </div>
             </div>
             <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end",flexWrap:"wrap"}}>
-              {canEditTask(profile, selectedTask) && (
+              {canEditTask(profile, church, selectedTask) && (
                 <button className="btn-outline" onClick={()=>openEdit(selectedTask)}>Edit Task</button>
               )}
-              {canEditTask(profile, selectedTask) ? (
+              {canEditTask(profile, church, selectedTask) ? (
                 <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,background:C.card,padding:"8px 10px",fontSize:12}}>
                   <option value="todo">Not Started</option>
                   <option value="in-progress">In Progress</option>
@@ -3024,7 +3229,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers, moveItemToTra
                   <option value="done" disabled={selectedTask.review_required && selectedTask.reviewers.some((name) => !listIncludesPerson(selectedTask.review_approvals, name))}>Done</option>
                 </select>
               ) : null}
-              {canEditTask(profile, selectedTask) && (
+              {canEditTask(profile, church, selectedTask) && (
                 <button className="btn-outline" onClick={()=>{del(selectedTask.id); setSelectedTask(null);}} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
                   Delete
                 </button>
@@ -3038,9 +3243,9 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers, moveItemToTra
 }
 
 // ── People Care ────────────────────────────────────────────────────────────
-function Members({ people, setPeople, churchId, profile }) {
+function Members({ people, setPeople, churchId, church, profile }) {
   const isPreview = churchId === "preview";
-  const canEditPeople = canManagePeople(profile);
+  const canEditPeople = canManagePeople(profile, church);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -3154,9 +3359,9 @@ function Members({ people, setPeople, churchId, profile }) {
 }
 
 // ── Budget ─────────────────────────────────────────────────────────────────
-function Budget({ transactions, setTransactions, churchId, profile }) {
+function Budget({ transactions, setTransactions, churchId, church, profile }) {
   const isPreview = churchId === "preview";
-  const canEditBudget = canManageBudget(profile);
+  const canEditBudget = canManageBudget(profile, church);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({description:"",amount:"",ministry:"Admin",category:"Operations",date:new Date().toISOString().split("T")[0],type:"expense"});
 
@@ -3452,7 +3657,6 @@ export default function App() {
       const storedPhoto = window.localStorage.getItem(`shepherd-profile-photo:${normalizedProfile.id}`);
       if (storedPhoto) normalizedProfile = { ...normalizedProfile, photo_url: storedPhoto };
     }
-    setProfile(normalizedProfile);
     if (typeof window !== "undefined") {
       const rawTrash = window.localStorage.getItem(getTrashStorageKey(prof?.church_id));
       setTrashItems(rawTrash ? JSON.parse(rawTrash) : []);
@@ -3474,6 +3678,13 @@ export default function App() {
         supabase.from("ministries").select("*").eq("church_id", prof.church_id),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
       ]);
+      const enhancedProfile = normalizedProfile
+        ? {
+            ...normalizedProfile,
+            is_account_admin: isChurchAccountAdmin(normalizedProfile, ch.data),
+          }
+        : normalizedProfile;
+      setProfile(enhancedProfile);
       setChurch(ch.data);
       setTasks((t.data || []).map(normalizeTask));
       setEventRequests(er.data || []);
@@ -3482,6 +3693,7 @@ export default function App() {
       setMinistries(m.data || []);
       setPreviewUsers((staff.data || []).map(normalizeAccessUser));
     } else {
+      setProfile(normalizedProfile);
       setChurch(null);
       setTasks([]);
       setEventRequests(null);
@@ -3574,18 +3786,18 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
-    account: <AccountPage profile={profile} setProfile={setProfile} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
+    dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
+    account: <AccountPage profile={profile} setProfile={setProfile} church={church} />,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
-    "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
+    "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} previewUsers={previewUsers} />,
     "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
     notifications: <NotificationsPage notifications={notifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
-    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash}/>,
+    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash}/>,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} />,
-    members:    <Members people={people} setPeople={setPeople} churchId={church?.id} profile={profile}/>,
-    budget:     <Budget transactions={transactions} setTransactions={setTransactions} churchId={church?.id} profile={profile}/>,
+    members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
+    budget:     <Budget transactions={transactions} setTransactions={setTransactions} churchId={church?.id} church={church} profile={profile}/>,
     ministries: <Ministries ministries={ministries}/>,
     calendar:   <CalendarView tasks={tasks}/>,
   };

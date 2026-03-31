@@ -540,9 +540,59 @@ begin
 end;
 $$;
 
+create or replace function public.delete_church_account(
+  p_church_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  current_profile public.profiles%rowtype;
+  delete_user_ids uuid[];
+begin
+  if auth.uid() is null then
+    raise exception 'You must be signed in to delete a church account.';
+  end if;
+
+  select *
+  into current_profile
+  from public.profiles
+  where id = auth.uid()
+    and church_id = p_church_id;
+
+  if not found then
+    raise exception 'You do not have access to that church account.';
+  end if;
+
+  if current_profile.role not in ('church_administrator', 'admin', 'senior_pastor') then
+    raise exception 'Only the Church Administrator or Senior Pastor can delete this church account.';
+  end if;
+
+  select coalesce(array_agg(id), '{}'::uuid[])
+  into delete_user_ids
+  from auth.users
+  where id in (
+    select p.id
+    from public.profiles p
+    where p.church_id = p_church_id
+  );
+
+  delete from public.churches
+  where id = p_church_id;
+
+  if array_length(delete_user_ids, 1) is not null then
+    delete from auth.users
+    where id = any(delete_user_ids);
+  end if;
+end;
+$$;
+
 grant execute on function public.reserve_staff_registration(uuid, uuid, text) to anon, authenticated;
 grant execute on function public.claim_staff_profile(uuid, uuid) to authenticated;
 grant execute on function public.create_church_with_admin(text, text, text, text, text, text, uuid) to anon, authenticated;
+grant execute on function public.delete_church_account(uuid) to authenticated;
 
 drop policy if exists "church code lookup" on public.churches;
 create policy "church code lookup"
@@ -566,7 +616,7 @@ using (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = church_staff.church_id
-      and p.role = 'admin'
+      and p.role in ('church_administrator', 'admin', 'senior_pastor')
   )
 )
 with check (
@@ -575,7 +625,7 @@ with check (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = church_staff.church_id
-      and p.role = 'admin'
+      and p.role in ('church_administrator', 'admin', 'senior_pastor')
   )
 );
 
@@ -591,6 +641,29 @@ on public.profiles
 for all
 using (id = auth.uid())
 with check (id = auth.uid());
+
+drop policy if exists "profiles church admin write" on public.profiles;
+create policy "profiles church admin write"
+on public.profiles
+for all
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = profiles.church_id
+      and p.role in ('church_administrator', 'admin', 'senior_pastor')
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = profiles.church_id
+      and p.role in ('church_administrator', 'admin', 'senior_pastor')
+  )
+);
 
 drop policy if exists "tasks same church read" on public.tasks;
 create policy "tasks same church read"

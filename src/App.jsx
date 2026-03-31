@@ -1448,10 +1448,34 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
     };
     const finalPayload = applyOversight(payload, form.oversight);
     setSaving(true);
-    const query = editingMemberId
-      ? supabase.from("church_staff").update(finalPayload).eq("id", editingMemberId)
+    const existingMemberId =
+      editingMemberId
+      || (previewUsers || []).find((entry) =>
+        entry?.church_id === church.id && samePerson(entry.full_name, fullName)
+      )?.id
+      || null;
+    const query = existingMemberId
+      ? supabase.from("church_staff").update(finalPayload).eq("id", existingMemberId)
       : supabase.from("church_staff").upsert(finalPayload, { onConflict: "church_id,full_name" });
-    const { data, error: saveError } = await query.select().single();
+    let { data, error: saveError } = await query.select().single();
+    if (saveError && String(saveError.message || "").includes("church_staff_pkey")) {
+      const { data: existingRow } = await supabase
+        .from("church_staff")
+        .select("*")
+        .eq("church_id", church.id)
+        .eq("full_name", fullName)
+        .maybeSingle();
+      if (existingRow?.id) {
+        const retry = await supabase
+          .from("church_staff")
+          .update(finalPayload)
+          .eq("id", existingRow.id)
+          .select()
+          .single();
+        data = retry.data;
+        saveError = retry.error;
+      }
+    }
     setSaving(false);
     if (saveError) {
       setError(saveError.message || "We couldn't save that team member.");

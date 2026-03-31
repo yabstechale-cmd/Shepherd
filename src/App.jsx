@@ -227,6 +227,9 @@ const isChurchAccountAdmin = (profile, church) =>
     || (church?.account_admin_email && samePerson(church.account_admin_email, profile.email))
     || profile?.is_account_admin
   );
+const shouldShowChurchTeam = (profile, church) =>
+  canManageChurchTeam(profile, church)
+  || (!church?.account_admin_user_id && !church?.account_admin_email);
 const canManageChurchTeam = (profile, church) =>
   isChurchAccountAdmin(profile, church) || profile?.role === "executive_pastor";
 const canManageAllTasks = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
@@ -944,12 +947,12 @@ function AuthScreen() {
 function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
-    ...(canManageChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.workspace}] : []),
     {id:"workspaces",label:"Workspaces",I:Icons.workspace},
     {id:"notifications",label:"Notifications",I:Icons.bell},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
     {id:"budget",label:"Budget",I:Icons.budget},
     {id:"calendar",label:"Calendar",I:Icons.calendar},
+    ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.workspace}] : []),
     {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
@@ -1362,7 +1365,6 @@ function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-            <input className="input-field" placeholder="Displayed title" value={form.title} onChange={(e)=>setForm({...form,title:e.target.value})}/>
             {error && <div style={{fontSize:12,color:C.danger}}>{error}</div>}
             <div style={{display:"flex",justifyContent:"flex-end"}}>
               <button className="btn-gold" onClick={saveStaffMember} disabled={saving}>
@@ -3574,7 +3576,7 @@ export default function App() {
   const pages = {
     dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} />,
-    "church-team": canManageChurchTeam(profile, church) ? <ChurchTeamPage church={church} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,

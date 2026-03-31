@@ -218,13 +218,22 @@ const normalizeTask = (task) => ({
 const normalizeName = (value) => (value || "").trim().toLowerCase();
 const samePerson = (left, right) => normalizeName(left) !== "" && normalizeName(left) === normalizeName(right);
 const listIncludesPerson = (list, fullName) => Array.isArray(list) && list.some((entry) => samePerson(entry, fullName));
+const profileHasMinistry = (profile, ministry) => Array.isArray(profile?.ministries) && profile.ministries.some((entry) => samePerson(entry, ministry));
 
 const roleLabel = (profile) => profile?.title || profile?.role || "Staff";
+const isChurchAccountAdmin = (profile, church) =>
+  !!profile?.id && (
+    church?.account_admin_user_id === profile.id
+    || (church?.account_admin_email && samePerson(church.account_admin_email, profile.email))
+    || profile?.is_account_admin
+  );
+const canManageChurchTeam = (profile, church) =>
+  isChurchAccountAdmin(profile, church) || profile?.role === "executive_pastor";
 const canManageAllTasks = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
 const canEditTask = (profile, task) => canManageAllTasks(profile) || samePerson(task?.assignee, profile?.full_name);
 const canReviewTask = (profile, task) => task?.review_required && task?.status === "in-review" && listIncludesPerson(task?.reviewers, profile?.full_name);
 const canManagePeople = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor";
-const canManageBudget = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor" || profile?.full_name === "Joel";
+const canManageBudget = (profile) => profile?.canSeeAdminOverview || profile?.role === "senior_pastor" || profileHasMinistry(profile, "Finances");
 const canApproveEventRequests = (profile) => profile?.role === "admin";
 const isTaskForUser = (task, fullName) => samePerson(task?.assignee, fullName) || listIncludesPerson(task?.reviewers, fullName);
 const isContentTask = (task) => task?.ministry === "Content/Art";
@@ -276,6 +285,21 @@ const fetchChurchAccess = async (code) => {
   if (usersError) throw usersError;
   return { church, users: (users || []).map(normalizeAccessUser) };
 };
+const fetchChurchList = async () => {
+  const { data, error } = await supabase.from("churches").select("*").order("name");
+  if (error) throw error;
+  return data || [];
+};
+const fetchChurchAccessById = async (churchId) => {
+  if (!churchId) return { church: null, users: [] };
+  const { data: church, error: churchError } = await supabase.from("churches").select("*").eq("id", churchId).maybeSingle();
+  if (churchError) throw churchError;
+  if (!church) throw new Error("That church could not be found.");
+  const { data: users, error: usersError } = await supabase.from("church_staff").select("*").eq("church_id", church.id).order("full_name");
+  if (usersError) throw usersError;
+  return { church, users: (users || []).map(normalizeAccessUser) };
+};
+const generateChurchCode = () => `${Math.floor(100000 + Math.random() * 900000)}`;
 const getTimeOfDayGreeting = () => {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
@@ -342,6 +366,19 @@ const STATUS_STYLES = {
 };
 const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
 const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
+const STAFF_ROLE_OPTIONS = [
+  { value: "senior_pastor", label: "Senior Pastor", title: "Senior Pastor", ministries: ["Services", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true },
+  { value: "executive_pastor", label: "Executive Pastor", title: "Executive Pastor", ministries: ["Operations", "Services"], canSeeTeamOverview: true, canSeeAdminOverview: true },
+  { value: "youth_pastor", label: "Youth Pastor", title: "Youth Pastor", ministries: ["Youth"], canSeeTeamOverview: true, canSeeAdminOverview: false },
+  { value: "kids_pastor", label: "Kids Pastor", title: "Kids Pastor", ministries: ["Kids"], canSeeTeamOverview: true, canSeeAdminOverview: false },
+  { value: "young_adults_pastor", label: "Young Adults Pastor", title: "Young Adults Pastor", ministries: ["Young Adults"], canSeeTeamOverview: true, canSeeAdminOverview: false },
+  { value: "worship_pastor", label: "Worship Pastor", title: "Worship Pastor", ministries: ["Worship", "Services"], canSeeTeamOverview: true, canSeeAdminOverview: false },
+  { value: "art_director", label: "Art Director", title: "Art Director", ministries: ["Content/Art"], canSeeTeamOverview: true, canSeeAdminOverview: false },
+  { value: "church_administrator", label: "Church Administrator", title: "Church Administrator", ministries: ["Admin", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true },
+  { value: "finance_director", label: "Finance Director", title: "Finance Director", ministries: ["Finances"], canSeeTeamOverview: true, canSeeAdminOverview: false },
+  { value: "intern", label: "Intern", title: "Intern", ministries: [], canSeeTeamOverview: true, canSeeAdminOverview: false },
+];
+const getRoleTemplate = (roleValue) => STAFF_ROLE_OPTIONS.find((option) => option.value === roleValue) || STAFF_ROLE_OPTIONS[0];
 const createEventRequestBlank = (profile = null) => ({
   event_name: "",
   event_format: "single",
@@ -601,17 +638,43 @@ function AuthScreen() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [churchCode, setChurchCode] = useState("");
+  const [churches, setChurches] = useState([]);
+  const [selectedChurchId, setSelectedChurchId] = useState("");
   const [churchAccess, setChurchAccess] = useState({ church: null, users: [] });
-  const [form, setForm] = useState({ userId: "", email: "", password: "", confirmPassword: "" });
+  const [form, setForm] = useState({ userId: "", email: "", password: "", confirmPassword: "", churchName: "", adminFirstName: "", adminLastName: "", adminRole: "church_administrator" });
   const isLogin = mode === "login";
   const isForgotPassword = mode === "forgot";
+  const isChurchRegistration = mode === "church";
 
   useEffect(() => {
     let active = true;
-    const code = churchCode.trim();
+    fetchChurchList()
+      .then((list) => {
+        if (!active) return;
+        setChurches(list);
+      })
+      .catch(() => {
+        if (!active) return;
+        setChurches([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
-    if (code.length < AUTH_CODE_LENGTH) {
+  useEffect(() => {
+    let active = true;
+
+    if (isChurchRegistration) {
+      setChurchAccess({ church: null, users: [] });
+      setLookupLoading(false);
+      setError("");
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!selectedChurchId) {
       setChurchAccess({ church: null, users: [] });
       setError("");
       return () => {
@@ -622,7 +685,7 @@ function AuthScreen() {
     setLookupLoading(true);
     setError("");
 
-    fetchChurchAccess(code)
+    fetchChurchAccessById(selectedChurchId)
       .then((result) => {
         if (!active) return;
         setChurchAccess(result);
@@ -640,15 +703,52 @@ function AuthScreen() {
     return () => {
       active = false;
     };
-  }, [churchCode]);
+  }, [selectedChurchId, isChurchRegistration]);
 
   const submit = async () => {
     setError("");
     setMessage("");
     setLoading(true);
     try {
-      if (isForgotPassword) {
-        if (!churchAccess.church) throw new Error("Enter a valid church code first.");
+      if (isChurchRegistration) {
+        if (!form.churchName.trim()) throw new Error("Enter your church name.");
+        if (!form.adminFirstName.trim() || !form.adminLastName.trim()) throw new Error("Enter the primary leader's first and last name.");
+        if (!form.email || !form.password) throw new Error("Fill in every registration field.");
+        if (form.password.length < 6) throw new Error("Use a password with at least 6 characters.");
+        if (form.password !== form.confirmPassword) throw new Error("Your passwords do not match.");
+        const generatedCode = generateChurchCode();
+        const adminFullName = `${form.adminFirstName.trim()} ${form.adminLastName.trim()}`.trim();
+
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: form.email.trim(),
+          password: form.password,
+          options: {
+            emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+            data: {
+              full_name: adminFullName,
+              role: "admin",
+            },
+          },
+        });
+        if (signUpError) throw signUpError;
+        if (!data.user?.id) throw new Error("We couldn't finish creating that church account.");
+
+        const { error: setupError } = await supabase.rpc("create_church_with_admin", {
+          p_church_name: form.churchName.trim(),
+          p_code: generatedCode,
+          p_admin_name: adminFullName,
+          p_admin_role: form.adminRole,
+          p_admin_title: getRoleTemplate(form.adminRole).title,
+          p_email: form.email.trim(),
+          p_user_id: data.user.id,
+        });
+        if (setupError) throw setupError;
+
+        setMessage(data.session
+          ? `Church registered. Your church framework is ready to use. Internal church code: ${generatedCode}.`
+              : `Church registered. Check your email to verify the primary administrator account, then log in. Internal church code: ${generatedCode}.`);
+      } else if (isForgotPassword) {
+        if (!churchAccess.church) throw new Error("Select your church first.");
         if (!form.userId) throw new Error("Select your name first.");
         const selected = churchAccess.users.find((user) => user.id === form.userId);
         if (!selected?.email) throw new Error("That person has not registered yet. Use First Time to create the account.");
@@ -659,7 +759,7 @@ function AuthScreen() {
         setMode("login");
         setForm((current) => ({ ...current, password: "", confirmPassword: "" }));
       } else if (isLogin) {
-        if (!churchAccess.church) throw new Error("Enter a valid church code first.");
+        if (!churchAccess.church) throw new Error("Select your church first.");
         if (!form.userId) throw new Error("Select your name first.");
         const selected = churchAccess.users.find((user) => user.id === form.userId);
         if (!selected) throw new Error("Select your name first.");
@@ -669,7 +769,7 @@ function AuthScreen() {
         if (loginError) throw loginError;
         await claimStaffProfile(selected.id, churchAccess.church.id);
       } else {
-        if (!churchAccess.church) throw new Error("Enter a valid church code first.");
+        if (!churchAccess.church) throw new Error("Select your church first.");
         if (!form.userId) throw new Error("Select your name first.");
         const selected = churchAccess.users.find((user) => user.id === form.userId);
         if (!selected) throw new Error("Select your name first.");
@@ -730,39 +830,69 @@ function AuthScreen() {
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
-            {isForgotPassword
-              ? "Input your church's code, select who you are, and we'll email you a password reset link."
+            {isChurchRegistration
+              ? "Register your church, create the first administrator account, and start with Shepherd's framework for your own team."
+              : isForgotPassword
+              ? "Select your church, choose who you are, and we'll email you a password reset link."
               : isLogin
-              ? "Input your church's code, select who you are, then enter your password."
-              : "Input your church's code, select who you are, then create your account."}
+              ? "Select your church, choose who you are, then enter your password."
+              : "Select your church, choose who you are, then create your account."}
           </p>
         </div>
         <div style={{display:"flex",background:C.surface,borderRadius:12,padding:4,marginBottom:24,border:`1px solid ${C.border}`}}>
-          {["Log In","First Time"].map((label,index)=>(
-            <button key={label} onClick={()=>{setMode(index===0?"login":"signup");setError("");setMessage("");}} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:14,fontWeight:500,background:((mode==="login"&&index===0)||(mode==="signup"&&index===1))?C.card:"transparent",color:((mode==="login"&&index===0)||(mode==="signup"&&index===1))?C.text:C.muted}}>{label}</button>
+          {[
+            { id: "login", label: "Log In" },
+            { id: "signup", label: "First Time Login" },
+            { id: "church", label: "Register Your Church" },
+          ].map((tab)=>(
+            <button key={tab.id} onClick={()=>{setMode(tab.id);setError("");setMessage("");}} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:14,fontWeight:500,background:mode===tab.id?C.card:"transparent",color:mode===tab.id?C.text:C.muted}}>{tab.label}</button>
           ))}
         </div>
         {error && <div style={{background:"rgba(224,82,82,.1)",border:"1px solid rgba(224,82,82,.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.danger,marginBottom:14}}>{error}</div>}
         {message && <div style={{background:"rgba(82,200,122,.1)",border:"1px solid rgba(82,200,122,.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.success,marginBottom:14}}>{message}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <input
-            className="input-field"
-            placeholder="Church code"
-            value={churchCode}
-            onChange={(e) => {
-              setChurchCode(e.target.value);
-              setForm({ userId: "", email: "", password: "", confirmPassword: "" });
-            }}
-          />
-          <select className="input-field" value={form.userId} onChange={e=>setForm({...form,userId:e.target.value})} style={{background:C.surface}} disabled={!churchAccess.church || lookupLoading}>
-            <option value="">{lookupLoading ? "Looking up church..." : "Select your name"}</option>
-            {churchAccess.users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.full_name} • {user.title}
-              </option>
-            ))}
-          </select>
-          {mode === "signup" && (
+          {!isChurchRegistration && (
+            <select
+              className="input-field"
+              value={selectedChurchId}
+              onChange={(e) => {
+                setSelectedChurchId(e.target.value);
+                setForm((current) => ({ ...current, userId: "" }));
+              }}
+              style={{background:C.surface}}
+            >
+              <option value="">Select your church</option>
+              {churches.map((church) => (
+                <option key={church.id} value={church.id}>{church.name}</option>
+              ))}
+            </select>
+          )}
+          {isChurchRegistration ? (
+            <>
+              <input className="input-field" placeholder="Church name" value={form.churchName} onChange={e=>setForm({...form,churchName:e.target.value})}/>
+              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <input className="input-field" placeholder="First name" value={form.adminFirstName} onChange={e=>setForm({...form,adminFirstName:e.target.value})}/>
+                <input className="input-field" placeholder="Last name" value={form.adminLastName} onChange={e=>setForm({...form,adminLastName:e.target.value})}/>
+              </div>
+              <select className="input-field" value={form.adminRole} onChange={e=>{
+                setForm({...form,adminRole:e.target.value});
+              }} style={{background:C.surface}}>
+                {STAFF_ROLE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <select className="input-field" value={form.userId} onChange={e=>setForm({...form,userId:e.target.value})} style={{background:C.surface}} disabled={!churchAccess.church || lookupLoading}>
+              <option value="">{lookupLoading ? "Looking up church..." : "Select your name"}</option>
+              {churchAccess.users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.full_name} • {user.title}
+                </option>
+              ))}
+            </select>
+          )}
+          {(mode === "signup" || isChurchRegistration) && (
             <input className="input-field" placeholder="Email address" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
           )}
           {!isForgotPassword && (
@@ -773,11 +903,11 @@ function AuthScreen() {
               </button>
             </div>
           )}
-          {mode === "signup" && (
+          {(mode === "signup" || isChurchRegistration) && (
             <input className="input-field" placeholder="Confirm password" type="password" value={form.confirmPassword} onChange={e=>setForm({...form,confirmPassword:e.target.value})}/>
           )}
           <button className="btn-gold" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"13px",fontSize:15,marginTop:4}}>
-            {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isForgotPassword ? "Send reset email" : isLogin ? "Log In" : "Register this account"}
+            {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isForgotPassword ? "Send reset email" : isLogin ? "Log In" : isChurchRegistration ? "Register Church" : "Register this account"}
           </button>
           {isLogin && (
             <button
@@ -814,6 +944,7 @@ function AuthScreen() {
 function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
+    ...(canManageChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.workspace}] : []),
     {id:"workspaces",label:"Workspaces",I:Icons.workspace},
     {id:"notifications",label:"Notifications",I:Icons.bell},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
@@ -1154,6 +1285,112 @@ function TrashPage({ trashItems, clearTrash }) {
   );
 }
 
+function ChurchTeamPage({ church, previewUsers, setPreviewUsers }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const blank = { first_name: "", last_name: "", role: "youth_pastor", title: getRoleTemplate("youth_pastor").title };
+  const [form, setForm] = useState(blank);
+
+  const saveStaffMember = async () => {
+    setError("");
+    if (!church?.id) {
+      setError("We couldn't find this church yet.");
+      return;
+    }
+    if (!form.first_name.trim() || !form.last_name.trim()) {
+      setError("Enter a first and last name.");
+      return;
+    }
+    const roleTemplate = getRoleTemplate(form.role);
+    const fullName = `${form.first_name.trim()} ${form.last_name.trim()}`.trim();
+    const payload = {
+      church_id: church.id,
+      full_name: fullName,
+      role: form.role,
+      title: form.title.trim() || roleTemplate.title,
+      ministries: roleTemplate.ministries,
+      can_see_team_overview: roleTemplate.canSeeTeamOverview,
+      can_see_admin_overview: roleTemplate.canSeeAdminOverview,
+      read_only_oversight: false,
+    };
+    setSaving(true);
+    const { data, error: saveError } = await supabase
+      .from("church_staff")
+      .upsert(payload, { onConflict: "church_id,full_name" })
+      .select()
+      .single();
+    setSaving(false);
+    if (saveError) {
+      setError(saveError.message || "We couldn't save that team member.");
+      return;
+    }
+    setPreviewUsers((current) => {
+      const others = (current || []).filter((entry) => entry.id !== data.id);
+      return [...others, normalizeAccessUser(data)].sort((a, b) => a.full_name.localeCompare(b.full_name));
+    });
+    setForm(blank);
+  };
+
+  return (
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr",gap:16,marginBottom:24}}>
+        <div style={{justifySelf:"start",textAlign:"left"}}>
+          <h2 style={pageTitleStyle}>Church Team</h2>
+          <p style={{color:C.muted,fontSize:13,marginTop:4,maxWidth:760}}>
+            Add and manage the people and roles for {church?.name || "your church"} so that when someone logs in for the first time, they can select their own name from the list.
+          </p>
+        </div>
+      </div>
+      <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"380px 1fr",gap:18}}>
+        <div className="card" style={{padding:22,textAlign:"left"}}>
+          <h3 style={sectionTitleStyle}>Add Team Member</h3>
+          <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <input className="input-field" placeholder="First name" value={form.first_name} onChange={(e)=>setForm({...form,first_name:e.target.value})}/>
+              <input className="input-field" placeholder="Last name" value={form.last_name} onChange={(e)=>setForm({...form,last_name:e.target.value})}/>
+            </div>
+            <select
+              className="input-field"
+              value={form.role}
+              onChange={(e)=>{
+                const template = getRoleTemplate(e.target.value);
+                setForm({...form, role:e.target.value, title:template.title});
+              }}
+              style={{background:C.surface}}
+            >
+              {STAFF_ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <input className="input-field" placeholder="Displayed title" value={form.title} onChange={(e)=>setForm({...form,title:e.target.value})}/>
+            {error && <div style={{fontSize:12,color:C.danger}}>{error}</div>}
+            <div style={{display:"flex",justifyContent:"flex-end"}}>
+              <button className="btn-gold" onClick={saveStaffMember} disabled={saving}>
+                {saving ? "Saving..." : "Add Team Member"}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="card" style={{padding:22,textAlign:"left"}}>
+          <h3 style={sectionTitleStyle}>Current Team</h3>
+          <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+            {(previewUsers || []).length === 0 && <div style={{fontSize:13,color:C.muted}}>No team members have been added yet.</div>}
+            {(previewUsers || []).map((user) => (
+              <div key={user.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:C.text}}>{user.full_name}</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:4}}>{user.title}</div>
+                </div>
+                <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>{(user.ministries || []).join(", ") || "No ministry assigned"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EventRequestFormFields({ eventForm, setEventForm }) {
   const toggleLocationArea = (area) => {
     setEventForm((current) => ({
@@ -1466,7 +1703,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
   );
 }
 
-function EventsBoard({ profile, church, eventRequests, setEventRequests, setTasks, moveItemToTrash }) {
+function EventsBoard({ profile, church, eventRequests, setEventRequests, setTasks, moveItemToTrash, previewUsers }) {
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
   const [formError, setFormError] = useState("");
@@ -1519,6 +1756,12 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
     setEventForm(createEventRequestBlank(profile));
   };
 
+  const creativeLeadName =
+    previewUsers?.find((user) =>
+      profileHasMinistry(user, "Content/Art")
+      || /creative|art|design/i.test(user?.title || "")
+    )?.full_name || "Creative Team";
+
   const setEventRequestStatus = async (requestId, status) => {
     if (requestId === "demo-event-request") {
       setSelectedRequest((current) => current ? { ...current, status, decided_at: new Date().toISOString() } : current);
@@ -1540,7 +1783,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         church_id: church?.id,
         title: `Create graphics for ${existingRequest.event_name}`,
         ministry: "Events",
-        assignee: "Yabs",
+        assignee: creativeLeadName,
         due_date: existingRequest.setup_datetime ? String(existingRequest.setup_datetime).split("T")[0] : null,
         status: "todo",
         review_required: false,
@@ -2250,7 +2493,7 @@ function Tasks({ tasks, setTasks, churchId, profile, previewUsers, moveItemToTra
   const isPreview = churchId === "preview";
   const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
   const canCreateTasks = true;
-  const canAssignToAnyone = profile?.full_name === "Shannan";
+  const canAssignToAnyone = profile?.role === "admin";
   const [mFilter, setMFilter] = useState("All");
   const [aFilter, setAFilter] = useState("mine");
   const [showModal, setShowModal] = useState(false);
@@ -3331,8 +3574,9 @@ export default function App() {
   const pages = {
     dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} />,
+    "church-team": canManageChurchTeam(profile, church) ? <ChurchTeamPage church={church} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
     workspaces: <Workspaces setActive={setActive}/>,
-    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash}/>,
+    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
     "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
     notifications: <NotificationsPage notifications={notifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
@@ -3349,7 +3593,7 @@ export default function App() {
       <GS/>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
         <Sidebar active={active} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length}/>
-        <main style={{flex:1,overflowY:"auto",background:C.bg}}>{pages[active]}</main>
+        <main style={{flex:1,overflowY:"auto",background:C.bg}}>{pages[active] || pages.dashboard}</main>
       </div>
     </>
   );

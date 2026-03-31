@@ -4,11 +4,15 @@ create table if not exists public.churches (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text not null,
+  account_admin_user_id uuid references auth.users(id) on delete set null,
+  account_admin_email text,
   created_at timestamptz not null default now()
 );
 
 alter table public.churches add column if not exists name text;
 alter table public.churches add column if not exists code text;
+alter table public.churches add column if not exists account_admin_user_id uuid references auth.users(id) on delete set null;
+alter table public.churches add column if not exists account_admin_email text;
 alter table public.churches add column if not exists created_at timestamptz not null default now();
 
 create unique index if not exists churches_code_key on public.churches (code);
@@ -333,6 +337,125 @@ begin
 end;
 $$;
 
+create or replace function public.create_church_with_admin(
+  p_church_name text,
+  p_code text,
+  p_admin_name text,
+  p_admin_role text,
+  p_admin_title text,
+  p_email text,
+  p_user_id uuid
+)
+returns table (
+  church_id uuid,
+  staff_id uuid
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  created_church_id uuid;
+  created_staff_id uuid;
+begin
+  if p_user_id is null then
+    raise exception 'Missing administrator account.';
+  end if;
+
+  if p_church_name is null or length(trim(p_church_name)) = 0 then
+    raise exception 'Church name is required.';
+  end if;
+
+  if p_code is null or length(trim(p_code)) < 4 then
+    raise exception 'Church code must be at least 4 characters.';
+  end if;
+
+  if p_admin_name is null or length(trim(p_admin_name)) = 0 then
+    raise exception 'Administrator name is required.';
+  end if;
+
+  if exists (
+    select 1
+    from public.churches
+    where lower(code) = lower(trim(p_code))
+  ) then
+    raise exception 'That church code is already in use.';
+  end if;
+
+  insert into public.churches (name, code, account_admin_user_id, account_admin_email)
+  values (trim(p_church_name), trim(p_code), p_user_id, lower(trim(p_email)))
+  returning id into created_church_id;
+
+  insert into public.church_staff (
+    church_id,
+    auth_user_id,
+    full_name,
+    role,
+    title,
+    email,
+    ministries,
+    can_see_team_overview,
+    can_see_admin_overview,
+    read_only_oversight
+  )
+  values (
+    created_church_id,
+    p_user_id,
+    trim(p_admin_name),
+    coalesce(nullif(trim(p_admin_role), ''), 'church_administrator'),
+    coalesce(nullif(trim(p_admin_title), ''), 'Church Administrator'),
+    lower(trim(p_email)),
+    array['Admin','Operations'],
+    true,
+    true,
+    false
+  )
+  returning id into created_staff_id;
+
+  insert into public.profiles (
+    id,
+    church_id,
+    staff_id,
+    full_name,
+    role,
+    title,
+    email,
+    ministries,
+    can_see_team_overview,
+    can_see_admin_overview,
+    read_only_oversight
+  )
+  values (
+    p_user_id,
+    created_church_id,
+    created_staff_id,
+    trim(p_admin_name),
+    coalesce(nullif(trim(p_admin_role), ''), 'church_administrator'),
+    coalesce(nullif(trim(p_admin_title), ''), 'Church Administrator'),
+    lower(trim(p_email)),
+    array['Admin','Operations'],
+    true,
+    true,
+    false
+  )
+  on conflict (id) do update
+  set
+    church_id = excluded.church_id,
+    staff_id = excluded.staff_id,
+    full_name = excluded.full_name,
+    role = excluded.role,
+    title = excluded.title,
+    email = excluded.email,
+    ministries = excluded.ministries,
+    can_see_team_overview = excluded.can_see_team_overview,
+    can_see_admin_overview = excluded.can_see_admin_overview,
+    read_only_oversight = excluded.read_only_oversight;
+
+  return query
+  select created_church_id, created_staff_id;
+end;
+$$;
+
 create or replace function public.claim_staff_profile(
   p_staff_id uuid,
   p_church_id uuid
@@ -419,6 +542,7 @@ $$;
 
 grant execute on function public.reserve_staff_registration(uuid, uuid, text) to anon, authenticated;
 grant execute on function public.claim_staff_profile(uuid, uuid) to authenticated;
+grant execute on function public.create_church_with_admin(text, text, text, text, text, text, uuid) to anon, authenticated;
 
 drop policy if exists "church code lookup" on public.churches;
 create policy "church code lookup"
@@ -431,6 +555,29 @@ create policy "church staff lookup"
 on public.church_staff
 for select
 using (true);
+
+drop policy if exists "church staff admin write" on public.church_staff;
+create policy "church staff admin write"
+on public.church_staff
+for all
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = church_staff.church_id
+      and p.role = 'admin'
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = church_staff.church_id
+      and p.role = 'admin'
+  )
+);
 
 drop policy if exists "profiles self read" on public.profiles;
 create policy "profiles self read"
@@ -599,7 +746,7 @@ using (
       and (
         p.can_see_admin_overview
         or p.role = 'senior_pastor'
-        or p.full_name = 'Joel'
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
       )
   )
 )
@@ -612,7 +759,7 @@ with check (
       and (
         p.can_see_admin_overview
         or p.role = 'senior_pastor'
-        or p.full_name = 'Joel'
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
       )
   )
 );

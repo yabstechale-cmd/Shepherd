@@ -540,6 +540,39 @@ begin
 end;
 $$;
 
+create or replace function public.user_can_manage_church(
+  p_church_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  can_manage boolean := false;
+begin
+  select exists (
+    select 1
+    from public.profiles p
+    left join public.churches c on c.id = p.church_id
+    where p.id = auth.uid()
+      and p.church_id = p_church_id
+      and (
+        p.can_see_admin_overview
+        or p.role in ('church_administrator', 'admin', 'senior_pastor')
+        or c.account_admin_user_id = p.id
+        or (
+          c.account_admin_email is not null
+          and lower(c.account_admin_email) = lower(coalesce(p.email, ''))
+        )
+      )
+  )
+  into can_manage;
+
+  return coalesce(can_manage, false);
+end;
+$$;
+
 create or replace function public.delete_church_account(
   p_church_id uuid
 )
@@ -592,6 +625,7 @@ $$;
 grant execute on function public.reserve_staff_registration(uuid, uuid, text) to anon, authenticated;
 grant execute on function public.claim_staff_profile(uuid, uuid) to authenticated;
 grant execute on function public.create_church_with_admin(text, text, text, text, text, text, uuid) to anon, authenticated;
+grant execute on function public.user_can_manage_church(uuid) to authenticated;
 grant execute on function public.delete_church_account(uuid) to authenticated;
 
 drop policy if exists "church code lookup" on public.churches;
@@ -610,24 +644,8 @@ drop policy if exists "church staff admin write" on public.church_staff;
 create policy "church staff admin write"
 on public.church_staff
 for all
-using (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = church_staff.church_id
-      and p.role in ('church_administrator', 'admin', 'senior_pastor')
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = church_staff.church_id
-      and p.role in ('church_administrator', 'admin', 'senior_pastor')
-  )
-);
+using (public.user_can_manage_church(church_id))
+with check (public.user_can_manage_church(church_id));
 
 drop policy if exists "profiles self read" on public.profiles;
 create policy "profiles self read"
@@ -646,24 +664,8 @@ drop policy if exists "profiles church admin write" on public.profiles;
 create policy "profiles church admin write"
 on public.profiles
 for all
-using (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = profiles.church_id
-      and p.role in ('church_administrator', 'admin', 'senior_pastor')
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = profiles.church_id
-      and p.role in ('church_administrator', 'admin', 'senior_pastor')
-  )
-);
+using (public.user_can_manage_church(church_id))
+with check (public.user_can_manage_church(church_id));
 
 drop policy if exists "tasks same church read" on public.tasks;
 create policy "tasks same church read"
@@ -689,8 +691,7 @@ using (
     where p.id = auth.uid()
       and p.church_id = tasks.church_id
       and (
-        p.can_see_admin_overview
-        or p.role = 'senior_pastor'
+        public.user_can_manage_church(tasks.church_id)
         or tasks.assignee = p.full_name
       )
   )
@@ -702,8 +703,7 @@ with check (
     where p.id = auth.uid()
       and p.church_id = tasks.church_id
       and (
-        p.can_see_admin_overview
-        or p.role = 'senior_pastor'
+        public.user_can_manage_church(tasks.church_id)
         or assignee = p.full_name
       )
   )
@@ -738,24 +738,8 @@ drop policy if exists "event requests admin update" on public.event_requests;
 create policy "event requests admin update"
 on public.event_requests
 for update
-using (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = event_requests.church_id
-      and p.role = 'admin'
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = event_requests.church_id
-      and p.role = 'admin'
-  )
-);
+using (public.user_can_manage_church(church_id))
+with check (public.user_can_manage_church(church_id));
 
 drop policy if exists "people same church read" on public.people;
 create policy "people same church read"
@@ -774,24 +758,8 @@ drop policy if exists "people admin write" on public.people;
 create policy "people admin write"
 on public.people
 for all
-using (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = people.church_id
-      and (p.can_see_admin_overview or p.role = 'senior_pastor')
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = people.church_id
-      and (p.can_see_admin_overview or p.role = 'senior_pastor')
-  )
-);
+using (public.user_can_manage_church(church_id))
+with check (public.user_can_manage_church(church_id));
 
 drop policy if exists "transactions same church read" on public.transactions;
 create policy "transactions same church read"
@@ -817,8 +785,7 @@ using (
     where p.id = auth.uid()
       and p.church_id = transactions.church_id
       and (
-        p.can_see_admin_overview
-        or p.role = 'senior_pastor'
+        public.user_can_manage_church(transactions.church_id)
         or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
       )
   )
@@ -830,8 +797,7 @@ with check (
     where p.id = auth.uid()
       and p.church_id = transactions.church_id
       and (
-        p.can_see_admin_overview
-        or p.role = 'senior_pastor'
+        public.user_can_manage_church(transactions.church_id)
         or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
       )
   )
@@ -854,29 +820,15 @@ drop policy if exists "ministries admin write" on public.ministries;
 create policy "ministries admin write"
 on public.ministries
 for all
-using (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = ministries.church_id
-      and (p.can_see_admin_overview or p.role = 'senior_pastor')
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = ministries.church_id
-      and (p.can_see_admin_overview or p.role = 'senior_pastor')
-  )
-);
+using (public.user_can_manage_church(church_id))
+with check (public.user_can_manage_church(church_id));
 
-insert into public.churches (id, name, code)
-values ('11111111-1111-1111-1111-111111111111', 'Reach Church', '0712')
+insert into public.churches (id, name, code, account_admin_email)
+values ('11111111-1111-1111-1111-111111111111', 'Reach Church', '0712', 'yabs@reachjax.com')
 on conflict (code) do update
-set name = excluded.name;
+set
+  name = excluded.name,
+  account_admin_email = excluded.account_admin_email;
 
 insert into public.church_staff (
   church_id,
@@ -893,7 +845,7 @@ values
   ('11111111-1111-1111-1111-111111111111', 'Will Potts', 'worship_pastor', 'Worship Pastor', array['Worship','Services'], true, false, false),
   ('11111111-1111-1111-1111-111111111111', 'Joel', 'associate_pastor', 'Associate Pastor, Missions & Finance', array['Missions','Finances','Operations'], true, false, false),
   ('11111111-1111-1111-1111-111111111111', 'Shannan', 'admin', 'Church Administrator', array['Admin','Operations'], true, true, false),
-  ('11111111-1111-1111-1111-111111111111', 'Yabs', 'youth_creative', 'Youth & Art / Design', array['Youth','Young Adults','Events'], true, false, false)
+  ('11111111-1111-1111-1111-111111111111', 'Yabs', 'art_director', 'Art Director', array['Content/Art','Youth','Young Adults','Events'], true, true, false)
 on conflict (church_id, full_name) do update
 set
   role = excluded.role,

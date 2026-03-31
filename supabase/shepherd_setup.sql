@@ -26,6 +26,7 @@ create table if not exists public.church_staff (
   auth_user_id uuid references auth.users(id) on delete set null,
   full_name text not null,
   role text not null,
+  staff_roles text[] not null default '{}',
   title text not null,
   email text,
   ministries text[] not null default '{}',
@@ -39,6 +40,7 @@ alter table public.church_staff add column if not exists church_id uuid referenc
 alter table public.church_staff add column if not exists auth_user_id uuid references auth.users(id) on delete set null;
 alter table public.church_staff add column if not exists full_name text;
 alter table public.church_staff add column if not exists role text;
+alter table public.church_staff add column if not exists staff_roles text[] not null default '{}';
 alter table public.church_staff add column if not exists title text;
 alter table public.church_staff add column if not exists email text;
 alter table public.church_staff add column if not exists ministries text[] not null default '{}';
@@ -59,6 +61,7 @@ create table if not exists public.profiles (
   staff_id uuid unique references public.church_staff(id) on delete set null,
   full_name text not null,
   role text not null,
+  staff_roles text[] not null default '{}',
   title text,
   email text,
   ministries text[] not null default '{}',
@@ -72,6 +75,7 @@ alter table public.profiles add column if not exists church_id uuid references p
 alter table public.profiles add column if not exists staff_id uuid references public.church_staff(id) on delete set null;
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists role text;
+alter table public.profiles add column if not exists staff_roles text[] not null default '{}';
 alter table public.profiles add column if not exists title text;
 alter table public.profiles add column if not exists email text;
 alter table public.profiles add column if not exists ministries text[] not null default '{}';
@@ -391,6 +395,7 @@ begin
     auth_user_id,
     full_name,
     role,
+    staff_roles,
     title,
     email,
     ministries,
@@ -403,6 +408,7 @@ begin
     p_user_id,
     trim(p_admin_name),
     coalesce(nullif(trim(p_admin_role), ''), 'church_administrator'),
+    array[coalesce(nullif(trim(p_admin_role), ''), 'church_administrator')],
     coalesce(nullif(trim(p_admin_title), ''), 'Church Administrator'),
     lower(trim(p_email)),
     array['Admin','Operations'],
@@ -418,6 +424,7 @@ begin
     staff_id,
     full_name,
     role,
+    staff_roles,
     title,
     email,
     ministries,
@@ -431,6 +438,7 @@ begin
     created_staff_id,
     trim(p_admin_name),
     coalesce(nullif(trim(p_admin_role), ''), 'church_administrator'),
+    array[coalesce(nullif(trim(p_admin_role), ''), 'church_administrator')],
     coalesce(nullif(trim(p_admin_title), ''), 'Church Administrator'),
     lower(trim(p_email)),
     array['Admin','Operations'],
@@ -444,6 +452,7 @@ begin
     staff_id = excluded.staff_id,
     full_name = excluded.full_name,
     role = excluded.role,
+    staff_roles = excluded.staff_roles,
     title = excluded.title,
     email = excluded.email,
     ministries = excluded.ministries,
@@ -502,6 +511,7 @@ begin
     staff_id,
     full_name,
     role,
+    staff_roles,
     title,
     email,
     ministries,
@@ -515,6 +525,7 @@ begin
     staff_row.id,
     staff_row.full_name,
     staff_row.role,
+    coalesce(staff_row.staff_roles, array[staff_row.role]),
     staff_row.title,
     current_email,
     coalesce(staff_row.ministries, '{}'::text[]),
@@ -528,6 +539,7 @@ begin
     staff_id = excluded.staff_id,
     full_name = excluded.full_name,
     role = excluded.role,
+    staff_roles = excluded.staff_roles,
     title = excluded.title,
     email = excluded.email,
     ministries = excluded.ministries,
@@ -834,6 +846,7 @@ insert into public.church_staff (
   church_id,
   full_name,
   role,
+  staff_roles,
   title,
   ministries,
   can_see_team_overview,
@@ -841,14 +854,15 @@ insert into public.church_staff (
   read_only_oversight
 )
 values
-  ('11111111-1111-1111-1111-111111111111', 'Eric Souza', 'senior_pastor', 'Senior Pastor', array['Services','Operations'], true, true, false),
-  ('11111111-1111-1111-1111-111111111111', 'Will Potts', 'worship_pastor', 'Worship Pastor', array['Worship','Services'], true, false, false),
-  ('11111111-1111-1111-1111-111111111111', 'Joel', 'associate_pastor', 'Associate Pastor, Missions & Finance', array['Missions','Finances','Operations'], true, false, false),
-  ('11111111-1111-1111-1111-111111111111', 'Shannan', 'admin', 'Church Administrator', array['Admin','Operations'], true, true, false),
-  ('11111111-1111-1111-1111-111111111111', 'Yabs', 'art_director', 'Art Director', array['Content/Art','Youth','Young Adults','Events'], true, true, false)
+  ('11111111-1111-1111-1111-111111111111', 'Eric Souza', 'senior_pastor', array['senior_pastor'], 'Senior Pastor', array['Services','Operations'], true, true, false),
+  ('11111111-1111-1111-1111-111111111111', 'Will Potts', 'worship_pastor', array['worship_pastor'], 'Worship Pastor', array['Worship','Services'], true, false, false),
+  ('11111111-1111-1111-1111-111111111111', 'Joel', 'finance_director', array['finance_director'], 'Finance Director', array['Missions','Finances','Operations'], true, false, false),
+  ('11111111-1111-1111-1111-111111111111', 'Shannan', 'church_administrator', array['church_administrator'], 'Church Administrator', array['Admin','Operations'], true, true, false),
+  ('11111111-1111-1111-1111-111111111111', 'Yabs', 'youth_pastor', array['youth_pastor','art_director'], 'Youth Pastor & Art Director', array['Content/Art','Youth','Young Adults','Events'], true, true, false)
 on conflict (church_id, full_name) do update
 set
   role = excluded.role,
+  staff_roles = excluded.staff_roles,
   title = excluded.title,
   ministries = excluded.ministries,
   can_see_team_overview = excluded.can_see_team_overview,

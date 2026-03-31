@@ -50,6 +50,7 @@ const Icons = {
   ministry: () => <Icon d="M3 21V7l9-4 9 4v14M9 21V12h6v9" />,
   calendar: () => <Icon d="M3 4h18v18H3zM16 2v4M8 2v4M3 10h18" />,
   workspace:() => <Icon d="M9 3L7 21M17 3l-2 18M3 9h18M1 17h18" />,
+  people:   () => <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />,
   logout:   () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
   plus:     () => <Icon d="M12 5v14M5 12h14" />,
   eye:      () => <Icon d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
@@ -203,6 +204,7 @@ const GS = () => (
 const normalizeAccessUser = (record) => ({
   ...record,
   ministries: Array.isArray(record?.ministries) ? record.ministries : [],
+  staff_roles: Array.isArray(record?.staff_roles) ? record.staff_roles : (record?.role ? [record.role] : []),
   canSeeTeamOverview: record?.can_see_team_overview ?? record?.canSeeTeamOverview ?? false,
   canSeeAdminOverview: record?.can_see_admin_overview ?? record?.canSeeAdminOverview ?? false,
   readOnlyOversight: record?.read_only_oversight ?? record?.readOnlyOversight ?? false,
@@ -249,7 +251,7 @@ const shouldShowChurchTeam = (profile, church) =>
   || canEditChurchTeam(profile, church)
   || (!church?.account_admin_user_id && !church?.account_admin_email);
 const canManageChurchTeam = (profile, church) =>
-  isChurchAccountAdmin(profile, church) || profile?.role === "executive_pastor";
+  isChurchAccountAdmin(profile, church);
 const canEditChurchTeam = (profile, church) => hasAdministrativeOversight(profile, church);
 const canDeleteChurchAccount = (profile, church) => hasAdministrativeOversight(profile, church);
 const canManageAllTasks = (profile, church) => hasAdministrativeOversight(profile, church);
@@ -287,6 +289,7 @@ const createProfilePayload = (authUserId, churchId, staffUser, email) => ({
   role: staffUser.role,
   title: staffUser.title,
   email,
+  staff_roles: Array.isArray(staffUser.staff_roles) ? staffUser.staff_roles : (staffUser.role ? [staffUser.role] : []),
   ministries: staffUser.ministries || [],
   can_see_team_overview: staffUser.can_see_team_overview ?? staffUser.canSeeTeamOverview ?? false,
   can_see_admin_overview: staffUser.can_see_admin_overview ?? staffUser.canSeeAdminOverview ?? false,
@@ -391,17 +394,42 @@ const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}
 const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
 const STAFF_ROLE_OPTIONS = [
   { value: "senior_pastor", label: "Senior Pastor", title: "Senior Pastor", ministries: ["Services", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true },
-  { value: "executive_pastor", label: "Executive Pastor", title: "Executive Pastor", ministries: ["Operations", "Services"], canSeeTeamOverview: true, canSeeAdminOverview: true },
   { value: "youth_pastor", label: "Youth Pastor", title: "Youth Pastor", ministries: ["Youth"], canSeeTeamOverview: true, canSeeAdminOverview: false },
   { value: "kids_pastor", label: "Kids Pastor", title: "Kids Pastor", ministries: ["Kids"], canSeeTeamOverview: true, canSeeAdminOverview: false },
   { value: "young_adults_pastor", label: "Young Adults Pastor", title: "Young Adults Pastor", ministries: ["Young Adults"], canSeeTeamOverview: true, canSeeAdminOverview: false },
   { value: "worship_pastor", label: "Worship Pastor", title: "Worship Pastor", ministries: ["Worship", "Services"], canSeeTeamOverview: true, canSeeAdminOverview: false },
   { value: "art_director", label: "Art Director", title: "Art Director", ministries: ["Content/Art"], canSeeTeamOverview: true, canSeeAdminOverview: false },
+  { value: "website_app_director", label: "Website/App", title: "Website/App", ministries: ["Content/Art", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: false },
   { value: "church_administrator", label: "Church Administrator", title: "Church Administrator", ministries: ["Admin", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true },
   { value: "finance_director", label: "Finance Director", title: "Finance Director", ministries: ["Finances"], canSeeTeamOverview: true, canSeeAdminOverview: false },
   { value: "intern", label: "Intern", title: "Intern", ministries: [], canSeeTeamOverview: true, canSeeAdminOverview: false },
 ];
-const getRoleTemplate = (roleValue) => STAFF_ROLE_OPTIONS.find((option) => option.value === roleValue) || STAFF_ROLE_OPTIONS[0];
+const STAFF_ROLE_VALUES = new Set(STAFF_ROLE_OPTIONS.map((option) => option.value));
+const getRoleTemplate = (roleValue) => STAFF_ROLE_OPTIONS.find((option) => option.value === roleValue) || null;
+const getRoleLabel = (roleValue) => getRoleTemplate(roleValue)?.label || null;
+const normalizeSelectedRoles = (roleValues) => {
+  const validRoles = [...new Set((roleValues || []).filter((roleValue) => STAFF_ROLE_VALUES.has(roleValue)))];
+  return validRoles.length > 0 ? validRoles : ["youth_pastor"];
+};
+const formatRoleTitles = (roleValues) => {
+  const labels = [...new Set(normalizeSelectedRoles(roleValues).map(getRoleLabel).filter(Boolean))];
+  if (labels.length === 0) return "Staff";
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} & ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")} & ${labels.at(-1)}`;
+};
+const buildRoleBundle = (roleValues) => {
+  const selectedRoles = normalizeSelectedRoles(roleValues);
+  const templates = selectedRoles.map(getRoleTemplate).filter(Boolean);
+  return {
+    selectedRoles,
+    primaryRole: selectedRoles[0] || "youth_pastor",
+    title: formatRoleTitles(selectedRoles),
+    ministries: [...new Set(templates.flatMap((template) => template.ministries || []))],
+    canSeeTeamOverview: templates.some((template) => template.canSeeTeamOverview),
+    canSeeAdminOverview: templates.some((template) => template.canSeeAdminOverview),
+  };
+};
 const createEventRequestBlank = (profile = null) => ({
   event_name: "",
   event_format: "single",
@@ -972,7 +1000,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
     {id:"tasks",label:"Tasks",I:Icons.tasks},
     {id:"budget",label:"Budget",I:Icons.budget},
     {id:"calendar",label:"Calendar",I:Icons.calendar},
-    ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.workspace}] : []),
+    ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.people}] : []),
     {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
@@ -1384,7 +1412,7 @@ function TrashPage({ trashItems, clearTrash }) {
 function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const blank = { first_name: "", last_name: "", role: "youth_pastor", title: getRoleTemplate("youth_pastor").title, oversight: "standard" };
+  const blank = { first_name: "", last_name: "", roles: ["youth_pastor"], title: formatRoleTitles(["youth_pastor"]), oversight: "standard" };
   const [form, setForm] = useState(blank);
   const [editingMemberId, setEditingMemberId] = useState(null);
 
@@ -1434,16 +1462,21 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
       setError("Enter a first and last name.");
       return;
     }
-    const roleTemplate = getRoleTemplate(form.role);
+    if (!form.roles?.length) {
+      setError("Select at least one role.");
+      return;
+    }
+    const roleBundle = buildRoleBundle(form.roles);
     const fullName = `${form.first_name.trim()} ${form.last_name.trim()}`.trim();
     const payload = {
       church_id: church.id,
       full_name: fullName,
-      role: form.role,
-      title: form.title.trim() || roleTemplate.title,
-      ministries: roleTemplate.ministries,
-      can_see_team_overview: roleTemplate.canSeeTeamOverview,
-      can_see_admin_overview: roleTemplate.canSeeAdminOverview,
+      role: roleBundle.primaryRole,
+      title: roleBundle.title,
+      staff_roles: roleBundle.selectedRoles,
+      ministries: roleBundle.ministries,
+      can_see_team_overview: roleBundle.canSeeTeamOverview,
+      can_see_admin_overview: roleBundle.canSeeAdminOverview,
       read_only_oversight: false,
     };
     const finalPayload = applyOversight(payload, form.oversight);
@@ -1458,6 +1491,24 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
       ? supabase.from("church_staff").update(finalPayload).eq("id", existingMemberId)
       : supabase.from("church_staff").upsert(finalPayload, { onConflict: "church_id,full_name" });
     let { data, error: saveError } = await query.select().single();
+    if (saveError && String(saveError.message || "").includes("staff_roles")) {
+      const legacyPayload = {
+        church_id: finalPayload.church_id,
+        full_name: finalPayload.full_name,
+        role: finalPayload.role,
+        title: finalPayload.title,
+        ministries: finalPayload.ministries,
+        can_see_team_overview: finalPayload.can_see_team_overview,
+        can_see_admin_overview: finalPayload.can_see_admin_overview,
+        read_only_oversight: finalPayload.read_only_oversight,
+      };
+      const legacyQuery = existingMemberId
+        ? supabase.from("church_staff").update(legacyPayload).eq("id", existingMemberId)
+        : supabase.from("church_staff").upsert(legacyPayload, { onConflict: "church_id,full_name" });
+      const legacyResult = await legacyQuery.select().single();
+      data = legacyResult.data;
+      saveError = legacyResult.error;
+    }
     if (saveError && String(saveError.message || "").includes("church_staff_pkey")) {
       const { data: existingRow } = await supabase
         .from("church_staff")
@@ -1481,18 +1532,34 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
       setError(saveError.message || "We couldn't save that team member.");
       return;
     }
-    await supabase
+    const profileSyncPayload = {
+      full_name: data.full_name,
+      role: data.role,
+      title: data.title,
+      staff_roles: data.staff_roles,
+      ministries: data.ministries,
+      can_see_team_overview: data.can_see_team_overview,
+      can_see_admin_overview: data.can_see_admin_overview,
+      read_only_oversight: data.read_only_oversight,
+    };
+    const profileSyncResult = await supabase
       .from("profiles")
-      .update({
-        full_name: data.full_name,
-        role: data.role,
-        title: data.title,
-        ministries: data.ministries,
-        can_see_team_overview: data.can_see_team_overview,
-        can_see_admin_overview: data.can_see_admin_overview,
-        read_only_oversight: data.read_only_oversight,
-      })
+      .update(profileSyncPayload)
       .eq("staff_id", data.id);
+    if (profileSyncResult.error && String(profileSyncResult.error.message || "").includes("staff_roles")) {
+      await supabase
+        .from("profiles")
+        .update({
+          full_name: data.full_name,
+          role: data.role,
+          title: data.title,
+          ministries: data.ministries,
+          can_see_team_overview: data.can_see_team_overview,
+          can_see_admin_overview: data.can_see_admin_overview,
+          read_only_oversight: data.read_only_oversight,
+        })
+        .eq("staff_id", data.id);
+    }
     setPreviewUsers((current) => {
       const others = (current || []).filter((entry) => entry.id !== data.id);
       return [...others, normalizeAccessUser(data)].sort((a, b) => a.full_name.localeCompare(b.full_name));
@@ -1504,12 +1571,31 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
   const startEditingMember = (user) => {
     const [firstName = "", ...rest] = (user.full_name || "").split(" ");
     setEditingMemberId(user.id);
+    const roles = normalizeSelectedRoles(
+      Array.isArray(user.staff_roles) && user.staff_roles.length > 0
+        ? user.staff_roles
+        : [user.role || "youth_pastor"]
+    );
     setForm({
       first_name: firstName,
       last_name: rest.join(" "),
-      role: user.role || "youth_pastor",
-      title: user.title || getRoleTemplate(user.role || "youth_pastor").title,
+      roles,
+      title: user.title || formatRoleTitles(roles),
       oversight: getOversightValue(user),
+    });
+  };
+
+  const toggleRoleSelection = (roleValue) => {
+    setForm((current) => {
+      const hasRole = current.roles.includes(roleValue);
+      const nextRoles = hasRole
+        ? current.roles.filter((entry) => entry !== roleValue)
+        : [...current.roles, roleValue];
+      return {
+        ...current,
+        roles: nextRoles,
+        title: formatRoleTitles(nextRoles),
+      };
     });
   };
 
@@ -1551,19 +1637,21 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
               <input className="input-field" placeholder="First name" value={form.first_name} onChange={(e)=>setForm({...form,first_name:e.target.value})}/>
               <input className="input-field" placeholder="Last name" value={form.last_name} onChange={(e)=>setForm({...form,last_name:e.target.value})}/>
             </div>
-            <select
-              className="input-field"
-              value={form.role}
-              onChange={(e)=>{
-                const template = getRoleTemplate(e.target.value);
-                setForm({...form, role:e.target.value, title:template.title});
-              }}
-              style={{background:C.surface}}
-            >
-              {STAFF_ROLE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <div style={{display:"flex",flexDirection:"column",gap:8,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+              <div style={{fontSize:12,color:C.muted}}>Roles</div>
+              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+                {STAFF_ROLE_OPTIONS.map((option) => (
+                  <label key={option.value} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:C.text}}>
+                    <input
+                      type="checkbox"
+                      checked={form.roles.includes(option.value)}
+                      onChange={() => toggleRoleSelection(option.value)}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <select
               className="input-field"
               value={form.oversight}
@@ -1601,7 +1689,6 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
                   </div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
-                  <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>{(user.ministries || []).join(", ") || "No ministry assigned"}</div>
                   {canEditChurchTeam(profile, church) && (
                     <div style={{display:"flex",gap:8}}>
                       <button className="btn-outline" onClick={()=>startEditingMember(user)} style={{padding:"5px 10px",fontSize:12}}>Edit</button>
@@ -2316,7 +2403,9 @@ function ContentMediaBoard({ tasks, setActive, previewUsers }) {
       <div className="card" style={{padding:22}}>
         <div className="events-board-header" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div style={{textAlign:"left"}}>
-            <h3 style={{...pageTitleStyle,textAlign:"left"}}>Content &amp; Media Board</h3>
+            <h3 style={{...pageTitleStyle,textAlign:"left",fontSize:"clamp(34px, 7vw, 46px)",lineHeight:1.06,maxWidth:680}}>
+              Content &amp; Media Board
+            </h3>
             <p style={{color:C.muted,fontSize:13,marginTop:8,maxWidth:620,textAlign:"left",lineHeight:1.55}}>
               This board mirrors every <span style={{color:C.text}}>Content/Art</span> task from the main Tasks page, so creative work stays in sync here automatically as it is assigned, edited, reviewed, and completed.
             </p>

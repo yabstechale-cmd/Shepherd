@@ -1437,7 +1437,6 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
     const roleTemplate = getRoleTemplate(form.role);
     const fullName = `${form.first_name.trim()} ${form.last_name.trim()}`.trim();
     const payload = {
-      id: editingMemberId || undefined,
       church_id: church.id,
       full_name: fullName,
       role: form.role,
@@ -1449,11 +1448,10 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
     };
     const finalPayload = applyOversight(payload, form.oversight);
     setSaving(true);
-    const { data, error: saveError } = await supabase
-      .from("church_staff")
-      .upsert(finalPayload, { onConflict: "church_id,full_name" })
-      .select()
-      .single();
+    const query = editingMemberId
+      ? supabase.from("church_staff").update(finalPayload).eq("id", editingMemberId)
+      : supabase.from("church_staff").upsert(finalPayload, { onConflict: "church_id,full_name" });
+    const { data, error: saveError } = await query.select().single();
     setSaving(false);
     if (saveError) {
       setError(saveError.message || "We couldn't save that team member.");

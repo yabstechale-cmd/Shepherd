@@ -227,6 +227,17 @@ const normalizePurchaseOrder = (order) => ({
   comments: Array.isArray(order?.comments) ? order.comments : [],
   approval_history: Array.isArray(order?.approval_history) ? order.approval_history : [],
 });
+const normalizeEventWorkflow = (workflow) => ({
+  ...workflow,
+  event_name: workflow?.event_name || workflow?.title || "",
+  visibility: workflow?.visibility === "shared" ? "shared" : "private",
+  location: workflow?.location || "",
+  main_contact: workflow?.main_contact || "",
+  timeline_items: Array.isArray(workflow?.timeline_items) ? workflow.timeline_items : [],
+  checklist_items: Array.isArray(workflow?.checklist_items) ? workflow.checklist_items : [],
+  notes_entries: Array.isArray(workflow?.notes_entries) ? workflow.notes_entries : [],
+  steps: Array.isArray(workflow?.steps) ? workflow.steps : [],
+});
 const normalizeAutomation = (automation) => ({
   ...automation,
   status: ["draft", "active", "paused", "archived"].includes(automation?.status) ? automation.status : "draft",
@@ -680,6 +691,42 @@ const hasEventOpsNeeds = (request) =>
   || !!request?.espresso_drinks;
 const eventNeedsFinanceReview = (request) => /fee|fees|payment|payments|paid|ticket|tickets|registration|cost|budget|reimburse/i.test(String(request?.additional_information || ""));
 const findStaffLead = (staff, matcher) => (staff || []).find((user) => matcher(user))?.full_name || "";
+const createDefaultEventChecklist = () => ([]);
+const createEventPlanningBlank = (profile, request = null) => ({
+  id: null,
+  eventName: request?.event_name || "",
+  startDate: request?.single_date || request?.multi_start_date || request?.recurring_start_date || "",
+  endDate: request?.multi_end_date || request?.single_date || request?.recurring_start_date || "",
+  location: request ? getEventLocationSummary(request) : "",
+  mainContact: request?.contact_name || profile?.full_name || "",
+  linkedRequestId: request?.id || "",
+  visibility: "private",
+});
+const getEventWorkflowPrimaryDate = (workflow) => workflow?.start_date || workflow?.target_date || workflow?.end_date || "";
+const getEventCountdownLabel = (workflow) => {
+  const primaryDate = getEventWorkflowPrimaryDate(workflow);
+  if (!primaryDate) return "Date not set";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const eventDate = new Date(primaryDate);
+  eventDate.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((eventDate - today) / (1000 * 60 * 60 * 24));
+  if (Number.isNaN(diffDays)) return "Date not set";
+  if (diffDays > 1) return `${diffDays} days away`;
+  if (diffDays === 1) return "1 day away";
+  if (diffDays === 0) return "Today";
+  if (diffDays === -1) return "Happened yesterday";
+  return `${Math.abs(diffDays)} days ago`;
+};
+const getEventTimelineSummary = (workflow) => {
+  const items = Array.isArray(workflow?.timeline_items) ? workflow.timeline_items : [];
+  const openItems = items.filter((item) => !item.done);
+  if (openItems.length === 0) return "Timeline is clear";
+  const nextItem = [...openItems]
+    .sort((left, right) => new Date(left.date || 0) - new Date(right.date || 0))[0];
+  if (!nextItem?.date) return `${openItems.length} timeline items remaining`;
+  return `Next: ${nextItem.title} on ${fmtShortDate(nextItem.date)}`;
+};
 const buildApprovedEventTaskChain = (request, churchId, staff) => {
   if (!request || !churchId) return [];
   const dueDate = getEventPrimaryDate(request);
@@ -2424,16 +2471,61 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
 }
 
 function EventsBoard({ profile, church, eventRequests, setEventRequests, setTasks, moveItemToTrash, previewUsers }) {
+  const [eventsSection, setEventsSection] = useState("home");
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
   const [formError, setFormError] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [eventWorkflows, setEventWorkflows] = useState([]);
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [showWorkflowModal, setShowWorkflowModal] = useState(false);
+  const [workflowError, setWorkflowError] = useState("");
+  const [selectedWorkflow, setSelectedWorkflow] = useState(null);
+  const [workflowForm, setWorkflowForm] = useState(() => createEventPlanningBlank(profile));
+  const [timelineDraft, setTimelineDraft] = useState({ title: "", date: "", details: "" });
+  const [checklistDraft, setChecklistDraft] = useState("");
+  const [planningNoteDraft, setPlanningNoteDraft] = useState("");
   const eventColumns = [
     { id: "new", title: "New Event Requests", detail: "Incoming ministry requests waiting for admin review and scheduling.", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
     { id: "approved", title: "Approved Events", detail: "Confirmed events ready to be coordinated, staffed, and communicated.", accent: C.success, surface: "rgba(82,200,122,0.08)" },
     { id: "declined", title: "Declined Events", detail: "Requests that were not approved, with room for notes and follow-up.", accent: C.danger, surface: "rgba(224,82,82,0.08)" },
   ];
+  const requests = eventRequests || [];
+  const visibleWorkflows = eventWorkflows
+    .filter((workflow) => workflow.visibility === "shared" || samePerson(workflow.owner_name, profile?.full_name))
+    .sort((left, right) => new Date(getEventWorkflowPrimaryDate(left) || left.created_at || 0) - new Date(getEventWorkflowPrimaryDate(right) || right.created_at || 0));
+  const canEditWorkflow = (workflow) => samePerson(workflow?.owner_name, profile?.full_name);
+
+  useEffect(() => {
+    let active = true;
+    if (!church?.id) return () => {
+      active = false;
+    };
+    Promise.resolve().then(() => {
+      if (active) setWorkflowLoading(true);
+    });
+    supabase
+      .from("event_workflows")
+      .select("*")
+      .eq("church_id", church.id)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setEventWorkflows([]);
+          return;
+        }
+        setEventWorkflows((data || []).map(normalizeEventWorkflow));
+      })
+      .finally(() => {
+        if (!active) return;
+        setWorkflowLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [church?.id]);
 
   const saveEventRequest = async () => {
     const eventTiming = buildEventTimingSummary(eventForm);
@@ -2502,7 +2594,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
   };
 
   const loadingRequests = !!church?.id && eventRequests === null;
-  const requests = eventRequests || [];
   const publicEventRequestLink = typeof window !== "undefined" ? `${window.location.origin}/event-request` : "/event-request";
   const copyPublicEventRequestLink = async () => {
     try {
@@ -2517,6 +2608,156 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
 
   const requestDetails = selectedRequest || null;
   const openRequest = (request) => setSelectedRequest(request);
+  const openWorkflowModal = (workflow = null) => {
+    setWorkflowError("");
+    if (workflow) {
+      setWorkflowForm({
+        id: workflow.id,
+        eventName: workflow.event_name || workflow.title || "",
+        startDate: workflow.start_date || workflow.target_date || "",
+        endDate: workflow.end_date || workflow.start_date || workflow.target_date || "",
+        location: workflow.location || "",
+        mainContact: workflow.main_contact || "",
+        linkedRequestId: workflow.linked_event_request_id || "",
+        visibility: workflow.visibility || "private",
+      });
+    } else {
+      setWorkflowForm(createEventPlanningBlank(profile));
+    }
+    setShowWorkflowModal(true);
+  };
+  const saveWorkflow = async () => {
+    if (!church?.id) {
+      setWorkflowError("We couldn't find this church for planning workflows.");
+      return;
+    }
+    if (!workflowForm.eventName.trim() || !workflowForm.startDate || !workflowForm.location.trim() || !workflowForm.mainContact.trim()) {
+      setWorkflowError("Please complete the event name, date, location, and main contact before creating this event plan.");
+      return;
+    }
+    const payload = {
+      church_id: church.id,
+      title: workflowForm.eventName.trim(),
+      event_name: workflowForm.eventName.trim(),
+      owner_name: profile?.full_name || "Staff Member",
+      visibility: workflowForm.visibility,
+      summary: "",
+      target_date: workflowForm.startDate || null,
+      start_date: workflowForm.startDate || null,
+      end_date: workflowForm.endDate || workflowForm.startDate || null,
+      location: workflowForm.location.trim(),
+      main_contact: workflowForm.mainContact.trim(),
+      linked_event_request_id: workflowForm.linkedRequestId || null,
+      timeline_items: selectedWorkflow?.timeline_items || [],
+      checklist_items: selectedWorkflow?.checklist_items || createDefaultEventChecklist(),
+      notes_entries: selectedWorkflow?.notes_entries || [],
+      steps: selectedWorkflow?.steps || [],
+    };
+    setWorkflowError("");
+    if (workflowForm.id) {
+      const { data, error } = await supabase.from("event_workflows").update(payload).eq("id", workflowForm.id).select().single();
+      if (error) {
+        setWorkflowError(error.message || "We couldn't save that planning workflow.");
+        return;
+      }
+      const normalized = normalizeEventWorkflow(data);
+      setEventWorkflows((current) => (current || []).map((entry) => entry.id === normalized.id ? normalized : entry));
+      setSelectedWorkflow(normalized);
+    } else {
+      const { data, error } = await supabase.from("event_workflows").insert(payload).select().single();
+      if (error) {
+        setWorkflowError(error.message || "We couldn't create that planning workflow.");
+        return;
+      }
+      const normalized = normalizeEventWorkflow(data);
+      setEventWorkflows((current) => [normalized, ...(current || [])]);
+      setSelectedWorkflow(normalized);
+    }
+    setShowWorkflowModal(false);
+  };
+  const openWorkflow = (workflow) => {
+    setSelectedWorkflow(workflow);
+    setTimelineDraft({ title: "", date: "", details: "" });
+    setChecklistDraft("");
+    setPlanningNoteDraft("");
+  };
+  const updateWorkflow = async (workflow, changes) => {
+    const { data, error } = await supabase.from("event_workflows").update(changes).eq("id", workflow.id).select().single();
+    if (error) return;
+    const normalized = normalizeEventWorkflow(data);
+    setEventWorkflows((current) => (current || []).map((entry) => entry.id === normalized.id ? normalized : entry));
+    setSelectedWorkflow((current) => current?.id === normalized.id ? normalized : current);
+  };
+  const updateWorkflowChecklistItem = async (workflow, itemId) => {
+    const nextItems = (workflow.checklist_items || []).map((item) => item.id === itemId ? { ...item, done: !item.done } : item);
+    await updateWorkflow(workflow, { checklist_items: nextItems });
+  };
+  const addWorkflowTimelineItem = async (workflow) => {
+    if (!timelineDraft.title.trim()) return;
+    const nextItems = [
+      ...(workflow.timeline_items || []),
+      {
+        id: crypto.randomUUID(),
+        title: timelineDraft.title.trim(),
+        date: timelineDraft.date || null,
+        details: timelineDraft.details.trim(),
+        done: false,
+        created_by: profile?.full_name || "Staff",
+      },
+    ];
+    await updateWorkflow(workflow, { timeline_items: nextItems });
+    setTimelineDraft({ title: "", date: "", details: "" });
+  };
+  const toggleWorkflowTimelineItem = async (workflow, itemId) => {
+    const nextItems = (workflow.timeline_items || []).map((item) => item.id === itemId ? { ...item, done: !item.done } : item);
+    await updateWorkflow(workflow, { timeline_items: nextItems });
+  };
+  const addWorkflowChecklistItem = async (workflow) => {
+    if (!checklistDraft.trim()) return;
+    const nextItems = [
+      ...(workflow.checklist_items || []),
+      { id: crypto.randomUUID(), title: checklistDraft.trim(), done: false },
+    ];
+    await updateWorkflow(workflow, { checklist_items: nextItems });
+    setChecklistDraft("");
+  };
+  const deleteWorkflowChecklistItem = async (workflow, itemId) => {
+    const nextItems = (workflow.checklist_items || []).filter((item) => item.id !== itemId);
+    await updateWorkflow(workflow, { checklist_items: nextItems });
+  };
+  const addWorkflowNote = async (workflow) => {
+    if (!planningNoteDraft.trim()) return;
+    const nextNotes = [
+      ...(workflow.notes_entries || []),
+      {
+        id: crypto.randomUUID(),
+        author: profile?.full_name || "Staff",
+        body: planningNoteDraft.trim(),
+        created_at: new Date().toISOString(),
+      },
+    ];
+    await updateWorkflow(workflow, { notes_entries: nextNotes });
+    setPlanningNoteDraft("");
+  };
+  const toggleWorkflowVisibility = async (workflow) => {
+    await updateWorkflow(workflow, { visibility: workflow.visibility === "shared" ? "private" : "shared" });
+  };
+  const deleteWorkflow = async (workflow) => {
+    if (!workflow?.id) return;
+    moveItemToTrash?.({
+      entity_type: "event_plan",
+      entity_label: "Event Plan",
+      source: "event-planning",
+      source_label: "Event Planning",
+      title: workflow.event_name || workflow.title,
+      deleted_by: profile?.full_name || "Staff",
+      payload: workflow,
+    });
+    const { error } = await supabase.from("event_workflows").delete().eq("id", workflow.id);
+    if (error) return;
+    setEventWorkflows((current) => (current || []).filter((entry) => entry.id !== workflow.id));
+    setSelectedWorkflow((current) => current?.id === workflow.id ? null : current);
+  };
   const deleteRequest = async (request) => {
     if (!request?.id) return;
     moveItemToTrash?.({
@@ -2550,18 +2791,314 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
             )}
           </div>
           <div className="events-board-actions" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <button className="btn-outline" onClick={copyPublicEventRequestLink}>
-              Copy Public Form Link
-            </button>
-            <button className="btn-gold" onClick={() => {
-              setEventForm(createEventRequestBlank(profile));
-              setFormError("");
-              setShowEventForm(true);
-            }}>
-              New Event Request
-            </button>
+            {eventsSection !== "home" && (
+              <button className="btn-outline" onClick={() => setEventsSection("home")}>Back to Events Board</button>
+            )}
           </div>
         </div>
+        {eventsSection === "home" && (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
+            <button
+              className="card"
+              onClick={() => setEventsSection("requests")}
+              style={{padding:22,textAlign:"left",background:C.surface,cursor:"pointer",display:"grid",gap:10,minHeight:180}}
+            >
+              <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Requests</div>
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                Intake, review, approve, and archive incoming event requests for the church.
+              </div>
+              <div style={{fontSize:12,color:C.gold,marginTop:"auto",justifySelf:"end"}}>Open requests</div>
+            </button>
+            <button
+              className="card"
+              onClick={() => setEventsSection("planning")}
+              style={{padding:22,textAlign:"left",background:C.surface,cursor:"pointer",display:"grid",gap:10,minHeight:180}}
+            >
+              <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Planning</div>
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                Build planning workflows for upcoming events and choose whether each one stays private or is shared with others.
+              </div>
+              <div style={{fontSize:12,color:C.gold,marginTop:"auto",justifySelf:"end"}}>Open planning</div>
+            </button>
+          </div>
+        )}
+        {eventsSection === "planning" && (
+          <div className="card" style={{padding:18,borderTop:`3px solid ${C.blue}`,background:`linear-gradient(180deg, rgba(91,143,232,0.08) 0%, ${C.card} 24%)`}}>
+            {!selectedWorkflow && (
+              <>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:14}}>
+                  <div style={{textAlign:"left"}}>
+                    <div style={{...sectionTitleStyle,textAlign:"left"}}>Event Planning</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6,maxWidth:680}}>
+                      Start with a short intake, then open the event to build out its planning timeline, checklist, and working notes. Keep it private to yourself or make it visible to the team.
+                    </div>
+                  </div>
+                  <button className="btn-outline" onClick={() => openWorkflowModal()}>New Event Plan</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
+                  {workflowLoading && (
+                    <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted,gridColumn:"1 / -1"}}>
+                      Loading event plans...
+                    </div>
+                  )}
+                  {!workflowLoading && visibleWorkflows.length === 0 && (
+                    <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted,gridColumn:"1 / -1"}}>
+                      No event plans yet.
+                    </div>
+                  )}
+                  {!workflowLoading && visibleWorkflows.map((workflow) => {
+                    const checklistDone = (workflow.checklist_items || []).filter((item) => item.done).length;
+                    return (
+                      <div
+                        key={workflow.id}
+                        className="card"
+                        style={{padding:18,textAlign:"left",background:C.surface,border:`1px solid ${C.border}`,display:"grid",gap:10}}
+                      >
+                        <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}>
+                          <div style={{fontSize:20,fontWeight:600,color:C.text,lineHeight:1.2}}>{workflow.event_name || workflow.title}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            {canEditWorkflow(workflow) && (
+                              <button
+                                type="button"
+                                onClick={() => deleteWorkflow(workflow)}
+                                style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:`1px solid ${C.border}`,borderRadius:10,cursor:"pointer",color:C.muted,padding:8}}
+                                aria-label={`Delete ${workflow.event_name || workflow.title}`}
+                                title="Delete event plan"
+                              >
+                                <Icons.trash />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openWorkflow(workflow)}
+                          style={{display:"grid",gap:10,textAlign:"left",background:"none",border:"none",padding:0,cursor:"pointer"}}
+                        >
+                          <div style={{fontSize:12,color:C.muted}}>Countdown: {getEventCountdownLabel(workflow)}</div>
+                          <div style={{fontSize:12,color:C.muted}}>Main contact: {workflow.main_contact || "—"}</div>
+                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>{getEventTimelineSummary(workflow)}</div>
+                          <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",fontSize:12,color:C.muted}}>
+                            <span>{workflow.start_date ? fmtDate(workflow.start_date) : "Date not set"}</span>
+                            <span>{checklistDone}/{(workflow.checklist_items || []).length} checklist items complete</span>
+                          </div>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            {selectedWorkflow && (
+              <div style={{display:"grid",gap:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                  <div style={{textAlign:"left"}}>
+                    <button className="btn-outline" onClick={() => setSelectedWorkflow(null)} style={{marginBottom:14}}>Back to Event Planning</button>
+                    <h3 style={{...pageTitleStyle,textAlign:"left"}}>{selectedWorkflow.event_name || selectedWorkflow.title}</h3>
+                    <div style={{fontSize:14,color:C.gold,fontWeight:600,marginTop:8,textAlign:"left"}}>{getEventCountdownLabel(selectedWorkflow)}</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:10,lineHeight:1.6,textAlign:"left"}}>
+                      Use this page as the working hub for the event: organize the timeline, mark off the checklist, and keep live planning notes in one place.
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    {canEditWorkflow(selectedWorkflow) && (
+                      <button
+                        className="btn-outline"
+                        onClick={() => toggleWorkflowVisibility(selectedWorkflow)}
+                        title={selectedWorkflow.visibility === "shared" ? "Visible to others" : "Private to you"}
+                        style={{display:"flex",alignItems:"center",justifyContent:"center",padding:10,minWidth:0}}
+                      >
+                        {selectedWorkflow.visibility === "shared" ? <Icons.eye /> : <Icons.eyeOff />}
+                      </button>
+                    )}
+                    {canEditWorkflow(selectedWorkflow) && (
+                      <button className="btn-outline" onClick={() => openWorkflowModal(selectedWorkflow)}>Edit Event Details</button>
+                    )}
+                    {canEditWorkflow(selectedWorkflow) && (
+                      <button
+                        type="button"
+                        onClick={() => deleteWorkflow(selectedWorkflow)}
+                        style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:`1px solid ${C.border}`,borderRadius:10,cursor:"pointer",color:C.muted,padding:10}}
+                        aria-label={`Delete ${selectedWorkflow.event_name || selectedWorkflow.title}`}
+                        title="Delete event plan"
+                      >
+                        <Icons.trash />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="card" style={{padding:16,textAlign:"left",display:"grid",gap:12}}>
+                  <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Event Date</div>
+                      <div style={{fontSize:14,color:C.text,marginTop:4}}>
+                        {selectedWorkflow.start_date ? fmtDate(selectedWorkflow.start_date) : "—"}{selectedWorkflow.end_date && selectedWorkflow.end_date !== selectedWorkflow.start_date ? ` - ${fmtDate(selectedWorkflow.end_date)}` : ""}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Location</div>
+                      <div style={{fontSize:14,color:C.text,marginTop:4}}>{selectedWorkflow.location || "—"}</div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Main Contact</div>
+                      <div style={{fontSize:14,color:C.text,marginTop:4}}>{selectedWorkflow.main_contact || "—"}</div>
+                    </div>
+                    {selectedWorkflow.linked_event_request_id && (
+                      <div>
+                        <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Linked Request</div>
+                        <div style={{fontSize:14,color:C.text,marginTop:4}}>
+                          {requests.find((request) => request.id === selectedWorkflow.linked_event_request_id)?.event_name || "—"}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="card" style={{padding:18,textAlign:"left"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{...sectionTitleStyle,textAlign:"left"}}>Timeline</div>
+                      <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Build the event out in chronological order. Open a node when you want to focus on one step without letting the timeline take over the whole page.</div>
+                    </div>
+                  </div>
+                  <div style={{position:"relative",marginTop:16,padding:"4px 0 6px 0"}}>
+                    {(selectedWorkflow.timeline_items || []).length > 0 && (
+                      <div style={{position:"absolute",left:10,top:10,bottom:10,width:3,background:"linear-gradient(180deg, rgba(91,143,232,0.45) 0%, rgba(91,143,232,0.9) 100%)",borderRadius:999}} />
+                    )}
+                    <div style={{display:"flex",flexDirection:"column",gap:16,paddingLeft:0}}>
+                    {(selectedWorkflow.timeline_items || [])
+                      .slice()
+                      .sort((left, right) => new Date(left.date || 0) - new Date(right.date || 0))
+                      .map((item) => (
+                        <details key={item.id} open={false} style={{position:"relative",paddingLeft:34}}>
+                          <summary style={{listStyle:"none",cursor:"pointer",outline:"none"}}>
+                            <div style={{position:"absolute",left:0,top:14,width:22,height:22,borderRadius:"50%",border:`4px solid ${item.done ? C.success : C.blue}`,background:C.card,zIndex:1}} />
+                            <div style={{padding:"10px 12px 9px",border:`1px solid ${C.border}`,borderRadius:14,background:item.done ? "rgba(82,200,122,0.08)" : C.surface,minHeight:64}}>
+                              <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                                <div style={{fontSize:14,fontWeight:600,color:item.done ? C.muted : C.text,lineHeight:1.35,textDecoration:item.done ? "line-through" : "none"}}>{item.title}</div>
+                                <div style={{fontSize:12,color:C.muted}}>{item.date ? `Due ${fmtDate(item.date)}` : "Due date not set"}</div>
+                              </div>
+                              {item.done && <div style={{fontSize:10,color:C.gold,marginTop:6}}>Completed</div>}
+                            </div>
+                          </summary>
+                          <div style={{marginTop:10,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+                            {item.details ? (
+                              <div style={{fontSize:12,color:C.muted,lineHeight:1.6,whiteSpace:"pre-line"}}>{item.details}</div>
+                            ) : (
+                              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>No extra details added yet.</div>
+                            )}
+                            {canEditWorkflow(selectedWorkflow) && (
+                              <label style={{display:"flex",alignItems:"center",gap:10,marginTop:12,fontSize:12,color:C.text}}>
+                                <input type="checkbox" checked={!!item.done} onChange={() => toggleWorkflowTimelineItem(selectedWorkflow, item.id)} />
+                                Mark this timeline step complete
+                              </label>
+                            )}
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                    {(selectedWorkflow.timeline_items || []).length === 0 && (
+                      <div style={{padding:"22px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>No timeline tasks yet.</div>
+                    )}
+                  </div>
+                  {canEditWorkflow(selectedWorkflow) && (
+                    <div style={{display:"grid",gap:10,marginTop:14}}>
+                      <input className="input-field" placeholder="Timeline task title" value={timelineDraft.title} onChange={(e)=>setTimelineDraft((current) => ({ ...current, title: e.target.value }))} />
+                      <input className="input-field" type="date" value={timelineDraft.date} onChange={(e)=>setTimelineDraft((current) => ({ ...current, date: e.target.value }))} />
+                      <textarea className="input-field" rows={3} placeholder="What needs to happen for this step?" value={timelineDraft.details} onChange={(e)=>setTimelineDraft((current) => ({ ...current, details: e.target.value }))} style={{resize:"vertical"}} />
+                      <div style={{display:"flex",justifyContent:"flex-end"}}>
+                        <button className="btn-outline" onClick={() => addWorkflowTimelineItem(selectedWorkflow)}>Add To Timeline</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                  <div className="card" style={{padding:18,textAlign:"left"}}>
+                    <div style={{...sectionTitleStyle,textAlign:"left"}}>Checklist</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Track the major planning wins that need to be closed before the event arrives.</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:14}}>
+                      {(selectedWorkflow.checklist_items || []).map((item) => (
+                        <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                          <input type="checkbox" checked={!!item.done} disabled={!canEditWorkflow(selectedWorkflow)} onChange={() => updateWorkflowChecklistItem(selectedWorkflow, item.id)} />
+                          <span style={{flex:1,fontSize:13,color:item.done ? C.muted : C.text,textDecoration:item.done ? "line-through" : "none"}}>{item.title}</span>
+                          {canEditWorkflow(selectedWorkflow) && (
+                            <button
+                              type="button"
+                              onClick={() => deleteWorkflowChecklistItem(selectedWorkflow, item.id)}
+                              style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:`1px solid ${C.border}`,borderRadius:8,cursor:"pointer",color:C.muted,padding:6}}
+                              aria-label={`Delete ${item.title}`}
+                              title="Delete checklist item"
+                            >
+                              <Icons.trash />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {canEditWorkflow(selectedWorkflow) && (
+                      <div style={{display:"grid",gap:10,marginTop:14}}>
+                        <input className="input-field" placeholder="Add another checklist item" value={checklistDraft} onChange={(e)=>setChecklistDraft(e.target.value)} />
+                        <div style={{display:"flex",justifyContent:"flex-end"}}>
+                          <button className="btn-outline" onClick={() => addWorkflowChecklistItem(selectedWorkflow)}>Add Checklist Item</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="card" style={{padding:18,textAlign:"left"}}>
+                    <div style={{...sectionTitleStyle,textAlign:"left"}}>Planning Notes</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Use this like a shared notepad for ideas, open questions, and planning updates.</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:14}}>
+                      {(selectedWorkflow.notes_entries || [])
+                        .slice()
+                        .sort((left, right) => new Date(left.created_at || 0) - new Date(right.created_at || 0))
+                        .map((entry) => (
+                          <div key={entry.id} style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                            <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                              <div style={{fontSize:13,fontWeight:600,color:C.text}}>{entry.author || "Staff"}</div>
+                              <div style={{fontSize:11,color:C.muted}}>{fmtDate(entry.created_at)} {new Date(entry.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
+                            </div>
+                            <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.6,whiteSpace:"pre-line"}}>{entry.body}</div>
+                          </div>
+                        ))}
+                      {(selectedWorkflow.notes_entries || []).length === 0 && (
+                        <div style={{padding:"22px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>No notes yet.</div>
+                      )}
+                    </div>
+                    {canEditWorkflow(selectedWorkflow) && (
+                      <div style={{display:"grid",gap:10,marginTop:14}}>
+                        <textarea className="input-field" rows={4} placeholder="Add a planning note or update" value={planningNoteDraft} onChange={(e)=>setPlanningNoteDraft(e.target.value)} style={{resize:"vertical"}} />
+                        <div style={{display:"flex",justifyContent:"flex-end"}}>
+                          <button className="btn-outline" onClick={() => addWorkflowNote(selectedWorkflow)}>Add Note</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {eventsSection === "requests" && (
+        <div className="card" style={{padding:18,borderTop:`3px solid ${C.gold}`,background:`linear-gradient(180deg, rgba(201,168,76,0.08) 0%, ${C.card} 24%)`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:14}}>
+            <div style={{textAlign:"left"}}>
+              <div style={{...sectionTitleStyle,textAlign:"left"}}>Event Requests</div>
+              <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                This section holds your event intake, approval flow, and submitted request archive.
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+              <button className="btn-outline" onClick={copyPublicEventRequestLink}>
+                Copy Public Form Link
+              </button>
+              <button className="btn-gold" onClick={() => {
+                setEventForm(createEventRequestBlank(profile));
+                setFormError("");
+                setShowEventForm(true);
+              }}>
+                New Event Request
+              </button>
+            </div>
+          </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16}}>
               {eventColumns.map((column) => (
                 <div
@@ -2608,6 +3145,8 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                 </div>
               ))}
         </div>
+        </div>
+        )}
       </div>
       {showEventForm && (
         <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowEventForm(false)}>
@@ -2704,6 +3243,60 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                   Delete
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {showWorkflowModal && (
+        <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowWorkflowModal(false)} style={{alignItems:"flex-start",paddingTop:24,paddingBottom:24}}>
+          <div className="modal fadeIn" style={{maxWidth:700}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+              <h3 style={sectionTitleStyle}>{workflowForm.id ? "Edit Event Plan" : "New Event Plan"}</h3>
+              <button onClick={()=>setShowWorkflowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Name Of The Event</label>
+                <input className="input-field" placeholder="Example: Women's Night" value={workflowForm.eventName} onChange={(e)=>setWorkflowForm((current) => ({ ...current, eventName: e.target.value }))} />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Link To Event Request</label>
+                <select className="input-field" value={workflowForm.linkedRequestId} onChange={(e)=>{
+                  const linkedRequest = requests.find((request) => request.id === e.target.value);
+                  setWorkflowForm((current) => ({
+                    ...current,
+                    linkedRequestId: e.target.value,
+                    eventName: linkedRequest?.event_name || current.eventName,
+                    startDate: linkedRequest?.single_date || linkedRequest?.multi_start_date || linkedRequest?.recurring_start_date || current.startDate,
+                    endDate: linkedRequest?.multi_end_date || linkedRequest?.single_date || linkedRequest?.recurring_start_date || current.endDate,
+                    location: linkedRequest ? getEventLocationSummary(linkedRequest) : current.location,
+                    mainContact: linkedRequest?.contact_name || current.mainContact,
+                  }));
+                }} style={{background:C.surface}}>
+                  <option value="">No linked request</option>
+                  {requests.map((request) => (
+                    <option key={request.id} value={request.id}>{request.event_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date Or Dates</label>
+                <input className="input-field" type="date" value={workflowForm.startDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, startDate: e.target.value }))} />
+                <input className="input-field" type="date" value={workflowForm.endDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, endDate: e.target.value }))} />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Location</label>
+                <input className="input-field" placeholder="Example: Youth Room" value={workflowForm.location} onChange={(e)=>setWorkflowForm((current) => ({ ...current, location: e.target.value }))} />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Main Contact Person</label>
+                <input className="input-field" placeholder="Who is leading this event?" value={workflowForm.mainContact} onChange={(e)=>setWorkflowForm((current) => ({ ...current, mainContact: e.target.value }))} />
+              </div>
+            </div>
+            {workflowError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{workflowError}</div>}
+            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
+              <button className="btn-outline" onClick={()=>setShowWorkflowModal(false)}>Cancel</button>
+              <button className="btn-gold" onClick={saveWorkflow}>Save Event Plan</button>
             </div>
           </div>
         </div>

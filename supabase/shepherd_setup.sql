@@ -278,6 +278,48 @@ alter table public.event_requests add column if not exists created_at timestampt
 alter table public.event_requests
   enable row level security;
 
+create table if not exists public.event_workflows (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  linked_event_request_id uuid references public.event_requests(id) on delete set null,
+  title text not null,
+  event_name text,
+  owner_name text not null,
+  visibility text not null default 'private',
+  start_date date,
+  end_date date,
+  location text,
+  main_contact text,
+  timeline_items jsonb not null default '[]'::jsonb,
+  checklist_items jsonb not null default '[]'::jsonb,
+  notes_entries jsonb not null default '[]'::jsonb,
+  summary text,
+  target_date date,
+  steps jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.event_workflows add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.event_workflows add column if not exists linked_event_request_id uuid references public.event_requests(id) on delete set null;
+alter table public.event_workflows add column if not exists title text;
+alter table public.event_workflows add column if not exists event_name text;
+alter table public.event_workflows add column if not exists owner_name text;
+alter table public.event_workflows add column if not exists visibility text not null default 'private';
+alter table public.event_workflows add column if not exists start_date date;
+alter table public.event_workflows add column if not exists end_date date;
+alter table public.event_workflows add column if not exists location text;
+alter table public.event_workflows add column if not exists main_contact text;
+alter table public.event_workflows add column if not exists timeline_items jsonb not null default '[]'::jsonb;
+alter table public.event_workflows add column if not exists checklist_items jsonb not null default '[]'::jsonb;
+alter table public.event_workflows add column if not exists notes_entries jsonb not null default '[]'::jsonb;
+alter table public.event_workflows add column if not exists summary text;
+alter table public.event_workflows add column if not exists target_date date;
+alter table public.event_workflows add column if not exists steps jsonb not null default '[]'::jsonb;
+alter table public.event_workflows add column if not exists created_at timestamptz not null default now();
+
+alter table public.event_workflows
+  enable row level security;
+
 create table if not exists public.people (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -856,6 +898,74 @@ on public.event_requests
 for update
 using (public.user_can_manage_church(church_id))
 with check (public.user_can_manage_church(church_id));
+
+drop policy if exists "event workflows same church read" on public.event_workflows;
+create policy "event workflows same church read"
+on public.event_workflows
+for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_workflows.church_id
+      and (
+        public.user_can_manage_church(event_workflows.church_id)
+        or event_workflows.visibility = 'shared'
+        or event_workflows.owner_name = p.full_name
+      )
+  )
+);
+
+drop policy if exists "event workflows same church insert" on public.event_workflows;
+create policy "event workflows same church insert"
+on public.event_workflows
+for insert
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_workflows.church_id
+  )
+);
+
+drop policy if exists "event workflows owner update" on public.event_workflows;
+create policy "event workflows owner update"
+on public.event_workflows
+for update
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_workflows.church_id
+      and event_workflows.owner_name = p.full_name
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_workflows.church_id
+      and event_workflows.owner_name = p.full_name
+  )
+);
+
+drop policy if exists "event workflows owner delete" on public.event_workflows;
+create policy "event workflows owner delete"
+on public.event_workflows
+for delete
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_workflows.church_id
+      and event_workflows.owner_name = p.full_name
+  )
+);
 
 drop policy if exists "automations same church read" on public.automations;
 create policy "automations same church read"

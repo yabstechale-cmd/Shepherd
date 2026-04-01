@@ -218,6 +218,14 @@ const normalizeTask = (task) => ({
   review_required: task?.review_required ?? false,
   comments: Array.isArray(task?.comments) ? task.comments : [],
 });
+const normalizePurchaseOrder = (order) => ({
+  ...order,
+  status: ["pending", "in-review", "approved", "denied"].includes(order?.status) ? order.status : "pending",
+  required_approvers: Array.isArray(order?.required_approvers) ? order.required_approvers : [],
+  approvals: Array.isArray(order?.approvals) ? order.approvals : [],
+  comments: Array.isArray(order?.comments) ? order.comments : [],
+  approval_history: Array.isArray(order?.approval_history) ? order.approval_history : [],
+});
 const normalizeAutomation = (automation) => ({
   ...automation,
   status: ["draft", "active", "paused", "archived"].includes(automation?.status) ? automation.status : "draft",
@@ -233,6 +241,12 @@ const normalizeBudgetItems = (items) => Array.isArray(items)
       }))
       .filter((item) => item.label)
   : [];
+const normalizeExternalUrl = (value) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+};
 const normalizeName = (value) => (value || "").trim().toLowerCase();
 const tokenizeName = (value) => normalizeName(value).split(/\s+/).filter(Boolean);
 const isPotentialDuplicateStaffName = (left, right) => {
@@ -285,6 +299,8 @@ const canEditTask = (profile, church, task) => canManageAllTasks(profile, church
 const canReviewTask = (profile, task) => task?.review_required && task?.status === "in-review" && listIncludesPerson(task?.reviewers, profile?.full_name);
 const canManagePeople = (profile, church) => hasAdministrativeOversight(profile, church);
 const isFinanceUser = (profile) => profileHasMinistry(profile, "Finances") || (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
+const isFinanceDirector = (profile) => (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
+const isSeniorPastor = (profile) => (profile?.staff_roles || []).includes("senior_pastor") || profile?.role === "senior_pastor";
 const isMinistryLedgerLead = (profile) => (profile?.staff_roles || [profile?.role]).some((roleValue) => MINISTRY_LEDGER_ROLE_VALUES.has(roleValue));
 const getBudgetScopeMinistries = (profile) => {
   if (!profile) return [];
@@ -762,6 +778,18 @@ const commentMentionsProfile = (comment, profile) => {
   const firstName = (profile.full_name.split(" ")[0] || "").trim().toLowerCase();
   return body.includes(`@${fullName}`) || (firstName && body.includes(`@${firstName}`));
 };
+const getMentionContext = (value, cursor) => {
+  const beforeCursor = value.slice(0, cursor);
+  const match = beforeCursor.match(/(?:^|\s)@([a-zA-Z][a-zA-Z\s]*)$/);
+  if (!match) return null;
+  const query = match[1];
+  const tokenStart = cursor - query.length - 1;
+  return {
+    query,
+    start: tokenStart,
+    end: cursor,
+  };
+};
 const renderCommentBody = (body) => {
   const parts = String(body || "").split(/(@[a-zA-Z]+(?:\s[a-zA-Z]+)?)/g);
   return parts.map((part, index) => {
@@ -786,10 +814,35 @@ const renderCommentBody = (body) => {
     return <span key={`${part}-${index}`}>{part}</span>;
   });
 };
-const buildNotifications = (tasks, eventRequests, profile) => {
+const canReviewPurchaseOrders = (profile) => isFinanceDirector(profile) || isSeniorPastor(profile);
+const getPurchaseOrderReviewerDecision = (order, reviewer) => {
+  if (!reviewer) return null;
+  const history = Array.isArray(order?.approval_history) ? [...order.approval_history] : [];
+  const match = history
+    .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0))
+    .find((entry) => samePerson(entry?.reviewer, reviewer));
+  if (!match) return null;
+  return {
+    action: match.action === "denied" ? "denied" : match.action === "approved" ? "approved" : "pending",
+    note: match.note || "",
+    created_at: match.created_at || "",
+  };
+};
+const canApprovePurchaseOrder = (profile, order) =>
+  listIncludesPerson(order?.required_approvers, profile?.full_name)
+  && !getPurchaseOrderReviewerDecision(order, profile?.full_name)
+  && ["pending", "in-review"].includes(order?.status || "pending");
+const canDeletePurchaseOrder = (profile, order) =>
+  !!order && (
+    (order.requester_id === profile?.id && ["pending", "in-review"].includes(order.status || "pending"))
+    || canReviewPurchaseOrders(profile)
+  );
+const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
   if (!profile?.full_name) return [];
   const fullName = profile.full_name;
   const isAdminViewer = hasAdministrativeOversight(profile, null);
+  const financeDirectorViewer = isFinanceDirector(profile);
+  const purchaseOrderReviewer = canReviewPurchaseOrders(profile);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endOfTomorrow = new Date(startOfToday);
@@ -878,6 +931,75 @@ const buildNotifications = (tasks, eventRequests, profile) => {
         title: "You were mentioned in a task",
         detail: `${comment.author} mentioned you in ${task.title}.`,
         target: "tasks",
+        createdAt: commentDate.getTime(),
+      });
+    });
+  });
+
+  (purchaseOrders || []).forEach((order) => {
+    const createdAt = order.created_at ? new Date(order.created_at) : null;
+    const neededBy = order.needed_by ? new Date(order.needed_by) : null;
+    const reminderThreshold = neededBy ? new Date(neededBy.getTime() - (48 * 60 * 60 * 1000)) : null;
+    const isAwaitingDecision = ["pending", "in-review"].includes(order.status || "pending");
+    const isRequester = order.requester_id === profile?.id || samePerson(order.requested_by, fullName);
+    const reviewRequestedForMe = canApprovePurchaseOrder(profile, order);
+
+    if (purchaseOrderReviewer && reviewRequestedForMe) {
+      items.push({
+        id: `purchase-order-new-${order.id}-${normalizeName(fullName)}`,
+        tone: C.blue,
+        title: "New purchase order request",
+        detail: `${order.requested_by || "A staff member"} submitted ${order.title}.`,
+        target: "budget",
+        createdAt: createdAt?.getTime() || now.getTime(),
+      });
+    }
+
+    if (financeDirectorViewer && isAwaitingDecision && reminderThreshold && now.getTime() >= reminderThreshold.getTime()) {
+      items.push({
+        id: `purchase-order-reminder-${order.id}`,
+        tone: C.gold,
+        title: "Purchase order needs a decision",
+        detail: `${order.title} is still awaiting review and is needed by ${fmtDate(order.needed_by)}.`,
+        target: "budget",
+        createdAt: reminderThreshold.getTime(),
+      });
+    }
+
+    if (isRequester && order.status === "approved") {
+      items.push({
+        id: `purchase-order-approved-${order.id}`,
+        tone: C.success,
+        title: "Purchase order approved",
+        detail: `${order.title} was approved${order.decided_by ? ` by ${order.decided_by}` : ""}.`,
+        target: "budget",
+        createdAt: new Date(order.decided_at || order.created_at || now).getTime(),
+      });
+    }
+
+    if (isRequester && order.status === "denied") {
+      items.push({
+        id: `purchase-order-denied-${order.id}`,
+        tone: C.danger,
+        title: "Purchase order denied",
+        detail: `${order.title} was denied${order.decided_by ? ` by ${order.decided_by}` : ""}.`,
+        target: "budget",
+        createdAt: new Date(order.decided_at || order.created_at || now).getTime(),
+      });
+    }
+
+    (order.comments || []).forEach((comment) => {
+      if (!commentMentionsProfile(comment, profile)) return;
+      if (samePerson(comment.author, fullName)) return;
+      const commentDate = comment.created_at ? new Date(comment.created_at) : null;
+      if (!commentDate) return;
+      if (now.getTime() - commentDate.getTime() > 14 * 86400000) return;
+      items.push({
+        id: `purchase-order-comment-mention-${order.id}-${comment.id}-${normalizeName(fullName)}`,
+        tone: C.blue,
+        title: "You were mentioned in a purchase order",
+        detail: `${comment.author} mentioned you in ${order.title}.`,
+        target: "budget",
         createdAt: commentDate.getTime(),
       });
     });
@@ -1241,7 +1363,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
     {id:"workspaces",label:"Workspaces",I:Icons.workspace},
     {id:"notifications",label:"Notifications",I:Icons.bell},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
-    ...(canViewBudget(profile) ? [{id:"budget",label:"Budget",I:Icons.budget}] : []),
+    ...(canViewBudget(profile) ? [{id:"budget",label:"Finances",I:Icons.budget}] : []),
     {id:"calendar",label:"Calendar",I:Icons.calendar},
     ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.people}] : []),
     {id:"trash",label:"Trash",I:Icons.trash},
@@ -1658,6 +1780,7 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
   const blank = { first_name: "", last_name: "", roles: ["youth_pastor"], title: formatRoleTitles(["youth_pastor"]), oversight: "standard" };
   const [form, setForm] = useState(blank);
   const [editingMemberId, setEditingMemberId] = useState(null);
+  const [showTeamMemberModal, setShowTeamMemberModal] = useState(false);
 
   const applyOversight = (payload, oversight) => {
     if (oversight === "admin") {
@@ -1666,14 +1789,6 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
         can_see_team_overview: true,
         can_see_admin_overview: true,
         read_only_oversight: false,
-      };
-    }
-    if (oversight === "read-only") {
-      return {
-        ...payload,
-        can_see_team_overview: true,
-        can_see_admin_overview: false,
-        read_only_oversight: true,
       };
     }
     return {
@@ -1687,7 +1802,6 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
   const getOversightValue = (user) => {
     if (isStaffAccountAdmin(user, church)) return "admin";
     if (user?.can_see_admin_overview) return "admin";
-    if (user?.read_only_oversight) return "read-only";
     return "standard";
   };
 
@@ -1819,6 +1933,14 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
     });
     setEditingMemberId(null);
     setForm(blank);
+    setShowTeamMemberModal(false);
+  };
+
+  const openNewMemberModal = () => {
+    setEditingMemberId(null);
+    setForm(blank);
+    setError("");
+    setShowTeamMemberModal(true);
   };
 
   const startEditingMember = (user) => {
@@ -1836,6 +1958,8 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
       title: user.title || formatRoleTitles(roles),
       oversight: getOversightValue(user),
     });
+    setError("");
+    setShowTeamMemberModal(true);
   };
 
   const toggleRoleSelection = (roleValue) => {
@@ -1869,6 +1993,7 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
     if (editingMemberId === user.id) {
       setEditingMemberId(null);
       setForm(blank);
+      setShowTeamMemberModal(false);
     }
   };
 
@@ -1882,78 +2007,85 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
           </p>
         </div>
       </div>
-      <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"380px 1fr",gap:18}}>
-        <div className="card" style={{padding:22,textAlign:"left"}}>
-          <h3 style={sectionTitleStyle}>{editingMemberId ? "Edit Team Member" : "Add Team Member"}</h3>
-          <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
-            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <input className="input-field" placeholder="First name" value={form.first_name} onChange={(e)=>setForm({...form,first_name:e.target.value})}/>
-              <input className="input-field" placeholder="Last name" value={form.last_name} onChange={(e)=>setForm({...form,last_name:e.target.value})}/>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:8,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-              <div style={{fontSize:12,color:C.muted}}>Roles</div>
-              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
-                {STAFF_ROLE_OPTIONS.map((option) => (
-                  <label key={option.value} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:C.text}}>
-                    <input
-                      type="checkbox"
-                      checked={form.roles.includes(option.value)}
-                      onChange={() => toggleRoleSelection(option.value)}
-                    />
-                    <span>{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <select
-              className="input-field"
-              value={form.oversight}
-              onChange={(e)=>setForm({...form,oversight:e.target.value})}
-              style={{background:C.surface}}
-            >
-              <option value="standard">Standard Access</option>
-              <option value="read-only">Read-Only Oversight</option>
-              <option value="admin">Administrative Oversight</option>
-            </select>
-            {error && <div style={{fontSize:12,color:C.danger}}>{error}</div>}
-            <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
-              {editingMemberId && (
-                <button className="btn-outline" onClick={()=>{setEditingMemberId(null); setForm(blank);}}>
-                  Cancel
-                </button>
-              )}
-              <button className="btn-gold" onClick={saveStaffMember} disabled={saving || !canEditChurchTeam(profile, church)}>
-                {saving ? "Saving..." : editingMemberId ? "Save Changes" : "Add Team Member"}
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="card" style={{padding:22,textAlign:"left"}}>
+      <div className="card" style={{padding:22,textAlign:"left"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <h3 style={sectionTitleStyle}>Current Team</h3>
-          <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
-            {(previewUsers || []).length === 0 && <div style={{fontSize:13,color:C.muted}}>No team members have been added yet.</div>}
-            {(previewUsers || []).map((user) => (
-              <div key={user.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
-                <div>
-                  <div style={{fontSize:14,fontWeight:600,color:C.text}}>{user.full_name}</div>
-                  <div style={{fontSize:12,color:C.muted,marginTop:4}}>{user.title}</div>
-                  <div style={{fontSize:11,color:C.muted,marginTop:4}}>
-                    {isStaffAccountAdmin(user, church) || user.can_see_admin_overview ? "Administrative Oversight" : user.read_only_oversight ? "Read-Only Oversight" : "Standard Access"}
-                  </div>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
-                  {canEditChurchTeam(profile, church) && (
-                    <div style={{display:"flex",gap:8}}>
-                      <button className="btn-outline" onClick={()=>startEditingMember(user)} style={{padding:"5px 10px",fontSize:12}}>Edit</button>
-                      <button className="btn-outline" onClick={()=>removeStaffMember(user)} style={{padding:"5px 10px",fontSize:12,borderColor:C.danger,color:C.danger}}>Remove</button>
-                    </div>
-                  )}
+          {canEditChurchTeam(profile, church) && (
+            <button className="btn-gold" onClick={openNewMemberModal}><Icons.plus/>Create Team Member</button>
+          )}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+          {(previewUsers || []).length === 0 && <div style={{fontSize:13,color:C.muted}}>No team members have been added yet.</div>}
+          {(previewUsers || []).map((user) => (
+            <div key={user.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:600,color:C.text}}>{user.full_name}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4}}>{user.title}</div>
+                <div style={{fontSize:11,color:C.muted,marginTop:4}}>
+                  {isStaffAccountAdmin(user, church) || user.can_see_admin_overview ? "Administrative Oversight" : "Standard Access"}
                 </div>
               </div>
-            ))}
-          </div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+                {canEditChurchTeam(profile, church) && (
+                  <div style={{display:"flex",gap:8}}>
+                    <button className="btn-outline" onClick={()=>startEditingMember(user)} style={{padding:"5px 10px",fontSize:12}}>Edit</button>
+                    <button className="btn-outline" onClick={()=>removeStaffMember(user)} style={{padding:"5px 10px",fontSize:12,borderColor:C.danger,color:C.danger}}>Remove</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
+      {showTeamMemberModal && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTeamMemberModal(false)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
+          <div className="modal fadeIn">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+              <h3 style={sectionTitleStyle}>{editingMemberId ? "Edit Team Member" : "Create Team Member"}</h3>
+              <button onClick={()=>{setShowTeamMemberModal(false); setEditingMemberId(null); setForm(blank); setError("");}} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <input className="input-field" placeholder="First name" value={form.first_name} onChange={(e)=>setForm({...form,first_name:e.target.value})}/>
+                <input className="input-field" placeholder="Last name" value={form.last_name} onChange={(e)=>setForm({...form,last_name:e.target.value})}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                <div style={{fontSize:12,color:C.muted}}>Roles</div>
+                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+                  {STAFF_ROLE_OPTIONS.map((option) => (
+                    <label key={option.value} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:C.text}}>
+                      <input
+                        type="checkbox"
+                        checked={form.roles.includes(option.value)}
+                        onChange={() => toggleRoleSelection(option.value)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <select
+                className="input-field"
+                value={form.oversight}
+                onChange={(e)=>setForm({...form,oversight:e.target.value})}
+                style={{background:C.surface}}
+              >
+                <option value="standard">Standard Access</option>
+                <option value="admin">Administrative Oversight</option>
+              </select>
+              {error && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{error}</div>}
+              <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:8}}>
+                <button className="btn-outline" onClick={()=>{setShowTeamMemberModal(false); setEditingMemberId(null); setForm(blank); setError("");}}>
+                  Cancel
+                </button>
+                <button className="btn-gold" onClick={saveStaffMember} disabled={saving || !canEditChurchTeam(profile, church)}>
+                  {saving ? "Saving..." : editingMemberId ? "Save Changes" : "Create Team Member"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3853,7 +3985,7 @@ function Members({ people, setPeople, churchId, church, profile }) {
 }
 
 // ── Budget ─────────────────────────────────────────────────────────────────
-function Budget({ transactions, setTransactions, churchId, profile, setProfile, ministries, setMinistries, previewUsers, setPreviewUsers }) {
+function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrders, churchId, profile, setProfile, ministries, setMinistries, previewUsers, setPreviewUsers }) {
   const isPreview = churchId === "preview";
   const financeView = isFinanceUser(profile);
   const visibleMinistries = getBudgetScopeMinistries(profile);
@@ -3861,9 +3993,25 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
   const defaultMinistry = visibleMinistries[0] || "Admin";
   const [showModal, setShowModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [showPurchaseOrderModal, setShowPurchaseOrderModal] = useState(false);
+  const [purchaseOrderError, setPurchaseOrderError] = useState("");
+  const [purchaseOrderSubmitting, setPurchaseOrderSubmitting] = useState(false);
+  const [purchaseOrderCommentDrafts, setPurchaseOrderCommentDrafts] = useState({});
+  const [purchaseOrderCommentCursor, setPurchaseOrderCommentCursor] = useState({});
+  const purchaseOrderCommentInputRef = useRef(null);
   const [selectedLedgerMinistry, setSelectedLedgerMinistry] = useState(defaultMinistry);
   const [form, setForm] = useState({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
   const [budgetForm, setBudgetForm] = useState({ id: null, ministry: defaultMinistry, budget: "", assignedStaffId: "", items: [{ label: "", amount: "" }] });
+  const [purchaseOrderForm, setPurchaseOrderForm] = useState({
+    title: "",
+    amount: "",
+    ministry: defaultMinistry,
+    budgetLineItem: "",
+    neededBy: "",
+    purchaseLink: "",
+    includedInBudget: "yes",
+    notes: "",
+  });
   const ledgerMinistryNames = [...new Set([
     ...((ministries || []).map((entry) => entry.name).filter(Boolean)),
     ...(financeView ? [] : visibleMinistries),
@@ -3871,16 +4019,28 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
   const activeLedgerMinistry = selectedLedgerMinistry || defaultMinistry;
   const selectedMinistryRecord = (ministries || []).find((entry) => entry.name === activeLedgerMinistry);
   const selectedMinistryBudgetItems = normalizeBudgetItems(selectedMinistryRecord?.budget_items);
+  const mentionableNames = [...new Set((previewUsers || []).map((user) => user.full_name).filter(Boolean))];
+  const activePurchaseOrderCommentId = Object.keys(purchaseOrderCommentCursor).find((id) => typeof purchaseOrderCommentCursor[id] === "number") || "";
+  const activePurchaseOrderCommentDraft = activePurchaseOrderCommentId ? (purchaseOrderCommentDrafts[activePurchaseOrderCommentId] || "") : "";
+  const activePurchaseOrderCommentSelection = activePurchaseOrderCommentId ? (purchaseOrderCommentCursor[activePurchaseOrderCommentId] || 0) : 0;
+  const purchaseOrderMentionContext = getMentionContext(activePurchaseOrderCommentDraft, activePurchaseOrderCommentSelection);
+  const purchaseOrderMentionSuggestions = purchaseOrderMentionContext
+    ? mentionableNames.filter((name) => name.toLowerCase().includes(purchaseOrderMentionContext.query.trim().toLowerCase()) && !samePerson(name, profile?.full_name)).slice(0, 5)
+    : [];
 
   const canManageBudgetLinesForMinistry = (ministry) => financeView || visibleMinistries.includes(ministry);
 
-  const openTransactionModal = (ministry = defaultMinistry) => {
+  const resetTransactionForm = (ministry = defaultMinistry, type = "expense") => ({
+    description: "",
+    amount: "",
+    ministry,
+    category: "",
+    date: new Date().toISOString().split("T")[0],
+    type,
+  });
+  const openTransactionModal = (ministry = defaultMinistry, type = "expense") => {
     setSelectedLedgerMinistry(ministry);
-    setForm((current) => ({
-      ...current,
-      ministry,
-      category: "",
-    }));
+    setForm(resetTransactionForm(ministry, type));
     setShowModal(true);
   };
   const openBudgetModal = (ministry = "") => {
@@ -3896,12 +4056,27 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
     });
     setShowBudgetModal(true);
   };
+  const openPurchaseOrderModal = (ministry = defaultMinistry) => {
+    setSelectedLedgerMinistry(ministry);
+    setPurchaseOrderError("");
+    setPurchaseOrderForm({
+      title: "",
+      amount: "",
+      ministry,
+      budgetLineItem: "",
+      neededBy: "",
+      purchaseLink: "",
+      includedInBudget: "yes",
+      notes: "",
+    });
+    setShowPurchaseOrderModal(true);
+  };
 
   if (!canViewBudget(profile)) {
     return (
       <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
         <div style={{marginBottom:24}}>
-          <h2 style={pageTitleStyle}>Budget</h2>
+          <h2 style={{...pageTitleStyle,textAlign:"left"}}>Finances</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>Budget visibility is limited to Finance and ministry leaders.</p>
         </div>
         <div className="card" style={{padding:24}}>
@@ -3913,14 +4088,22 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
     );
   }
 
-  const scopedTransactions = financeView
+  const budgetScopedTransactions = financeView
     ? transactions.filter((transaction) => ledgerMinistryNames.includes(transaction.ministry))
     : transactions.filter((transaction) => visibleMinistries.includes(transaction.ministry));
+  const visiblePurchaseOrders = financeView
+    ? (purchaseOrders || [])
+    : (purchaseOrders || []).filter((order) => order.requester_id === profile?.id || samePerson(order.requested_by, profile?.full_name));
+  const visiblePurchaseOrdersByMinistry = visiblePurchaseOrders.reduce((accumulator, order) => {
+    const ministryKey = order.ministry || "Admin";
+    accumulator[ministryKey] = [...(accumulator[ministryKey] || []), order];
+    return accumulator;
+  }, {});
 
   const ministrySummaries = (financeView ? ledgerMinistryNames : visibleMinistries)
     .map((ministry) => {
       const budgetRow = (ministries || []).find((entry) => entry.name === ministry);
-      const ministryTransactions = scopedTransactions.filter((transaction) => transaction.ministry === ministry);
+      const ministryTransactions = budgetScopedTransactions.filter((transaction) => transaction.ministry === ministry);
       const spent = ministryTransactions
         .filter((transaction) => transaction.amount < 0)
         .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
@@ -3935,14 +4118,13 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
         income,
         remaining: budgetAmount - spent,
         transactions: ministryTransactions.length,
+        purchaseOrders: (visiblePurchaseOrdersByMinistry[ministry] || []).length,
       };
     })
     .filter((summary) => financeView || summary.transactions > 0 || summary.budget > 0);
 
-  const income = scopedTransactions.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
-  const expense = scopedTransactions.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
   const categorySuggestions = [...new Set(
-    scopedTransactions
+    budgetScopedTransactions
       .filter((transaction) => transaction.ministry === activeLedgerMinistry)
       .map((transaction) => transaction.category)
       .filter(Boolean)
@@ -3951,17 +4133,19 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
 
   const save = async () => {
     if (!form.description||!form.amount||!form.category||!form.ministry) return;
-    const amt = parseFloat(form.amount)*(form.type==="expense"?-1:1);
+    const parsedAmount = Number.parseFloat(form.amount || "0");
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) return;
+    const amt = parsedAmount * (form.type==="expense"?-1:1);
     if (isPreview) {
       setTransactions([{ ...form, id: `txn-${Date.now()}`, amount: amt, church_id: churchId }, ...transactions]);
       setShowModal(false);
-      setForm({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
+      setForm(resetTransactionForm(defaultMinistry));
       return;
     }
     const { data } = await supabase.from("transactions").insert({description:form.description,amount:amt,ministry:form.ministry,category:form.category,date:form.date,church_id:churchId}).select().single();
     setTransactions([data,...transactions]);
     setShowModal(false);
-    setForm({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
+    setForm(resetTransactionForm(defaultMinistry));
   };
 
   const saveBudget = async () => {
@@ -4029,6 +4213,156 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
     });
     setShowBudgetModal(false);
   };
+  const savePurchaseOrder = async () => {
+    if (!purchaseOrderForm.title || !purchaseOrderForm.amount || !purchaseOrderForm.ministry) {
+      setPurchaseOrderError("Please complete the required purchase order fields.");
+      return;
+    }
+    if (purchaseOrderForm.includedInBudget === "yes" && !purchaseOrderForm.budgetLineItem) {
+      setPurchaseOrderError("Choose a budget line item when this request was included in the yearly budget proposal.");
+      return;
+    }
+    const parsedAmount = Number.parseFloat(purchaseOrderForm.amount || "0");
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      setPurchaseOrderError("Enter a valid dollar amount for this purchase order.");
+      return;
+    }
+    const normalizedPurchaseLink = normalizeExternalUrl(purchaseOrderForm.purchaseLink);
+    setPurchaseOrderError("");
+    setPurchaseOrderSubmitting(true);
+    const requiredApprovers = [...new Set(
+      (previewUsers || [])
+        .filter((user) => isFinanceDirector(user) || isSeniorPastor(user))
+        .map((user) => user.full_name)
+        .filter(Boolean)
+    )];
+    const payload = {
+      church_id: churchId,
+      ministry: purchaseOrderForm.ministry,
+      budget_line_item: purchaseOrderForm.includedInBudget === "yes" ? purchaseOrderForm.budgetLineItem : "",
+      title: purchaseOrderForm.title,
+      amount: parsedAmount,
+      needed_by: purchaseOrderForm.neededBy || null,
+      purchase_link: normalizedPurchaseLink || null,
+      included_in_budget: purchaseOrderForm.includedInBudget === "yes",
+      notes: purchaseOrderForm.notes || null,
+      status: requiredApprovers.length > 0 ? "in-review" : "pending",
+      required_approvers: requiredApprovers,
+      approvals: [],
+      comments: [],
+      approval_history: [],
+      requester_id: profile?.id || null,
+      requested_by: profile?.full_name || "Staff Member",
+      requester_email: profile?.email || null,
+    };
+    if (isPreview) {
+      setPurchaseOrders((current) => [normalizePurchaseOrder({ ...payload, id: `po-${Date.now()}`, created_at: new Date().toISOString() }), ...(current || [])]);
+      setPurchaseOrderSubmitting(false);
+      setShowPurchaseOrderModal(false);
+      return;
+    }
+    const { data, error } = await supabase.from("purchase_orders").insert(payload).select().single();
+    if (error) {
+      setPurchaseOrderSubmitting(false);
+      setPurchaseOrderError(error.message || "This purchase order could not be submitted yet.");
+      return;
+    }
+    setPurchaseOrders((current) => [normalizePurchaseOrder(data), ...(current || [])]);
+    setPurchaseOrderSubmitting(false);
+    setShowPurchaseOrderModal(false);
+  };
+  const updatePurchaseOrderStatus = async (order, status) => {
+    if (!order?.id) return;
+    const nowIso = new Date().toISOString();
+    if (status === "approved" && !canApprovePurchaseOrder(profile, order)) return;
+    if (status === "denied" && !canApprovePurchaseOrder(profile, order)) return;
+    const nextApprovals = status === "approved"
+      ? [...new Set([...(order.approvals || []), profile?.full_name].filter(Boolean))]
+      : (order.approvals || []);
+    const fullyApproved = status === "approved" && nextApprovals.length >= Math.max((order.required_approvers || []).length, 1);
+    const nextApprovalHistory = [
+      ...(order.approval_history || []),
+      {
+        id: `${order.id}-${status}-${nowIso}`,
+        reviewer: profile?.full_name || "Reviewer",
+        action: status,
+        note: "",
+        created_at: nowIso,
+      },
+    ];
+    const changes = status === "approved"
+      ? {
+          approvals: nextApprovals,
+          approval_history: nextApprovalHistory,
+          status: fullyApproved ? "approved" : "in-review",
+          decided_at: fullyApproved ? nowIso : null,
+          decided_by: fullyApproved ? (profile?.full_name || "Finance") : null,
+        }
+      : {
+          approvals: nextApprovals,
+          approval_history: nextApprovalHistory,
+          status: "denied",
+          decided_at: nowIso,
+          decided_by: profile?.full_name || "Finance",
+        };
+    if (isPreview) {
+      setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
+      return;
+    }
+    const { error } = await supabase.from("purchase_orders").update(changes).eq("id", order.id);
+    if (error) return;
+    setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
+  };
+  const deletePurchaseOrder = async (order) => {
+    if (!canDeletePurchaseOrder(profile, order) || !order?.id) return;
+    if (isPreview) {
+      setPurchaseOrders((current) => (current || []).filter((entry) => entry.id !== order.id));
+      return;
+    }
+    const { error } = await supabase.from("purchase_orders").delete().eq("id", order.id);
+    if (error) return;
+    setPurchaseOrders((current) => (current || []).filter((entry) => entry.id !== order.id));
+  };
+  const addPurchaseOrderComment = async (order) => {
+    const draft = (purchaseOrderCommentDrafts[order.id] || "").trim();
+    if (!draft || !order?.id) return;
+    const commentEntry = {
+      id: `${order.id}-comment-${(order.comments || []).length + 1}`,
+      author: profile?.full_name || "Staff Member",
+      body: draft,
+      created_at: new Date().toISOString(),
+    };
+    const nextComments = [
+      ...(order.comments || []),
+      commentEntry,
+    ];
+    const changes = { comments: nextComments };
+    if (isPreview) {
+      setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
+      setPurchaseOrderCommentDrafts((current) => ({ ...current, [order.id]: "" }));
+      setPurchaseOrderCommentCursor((current) => ({ ...current, [order.id]: 0 }));
+      return;
+    }
+    const { error } = await supabase.from("purchase_orders").update(changes).eq("id", order.id);
+    if (error) return;
+    setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
+    setPurchaseOrderCommentDrafts((current) => ({ ...current, [order.id]: "" }));
+    setPurchaseOrderCommentCursor((current) => ({ ...current, [order.id]: 0 }));
+  };
+  const insertPurchaseOrderMention = (orderId, name) => {
+    if (!orderId || !purchaseOrderMentionContext) return;
+    const draft = purchaseOrderCommentDrafts[orderId] || "";
+    const nextValue = `${draft.slice(0, purchaseOrderMentionContext.start)}@${name} ${draft.slice(purchaseOrderMentionContext.end)}`;
+    const nextCursor = purchaseOrderMentionContext.start + name.length + 2;
+    setPurchaseOrderCommentDrafts((current) => ({ ...current, [orderId]: nextValue }));
+    setPurchaseOrderCommentCursor((current) => ({ ...current, [orderId]: nextCursor }));
+    window.requestAnimationFrame(() => {
+      const textarea = purchaseOrderCommentInputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
 
   const updateBudgetItem = (index, field, value) => {
     setBudgetForm((current) => ({
@@ -4089,28 +4423,17 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
         <div style={{textAlign:"left",justifySelf:"start"}}>
-          <h2 style={pageTitleStyle}>{financeView ? "Budget Ledger" : "Your Budgets"}</h2>
+          <h2 style={{...pageTitleStyle,textAlign:"left"}}>{financeView ? "Budget Overview" : "Your Budgets"}</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
             {financeView
-              ? "See every ministry's budget standing and manage the church ledger."
+              ? "See every ministry's budget standing and manage the church's ministry budgets."
               : "These are the budgets currently assigned to you. If something is missing, reach out to the Finance Director so they can attach the right ministry budget to your profile in the ministry editor."}
           </p>
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
           {financeView && <button className="btn-outline" onClick={() => openBudgetModal()}><Icons.plus/>Create New Budget</button>}
+          <button className="btn-outline" onClick={() => openPurchaseOrderModal(defaultMinistry)}><Icons.plus/>New Purchase Order</button>
         </div>
-      </div>
-      <div className="mobile-three-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:28}}>
-        {[
-          {label:"Total Income",value:fmt(income),color:C.success},
-          {label:"Total Expenses",value:fmt(expense),color:C.danger},
-          {label:"Net Balance",value:fmt(income-expense),color:income>=expense?C.success:C.danger},
-        ].map(s=>(
-          <div key={s.label} className="stat-card">
-            <div style={{fontSize:28,fontWeight:600,color:s.color,fontFamily:"'Cormorant Garamond',serif"}}>{s.value}</div>
-            <div style={{fontSize:13,color:C.text,marginTop:4}}>{s.label}</div>
-          </div>
-        ))}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16,marginBottom:28}}>
         {ministrySummaries.length === 0 && (
@@ -4129,6 +4452,7 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
               <div>
                 <div style={{...sectionTitleStyle,fontSize:24}}>{summary.ministry}</div>
                 <div style={{fontSize:12,color:C.muted,marginTop:4}}>{summary.transactions} transactions</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2}}>{summary.purchaseOrders} purchase orders</div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <span className={`badge ${getTag(summary.ministry)}`}>{summary.ministry}</span>
@@ -4163,6 +4487,9 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
               <button className="btn-gold" onClick={() => openTransactionModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
                 <Icons.plus/>Add Transaction
               </button>
+              <button className="btn-outline" onClick={() => openPurchaseOrderModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
+                <Icons.plus/>Purchase Order
+              </button>
               {canManageBudgetLinesForMinistry(summary.ministry) && (
                 <button className="btn-outline" onClick={() => openBudgetModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
                   <Icons.pen/>{financeView ? "Edit Budget" : "Edit Line Items"}
@@ -4174,20 +4501,147 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
       </div>
       <div className="card" style={{overflow:"hidden"}}>
         <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
-          <h3 style={sectionTitleStyle}>{financeView ? "Church Ledger" : "Your Ministry Ledger"}</h3>
+          <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{financeView ? "Purchase Orders" : "Your Purchase Orders"}</h3>
+          <div style={{fontSize:12,color:C.muted,marginTop:4,textAlign:"left"}}>
+            {financeView
+              ? "Review and respond to ministry purchase requests from one place."
+              : "Submit purchase requests tied to your ministry budgets so Finance can review them."}
+          </div>
         </div>
-        {scopedTransactions.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No transactions yet for this ledger.</div>}
-        {scopedTransactions.map(t=>(
-          <div key={t.id} className="table-row" style={{gridTemplateColumns:"1fr 110px 100px 90px"}}>
-            <div>
-              <div style={{fontSize:13,color:C.text}}>{t.description}</div>
-              <div style={{fontSize:11,color:C.muted,marginTop:2}}>{t.category}</div>
+        {visiblePurchaseOrders.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No purchase orders yet.</div>}
+        {visiblePurchaseOrders.map((order)=>(
+          <div key={order.id} style={{padding:"18px",borderTop:`1px solid ${C.border}`,display:"grid",gap:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.15fr) minmax(280px,.9fr)",gap:18,alignItems:"start"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:12,textAlign:"left"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:6,textAlign:"left"}}>
+                    <div style={{fontSize:18,color:C.text,fontWeight:600,lineHeight:1.35}}>{order.title}</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+                      <span className={`badge ${getTag(order.ministry)}`}>{order.ministry}</span>
+                      <span style={{fontSize:12,color:C.text}}>{fmt(order.amount)}</span>
+                      <span style={{fontSize:12,color:C.muted}}>{order.needed_by ? `Needed by ${fmtDate(order.needed_by)}` : "No date needed yet"}</span>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    <span style={{fontSize:11,color:order.status === "approved" ? C.success : order.status === "denied" ? C.danger : C.gold,textTransform:"capitalize"}}>{order.status}</span>
+                    {canDeletePurchaseOrder(profile, order) && (
+                      <button className="btn-outline" onClick={() => deletePurchaseOrder(order)} style={{padding:"7px 10px",color:C.muted,borderColor:C.border}}>Delete</button>
+                    )}
+                  </div>
+                </div>
+                <div style={{display:"grid",gap:6,textAlign:"left"}}>
+                  <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Requested by:</span> {order.requested_by}{order.requester_email ? ` • ${order.requester_email}` : ""}</div>
+                  {order.budget_line_item && (
+                    <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Budget line item:</span> {order.budget_line_item}</div>
+                  )}
+                  {order.notes && (
+                    <div style={{fontSize:12,color:C.muted,lineHeight:1.7}}><span style={{color:C.text,fontWeight:600}}>Notes:</span> {order.notes}</div>
+                  )}
+                  {order.purchase_link && (
+                    <div style={{fontSize:12,color:C.muted}}>
+                      <span style={{color:C.text,fontWeight:600}}>Purchase link:</span>{" "}
+                      <a href={normalizeExternalUrl(order.purchase_link)} target="_blank" rel="noreferrer" style={{color:C.gold}}>
+                        Open purchase link
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="card" style={{padding:"14px",background:C.surface,textAlign:"left"}}>
+                <div style={{fontSize:12,color:C.muted,marginBottom:10}}>Approvals</div>
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {(order.required_approvers || []).map((reviewer) => {
+                    const decision = getPurchaseOrderReviewerDecision(order, reviewer);
+                    const isCurrentReviewer = samePerson(reviewer, profile?.full_name);
+                    const reviewerCanRespond = isCurrentReviewer && !decision && ["pending", "in-review"].includes(order.status || "pending");
+                    const decisionLabel = decision?.action === "approved"
+                      ? "Approved"
+                      : decision?.action === "denied"
+                        ? "Denied"
+                        : "Pending";
+                    const decisionTone = decision?.action === "approved"
+                      ? C.success
+                      : decision?.action === "denied"
+                        ? C.danger
+                        : C.muted;
+                    return (
+                      <div key={`${order.id}-${reviewer}`} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",background:C.card,display:"flex",flexDirection:"column",gap:8}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                          <div style={{display:"grid",gap:3}}>
+                            <div style={{fontSize:13,color:C.text,fontWeight:600}}>{reviewer}</div>
+                            {decision?.created_at && (
+                              <div style={{fontSize:11,color:C.muted}}>
+                                {new Date(decision.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{fontSize:12,color:decisionTone,fontWeight:600}}>{decisionLabel}</div>
+                        </div>
+                        {reviewerCanRespond && (
+                          <div style={{display:"grid",gap:8}}>
+                            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                              <button className="btn-outline" onClick={() => updatePurchaseOrderStatus(order, "approved")} style={{padding:"7px 10px",color:C.success,borderColor:"rgba(82,200,122,.35)"}}>Approve</button>
+                              <button className="btn-outline" onClick={() => updatePurchaseOrderStatus(order, "denied")} style={{padding:"7px 10px",color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>Deny</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-            <span className={`badge ${getTag(t.ministry)}`}>{t.ministry}</span>
-            <span style={{fontSize:12,color:C.muted}}>{fmtDate(t.date)}</span>
-            <span style={{fontSize:14,fontWeight:600,color:t.amount>0?C.success:C.danger,textAlign:"right"}}>
-              {t.amount>0?"+":"−"}{fmt(t.amount)}
-            </span>
+            <div style={{display:"flex",flexDirection:"column",gap:10,textAlign:"left"}}>
+              <div style={{fontSize:12,color:C.muted}}>Comments</div>
+              {(order.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).length > 0 ? (
+                (order.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).map((comment) => (
+                  <div key={comment.id} style={{padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                      <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
+                      <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+                        {new Date(comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                      </div>
+                    </div>
+                    <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body)}</div>
+                  </div>
+                ))
+              ) : (
+                <div style={{fontSize:13,color:C.muted}}>No comments yet.</div>
+              )}
+              <div style={{position:"relative"}}>
+                <textarea
+                  ref={activePurchaseOrderCommentId === order.id ? purchaseOrderCommentInputRef : null}
+                  className="input-field"
+                  rows={2}
+                  placeholder="Add a question or comment"
+                  value={purchaseOrderCommentDrafts[order.id] || ""}
+                  onChange={(e) => {
+                    setPurchaseOrderCommentDrafts((current) => ({ ...current, [order.id]: e.target.value }));
+                    setPurchaseOrderCommentCursor({ [order.id]: e.target.selectionStart });
+                  }}
+                  onKeyUp={(e) => setPurchaseOrderCommentCursor({ [order.id]: e.currentTarget.selectionStart })}
+                  onClick={(e) => setPurchaseOrderCommentCursor({ [order.id]: e.currentTarget.selectionStart })}
+                  style={{resize:"vertical"}}
+                />
+                {activePurchaseOrderCommentId === order.id && purchaseOrderMentionSuggestions.length > 0 && (
+                  <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 6px)",border:`1px solid ${C.border}`,borderRadius:12,background:C.card,boxShadow:"0 12px 28px rgba(0,0,0,.28)",zIndex:20,overflow:"hidden"}}>
+                    {purchaseOrderMentionSuggestions.map((name) => (
+                      <button
+                        key={`${order.id}-${name}`}
+                        type="button"
+                        onClick={() => insertPurchaseOrderMention(order.id, name)}
+                        style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"left",background:"transparent",border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",color:C.text,fontSize:13}}
+                      >
+                        @{name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",justifyContent:"flex-end"}}>
+                <button className="btn-outline" onClick={() => addPurchaseOrderComment(order)} style={{padding:"7px 10px"}}>Add Comment</button>
+              </div>
+            </div>
           </div>
         ))}
       </div>
@@ -4212,7 +4666,7 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Amount</label>
-                <input className="input-field" placeholder="Amount ($)" type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
+                <input className="input-field" placeholder="$0.00" type="number" inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date</label>
@@ -4249,6 +4703,101 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
           </div>
         </div>
       )}
+      {showPurchaseOrderModal && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowPurchaseOrderModal(false)} style={{alignItems:"flex-start",paddingTop:24}}>
+          <div className="modal fadeIn">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <h3 style={sectionTitleStyle}>New Purchase Order</h3>
+              <button onClick={()=>setShowPurchaseOrderModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Name</label>
+                <input className="input-field" value={profile?.full_name || ""} readOnly />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Email</label>
+                <input className="input-field" value={profile?.email || ""} readOnly />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
+                <input className="input-field" value={purchaseOrderForm.ministry} readOnly />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>What Is This For?</label>
+                <input className="input-field" placeholder="Example: Student camp t-shirts" value={purchaseOrderForm.title} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,title:e.target.value})}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Was This Included In Your Yearly Budget Proposal?</label>
+                <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
+                  {[
+                    { value: "yes", label: "Yes" },
+                    { value: "no", label: "No" },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setPurchaseOrderForm({ ...purchaseOrderForm, includedInBudget: option.value })}
+                      style={{
+                        flex: 1,
+                        padding: "8px 0",
+                        borderRadius: 8,
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        background: purchaseOrderForm.includedInBudget === option.value ? C.card : "transparent",
+                        color: purchaseOrderForm.includedInBudget === option.value ? C.text : C.muted,
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Price</label>
+                <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={purchaseOrderForm.amount} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,amount:e.target.value})}/>
+              </div>
+              {purchaseOrderForm.includedInBudget === "yes" && (
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Item</label>
+                  <input className="input-field" list="purchase-order-line-items" placeholder={selectedMinistryBudgetItems.length > 0 ? "Choose a line item" : "Add line items to this budget first"} value={purchaseOrderForm.budgetLineItem} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,budgetLineItem:e.target.value})}/>
+                  <datalist id="purchase-order-line-items">
+                    {ministryLineItemSuggestions.map((item) => <option key={item} value={item} />)}
+                  </datalist>
+                </div>
+              )}
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date Needed By</label>
+                <input className="input-field" type="date" value={purchaseOrderForm.neededBy} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,neededBy:e.target.value})}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Purchase Link</label>
+                <input className="input-field" placeholder="Paste the product or cart link" value={purchaseOrderForm.purchaseLink} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,purchaseLink:e.target.value})}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Notes</label>
+                <textarea className="input-field" rows={3} placeholder="Any additional info" value={purchaseOrderForm.notes} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,notes:e.target.value})} style={{resize:"vertical"}}/>
+              </div>
+            </div>
+            <div style={{fontSize:12,color:C.muted,marginTop:12,lineHeight:1.6,textAlign:"left"}}>
+              Purchase orders help your team request spending against a real ministry budget before the transaction happens.
+            </div>
+            {purchaseOrderError && (
+              <div style={{marginTop:12,fontSize:12,color:C.danger,textAlign:"left"}}>
+                {purchaseOrderError}
+              </div>
+            )}
+            <div style={{display:"flex",gap:10,marginTop:20,justifyContent:"flex-end"}}>
+              <button className="btn-outline" onClick={()=>setShowPurchaseOrderModal(false)}>Cancel</button>
+              <button className="btn-gold" onClick={savePurchaseOrder} disabled={purchaseOrderSubmitting} style={{opacity:purchaseOrderSubmitting ? 0.8 : 1}}>
+                {purchaseOrderSubmitting ? "Submitting..." : "Submit Request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showBudgetModal && canManageBudgetLinesForMinistry(budgetForm.ministry || defaultMinistry) && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowBudgetModal(false)} style={{alignItems:"flex-start",paddingTop:24}}>
           <div className="modal fadeIn">
@@ -4263,7 +4812,7 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Starting Budget</label>
-                <input className="input-field" type="number" placeholder="0" value={budgetForm.budget} onChange={(e)=>setBudgetForm({...budgetForm,budget:e.target.value})} readOnly={!financeView}/>
+                <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={budgetForm.budget} onChange={(e)=>setBudgetForm({...budgetForm,budget:e.target.value})} readOnly={!financeView}/>
               </div>
               {financeView && (
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -4281,11 +4830,11 @@ function Budget({ transactions, setTransactions, churchId, profile, setProfile, 
                     <div key={`budget-item-${index}`} className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:10,alignItems:"end"}}>
                       <div style={{display:"flex",flexDirection:"column",gap:6}}>
                         <label style={{fontSize:11,color:C.muted,textAlign:"left"}}>Label</label>
-                        <input className="input-field" placeholder="Summer Camp" value={item.label} onChange={(e)=>updateBudgetItem(index, "label", e.target.value)} />
+                        <input className="input-field" placeholder="Example: Student Retreat" value={item.label} onChange={(e)=>updateBudgetItem(index, "label", e.target.value)} />
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:6}}>
                         <label style={{fontSize:11,color:C.muted,textAlign:"left"}}>Amount</label>
-                        <input className="input-field" type="number" placeholder="0" value={item.amount} onChange={(e)=>updateBudgetItem(index, "amount", e.target.value)} />
+                        <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={item.amount} onChange={(e)=>updateBudgetItem(index, "amount", e.target.value)} />
                       </div>
                       <button className="btn-outline" type="button" onClick={() => removeBudgetItemRow(index)} style={{padding:"10px 12px",justifyContent:"center"}}>
                         Remove
@@ -4426,6 +4975,7 @@ export default function App() {
   const [tasks, setTasks] = useState([]);
   const [people, setPeople] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [ministries, setMinistries] = useState([]);
   const [eventRequests, setEventRequests] = useState(null);
   const [trashItems, setTrashItems] = useState([]);
@@ -4438,8 +4988,8 @@ export default function App() {
   const shownNotificationIdsRef = useRef(new Set());
 
   const notifications = useMemo(
-    () => buildNotifications(tasks, eventRequests, profile),
-    [tasks, eventRequests, profile]
+    () => buildNotifications(tasks, eventRequests, purchaseOrders, profile),
+    [tasks, eventRequests, purchaseOrders, profile]
   );
   const unreadNotifications = useMemo(
     () => notifications.filter((item) => !readNotificationIds.includes(item.id)),
@@ -4532,12 +5082,13 @@ export default function App() {
       setTrashItems([]);
     }
     if (prof?.church_id) {
-      const [ch, t, er, p, tr, m, staff] = await Promise.all([
+      const [ch, t, er, p, tr, po, m, staff] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("people").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
+        supabase.from("purchase_orders").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("ministries").select("*").eq("church_id", prof.church_id),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
       ]);
@@ -4553,6 +5104,7 @@ export default function App() {
       setEventRequests(er.data || []);
       setPeople(p.data || []);
       setTransactions(tr.data || []);
+      setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
       setMinistries(m.data || []);
       setPreviewUsers((staff.data || []).map(normalizeAccessUser));
     } else {
@@ -4562,6 +5114,7 @@ export default function App() {
       setEventRequests(null);
       setPeople([]);
       setTransactions([]);
+      setPurchaseOrders([]);
       setMinistries([]);
       setPreviewUsers([]);
     }
@@ -4607,6 +5160,7 @@ export default function App() {
         setTasks([]);
         setPeople([]);
         setTransactions([]);
+        setPurchaseOrders([]);
         setMinistries([]);
         setPreviewUsers([]);
         setLoading(false);
@@ -4660,7 +5214,7 @@ export default function App() {
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash}/>,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} />,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
-    budget:     <Budget transactions={transactions} setTransactions={setTransactions} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
+    budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
     ministries: <Ministries ministries={ministries}/>,
     calendar:   <CalendarView tasks={tasks}/>,
   };

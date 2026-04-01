@@ -328,6 +328,54 @@ alter table public.transactions add column if not exists created_at timestamptz 
 alter table public.transactions
   enable row level security;
 
+create table if not exists public.purchase_orders (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  requester_id uuid references public.profiles(id) on delete set null,
+  requested_by text not null,
+  requester_email text,
+  ministry text not null,
+  budget_line_item text not null,
+  title text not null,
+  amount numeric not null,
+  needed_by date,
+  purchase_link text,
+  included_in_budget boolean not null default true,
+  notes text,
+  status text not null default 'pending',
+  required_approvers text[] not null default '{}',
+  approvals text[] not null default '{}',
+  comments jsonb not null default '[]'::jsonb,
+  approval_history jsonb not null default '[]'::jsonb,
+  decided_at timestamptz,
+  decided_by text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.purchase_orders add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.purchase_orders add column if not exists requester_id uuid references public.profiles(id) on delete set null;
+alter table public.purchase_orders add column if not exists requested_by text;
+alter table public.purchase_orders add column if not exists requester_email text;
+alter table public.purchase_orders add column if not exists ministry text;
+alter table public.purchase_orders add column if not exists budget_line_item text;
+alter table public.purchase_orders add column if not exists title text;
+alter table public.purchase_orders add column if not exists amount numeric;
+alter table public.purchase_orders add column if not exists needed_by date;
+alter table public.purchase_orders add column if not exists purchase_link text;
+alter table public.purchase_orders add column if not exists included_in_budget boolean not null default true;
+alter table public.purchase_orders add column if not exists notes text;
+alter table public.purchase_orders add column if not exists status text not null default 'pending';
+alter table public.purchase_orders add column if not exists required_approvers text[] not null default '{}';
+alter table public.purchase_orders add column if not exists approvals text[] not null default '{}';
+alter table public.purchase_orders add column if not exists comments jsonb not null default '[]'::jsonb;
+alter table public.purchase_orders add column if not exists approval_history jsonb not null default '[]'::jsonb;
+alter table public.purchase_orders add column if not exists decided_at timestamptz;
+alter table public.purchase_orders add column if not exists decided_by text;
+alter table public.purchase_orders add column if not exists created_at timestamptz not null default now();
+
+alter table public.purchase_orders
+  enable row level security;
+
 create table if not exists public.ministries (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -928,6 +976,87 @@ on public.ministries
 for all
 using (public.user_can_manage_church(church_id))
 with check (public.user_can_manage_church(church_id));
+
+drop policy if exists "purchase orders scoped read" on public.purchase_orders;
+create policy "purchase orders scoped read"
+on public.purchase_orders
+for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = purchase_orders.church_id
+      and (
+        public.user_can_manage_church(purchase_orders.church_id)
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
+        or p.id = purchase_orders.requester_id
+      )
+  )
+);
+
+drop policy if exists "purchase orders submit write" on public.purchase_orders;
+create policy "purchase orders submit write"
+on public.purchase_orders
+for insert
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = purchase_orders.church_id
+  )
+);
+
+drop policy if exists "purchase orders finance update" on public.purchase_orders;
+create policy "purchase orders finance update"
+on public.purchase_orders
+for update
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = purchase_orders.church_id
+      and (
+        public.user_can_manage_church(purchase_orders.church_id)
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
+      )
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = purchase_orders.church_id
+      and (
+        public.user_can_manage_church(purchase_orders.church_id)
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
+      )
+  )
+);
+
+drop policy if exists "purchase orders delete" on public.purchase_orders;
+create policy "purchase orders delete"
+on public.purchase_orders
+for delete
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = purchase_orders.church_id
+      and (
+        public.user_can_manage_church(purchase_orders.church_id)
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
+        or (
+          p.id = purchase_orders.requester_id
+          and purchase_orders.status in ('pending', 'in-review')
+        )
+      )
+  )
+);
 
 -- New churches are created through create_church_with_admin(...)
 -- and their staff roster is intentionally built through the Church Team flow.

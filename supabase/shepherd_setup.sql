@@ -120,6 +120,56 @@ alter table public.tasks add column if not exists created_at timestamptz not nul
 alter table public.tasks
   enable row level security;
 
+create table if not exists public.automations (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  created_by uuid references public.profiles(id) on delete set null,
+  name text not null,
+  description text,
+  status text not null default 'draft',
+  trigger_type text not null,
+  trigger_config jsonb not null default '{}'::jsonb,
+  action_config jsonb not null default '{}'::jsonb,
+  approval_required boolean not null default true,
+  last_run_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.automations add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.automations add column if not exists created_by uuid references public.profiles(id) on delete set null;
+alter table public.automations add column if not exists name text;
+alter table public.automations add column if not exists description text;
+alter table public.automations add column if not exists status text not null default 'draft';
+alter table public.automations add column if not exists trigger_type text;
+alter table public.automations add column if not exists trigger_config jsonb not null default '{}'::jsonb;
+alter table public.automations add column if not exists action_config jsonb not null default '{}'::jsonb;
+alter table public.automations add column if not exists approval_required boolean not null default true;
+alter table public.automations add column if not exists last_run_at timestamptz;
+alter table public.automations add column if not exists created_at timestamptz not null default now();
+
+alter table public.automations
+  enable row level security;
+
+create table if not exists public.automation_runs (
+  id uuid primary key default gen_random_uuid(),
+  automation_id uuid not null references public.automations(id) on delete cascade,
+  church_id uuid not null references public.churches(id) on delete cascade,
+  status text not null default 'pending',
+  run_summary text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+
+alter table public.automation_runs add column if not exists automation_id uuid references public.automations(id) on delete cascade;
+alter table public.automation_runs add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.automation_runs add column if not exists status text not null default 'pending';
+alter table public.automation_runs add column if not exists run_summary text;
+alter table public.automation_runs add column if not exists started_at timestamptz not null default now();
+alter table public.automation_runs add column if not exists finished_at timestamptz;
+
+alter table public.automation_runs
+  enable row level security;
+
 create table if not exists public.event_requests (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -285,6 +335,8 @@ create table if not exists public.ministries (
   color text,
   budget numeric not null default 0,
   spent numeric not null default 0,
+  budget_categories text[] not null default '{}',
+  budget_items jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -293,6 +345,8 @@ alter table public.ministries add column if not exists name text;
 alter table public.ministries add column if not exists color text;
 alter table public.ministries add column if not exists budget numeric not null default 0;
 alter table public.ministries add column if not exists spent numeric not null default 0;
+alter table public.ministries add column if not exists budget_categories text[] not null default '{}';
+alter table public.ministries add column if not exists budget_items jsonb not null default '[]'::jsonb;
 alter table public.ministries add column if not exists created_at timestamptz not null default now();
 
 create unique index if not exists ministries_church_name_key on public.ministries (church_id, name);
@@ -753,6 +807,46 @@ for update
 using (public.user_can_manage_church(church_id))
 with check (public.user_can_manage_church(church_id));
 
+drop policy if exists "automations same church read" on public.automations;
+create policy "automations same church read"
+on public.automations
+for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = automations.church_id
+  )
+);
+
+drop policy if exists "automations manage write" on public.automations;
+create policy "automations manage write"
+on public.automations
+for all
+using (public.user_can_manage_church(church_id))
+with check (public.user_can_manage_church(church_id));
+
+drop policy if exists "automation runs same church read" on public.automation_runs;
+create policy "automation runs same church read"
+on public.automation_runs
+for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = automation_runs.church_id
+  )
+);
+
+drop policy if exists "automation runs manage write" on public.automation_runs;
+create policy "automation runs manage write"
+on public.automation_runs
+for all
+using (public.user_can_manage_church(church_id))
+with check (public.user_can_manage_church(church_id));
+
 drop policy if exists "people same church read" on public.people;
 create policy "people same church read"
 on public.people
@@ -868,16 +962,3 @@ set
   can_see_team_overview = excluded.can_see_team_overview,
   can_see_admin_overview = excluded.can_see_admin_overview,
   read_only_oversight = excluded.read_only_oversight;
-
-insert into public.ministries (church_id, name, color, budget, spent)
-values
-  ('11111111-1111-1111-1111-111111111111', 'Worship', '#9b72e8', 12000, 0),
-  ('11111111-1111-1111-1111-111111111111', 'Youth', '#52c87a', 9000, 0),
-  ('11111111-1111-1111-1111-111111111111', 'Admin', '#5b8fe8', 6000, 0),
-  ('11111111-1111-1111-1111-111111111111', 'Services', '#c9a84c', 8000, 0),
-  ('11111111-1111-1111-1111-111111111111', 'Missions', '#52c87a', 7000, 0),
-  ('11111111-1111-1111-1111-111111111111', 'Operations', '#9aa3b2', 4000, 0)
-on conflict (church_id, name) do update
-set
-  color = excluded.color,
-  budget = excluded.budget;

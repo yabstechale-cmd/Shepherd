@@ -51,6 +51,7 @@ const Icons = {
   calendar: () => <Icon d="M3 4h18v18H3zM16 2v4M8 2v4M3 10h18" />,
   workspace:() => <Icon d="M9 3L7 21M17 3l-2 18M3 9h18M1 17h18" />,
   people:   () => <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />,
+  spark:    () => <Icon d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2zM19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16zM5 15l.7 1.6L7.3 17l-1.6.7L5 19.3l-.7-1.6L2.7 17l1.6-.7L5 15z" />,
   logout:   () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
   plus:     () => <Icon d="M12 5v14M5 12h14" />,
   eye:      () => <Icon d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
@@ -217,6 +218,21 @@ const normalizeTask = (task) => ({
   review_required: task?.review_required ?? false,
   comments: Array.isArray(task?.comments) ? task.comments : [],
 });
+const normalizeAutomation = (automation) => ({
+  ...automation,
+  status: ["draft", "active", "paused", "archived"].includes(automation?.status) ? automation.status : "draft",
+  trigger_config: automation?.trigger_config && typeof automation.trigger_config === "object" ? automation.trigger_config : {},
+  action_config: automation?.action_config && typeof automation.action_config === "object" ? automation.action_config : {},
+  approval_required: automation?.approval_required ?? true,
+});
+const normalizeBudgetItems = (items) => Array.isArray(items)
+  ? items
+      .map((item) => ({
+        label: String(item?.label || "").trim(),
+        amount: Number.parseFloat(item?.amount || 0) || 0,
+      }))
+      .filter((item) => item.label)
+  : [];
 const normalizeName = (value) => (value || "").trim().toLowerCase();
 const samePerson = (left, right) => normalizeName(left) !== "" && normalizeName(left) === normalizeName(right);
 const listIncludesPerson = (list, fullName) => Array.isArray(list) && list.some((entry) => samePerson(entry, fullName));
@@ -258,7 +274,15 @@ const canManageAllTasks = (profile, church) => hasAdministrativeOversight(profil
 const canEditTask = (profile, church, task) => canManageAllTasks(profile, church) || samePerson(task?.assignee, profile?.full_name);
 const canReviewTask = (profile, task) => task?.review_required && task?.status === "in-review" && listIncludesPerson(task?.reviewers, profile?.full_name);
 const canManagePeople = (profile, church) => hasAdministrativeOversight(profile, church);
-const canManageBudget = (profile, church) => hasAdministrativeOversight(profile, church) || profileHasMinistry(profile, "Finances");
+const isFinanceUser = (profile) => profileHasMinistry(profile, "Finances") || (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
+const isMinistryLedgerLead = (profile) => (profile?.staff_roles || [profile?.role]).some((roleValue) => MINISTRY_LEDGER_ROLE_VALUES.has(roleValue));
+const getBudgetScopeMinistries = (profile) => {
+  if (!profile) return [];
+  if (isFinanceUser(profile)) return TASK_CATEGORIES;
+  if (!isMinistryLedgerLead(profile)) return [];
+  return Array.isArray(profile?.ministries) ? [...new Set(profile.ministries.filter(Boolean))] : [];
+};
+const canViewBudget = (profile) => isFinanceUser(profile) || getBudgetScopeMinistries(profile).length > 0;
 const canApproveEventRequests = (profile, church) => hasAdministrativeOversight(profile, church);
 const isTaskForUser = (task, fullName) => samePerson(task?.assignee, fullName) || listIncludesPerson(task?.reviewers, fullName);
 const isContentTask = (task) => task?.ministry === "Content/Art";
@@ -392,6 +416,63 @@ const STATUS_STYLES = {
 };
 const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
 const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
+const formatAutomationTrigger = (automation) => {
+  if (!automation) return "Trigger not configured";
+  if (automation.trigger_type === "schedule") {
+    const frequency = automation.trigger_config?.frequency;
+    const day = automation.trigger_config?.day;
+    const time = automation.trigger_config?.time;
+    if (frequency === "weekly" && day && time) return `Every ${String(day).replace(/^./, (char) => char.toUpperCase())} at ${time}`;
+    if (frequency === "daily" && time) return `Every day at ${time}`;
+    if (frequency === "hourly") return "Runs hourly";
+    return "Scheduled automation";
+  }
+  if (automation.trigger_type === "event") {
+    const event = automation.trigger_config?.event;
+    const status = automation.trigger_config?.status;
+    if (event === "event_request_status_changed" && status) return `When an event request changes to ${status}`;
+    if (event === "task_status_changed" && status) return `When a task changes to ${status}`;
+    if (event === "task_created") return "When a new task is created";
+    return "Event-based automation";
+  }
+  return "Trigger not configured";
+};
+const formatAutomationAction = (automation) => {
+  const actionType = automation?.action_config?.type;
+  if (actionType === "send_notification") {
+    return automation?.action_config?.message || "Send a notification";
+  }
+  if (actionType === "create_task") {
+    return automation?.action_config?.title
+      ? `Create task: ${automation.action_config.title}`
+      : "Create a new task";
+  }
+  if (actionType === "assign_task") {
+    return automation?.action_config?.assignee_role
+      ? `Assign a task to ${automation.action_config.assignee_role}`
+      : "Assign a task";
+  }
+  if (actionType === "change_task_status") {
+    return automation?.action_config?.status
+      ? `Change task status to ${automation.action_config.status}`
+      : "Change a task status";
+  }
+  if (actionType === "update_event_request_status") {
+    return automation?.action_config?.status
+      ? `Update event request to ${automation.action_config.status}`
+      : "Update an event request";
+  }
+  return "Action not configured";
+};
+const formatAutomationRunTime = (timestamp) => {
+  if (!timestamp) return "—";
+  return new Date(timestamp).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
 const STAFF_ROLE_OPTIONS = [
   { value: "senior_pastor", label: "Senior Pastor", title: "Senior Pastor", ministries: ["Services", "Operations"], canSeeTeamOverview: true, canSeeAdminOverview: true },
   { value: "youth_pastor", label: "Youth Pastor", title: "Youth Pastor", ministries: ["Youth"], canSeeTeamOverview: true, canSeeAdminOverview: false },
@@ -404,6 +485,14 @@ const STAFF_ROLE_OPTIONS = [
   { value: "finance_director", label: "Finance Director", title: "Finance Director", ministries: ["Finances"], canSeeTeamOverview: true, canSeeAdminOverview: false },
   { value: "intern", label: "Intern", title: "Intern", ministries: [], canSeeTeamOverview: true, canSeeAdminOverview: false },
 ];
+const MINISTRY_LEDGER_ROLE_VALUES = new Set([
+  "youth_pastor",
+  "kids_pastor",
+  "young_adults_pastor",
+  "worship_pastor",
+  "art_director",
+  "website_app_director",
+]);
 const STAFF_ROLE_VALUES = new Set(STAFF_ROLE_OPTIONS.map((option) => option.value));
 const getRoleTemplate = (roleValue) => STAFF_ROLE_OPTIONS.find((option) => option.value === roleValue) || null;
 const getRoleLabel = (roleValue) => getRoleTemplate(roleValue)?.label || null;
@@ -526,6 +615,124 @@ const getEventDateSummary = (request) => {
   }
   return request.event_timing || "—";
 };
+const getEventPrimaryDate = (request) =>
+  request?.setup_datetime
+  || request?.single_date
+  || request?.multi_start_date
+  || request?.recurring_start_date
+  || null;
+const hasEventOpsNeeds = (request) =>
+  request?.location_scope === "building"
+  || Array.isArray(request?.location_areas) && request.location_areas.length > 0
+  || !!request?.tables_needed
+  || Number.parseInt(request?.tables_6ft_rectangular || "0", 10) > 0
+  || Number.parseInt(request?.tables_8ft_rectangular || "0", 10) > 0
+  || Number.parseInt(request?.tables_5ft_round || "0", 10) > 0
+  || !!request?.black_vinyl_tablecloths
+  || !!request?.white_linen_tablecloths
+  || !!request?.pipe_and_drape
+  || !!request?.metal_folding_chairs_requested
+  || !!request?.kitchen_use
+  || !!request?.drip_coffee_only
+  || !!request?.espresso_drinks;
+const eventNeedsFinanceReview = (request) => /fee|fees|payment|payments|paid|ticket|tickets|registration|cost|budget|reimburse/i.test(String(request?.additional_information || ""));
+const findStaffLead = (staff, matcher) => (staff || []).find((user) => matcher(user))?.full_name || "";
+const buildApprovedEventTaskChain = (request, churchId, staff) => {
+  if (!request || !churchId) return [];
+  const dueDate = getEventPrimaryDate(request);
+  const adminLead =
+    findStaffLead(staff, (user) => user?.can_see_admin_overview || /administrator|senior pastor/i.test(user?.title || ""))
+    || "Church Administration";
+  const creativeLead =
+    findStaffLead(staff, (user) => profileHasMinistry(user, "Content/Art") || /creative|art|design|website\/app/i.test(user?.title || ""))
+    || "Creative Team";
+  const avLead =
+    findStaffLead(staff, (user) => profileHasMinistry(user, "Worship") || profileHasMinistry(user, "Services") || /worship|av|audio|visual/i.test(user?.title || ""))
+    || "Worship / AV";
+  const operationsLead =
+    findStaffLead(staff, (user) => profileHasMinistry(user, "Operations") || profileHasMinistry(user, "Admin") || /administrator|operations/i.test(user?.title || ""))
+    || adminLead;
+  const financeLead =
+    findStaffLead(staff, (user) => profileHasMinistry(user, "Finances") || /finance/i.test(user?.title || ""))
+    || adminLead;
+
+  const tasks = [
+    {
+      church_id: churchId,
+      title: `Coordinate ${request.event_name}`,
+      ministry: "Events",
+      assignee: adminLead,
+      due_date: dueDate,
+      status: "todo",
+      review_required: false,
+      reviewers: [],
+      review_approvals: [],
+      notes: `Approved event request.\n\nEvent: ${request.event_name}\nContact: ${request.contact_name}\nEvent date: ${request.event_timing}\nLocation: ${getEventLocationSummary(request)}\nAdditional notes: ${request.additional_information || "None provided."}`,
+    },
+  ];
+
+  if (request.graphics_reference || request.location_scope === "off-campus") {
+    tasks.push({
+      church_id: churchId,
+      title: `Create communications for ${request.event_name}`,
+      ministry: "Content/Art",
+      assignee: creativeLead,
+      due_date: dueDate,
+      status: "todo",
+      review_required: false,
+      reviewers: [],
+      review_approvals: [],
+      notes: `Communications handoff from approved event.\n\nEvent: ${request.event_name}\nSubmitted by: ${request.contact_name}\nEvent date: ${request.event_timing}\nGraphics direction: ${request.graphics_reference || "Announcement support requested."}`,
+    });
+  }
+
+  if (request.av_request) {
+    tasks.push({
+      church_id: churchId,
+      title: `Review A/V needs for ${request.event_name}`,
+      ministry: "Services",
+      assignee: avLead,
+      due_date: dueDate,
+      status: "todo",
+      review_required: false,
+      reviewers: [],
+      review_approvals: [],
+      notes: `A/V support requested for approved event.\n\nEvent: ${request.event_name}\nEvent date: ${request.event_timing}\nA/V details: ${request.av_request_details || "No additional A/V details were provided."}`,
+    });
+  }
+
+  if (hasEventOpsNeeds(request)) {
+    tasks.push({
+      church_id: churchId,
+      title: `Prepare facilities for ${request.event_name}`,
+      ministry: "Operations",
+      assignee: operationsLead,
+      due_date: dueDate,
+      status: "todo",
+      review_required: false,
+      reviewers: [],
+      review_approvals: [],
+      notes: `Operations support requested for approved event.\n\nLocation: ${getEventLocationSummary(request)}\nTables: ${buildTablesSummary(request) || "None requested"}\nKitchen: ${request.kitchen_use ? "Yes" : "No"}\nCoffee: ${request.espresso_drinks ? "Espresso drinks" : request.drip_coffee_only ? "Drip coffee only" : "None"}\nPipe and drape: ${request.pipe_and_drape || "None requested"}\nMetal folding chairs: ${request.metal_folding_chairs_requested ? request.metal_folding_chairs || "Requested" : "No"}`,
+    });
+  }
+
+  if (eventNeedsFinanceReview(request)) {
+    tasks.push({
+      church_id: churchId,
+      title: `Review finances for ${request.event_name}`,
+      ministry: "Finances",
+      assignee: financeLead,
+      due_date: dueDate,
+      status: "todo",
+      review_required: false,
+      reviewers: [],
+      review_approvals: [],
+      notes: `Finance review requested from approved event.\n\nEvent: ${request.event_name}\nAdditional details: ${request.additional_information || "No extra finance details were provided."}`,
+    });
+  }
+
+  return tasks;
+};
 const getRelativeDueLabel = (date) => {
   if (!date) return "No due date";
   const today = new Date();
@@ -572,6 +779,7 @@ const renderCommentBody = (body) => {
 const buildNotifications = (tasks, eventRequests, profile) => {
   if (!profile?.full_name) return [];
   const fullName = profile.full_name;
+  const isAdminViewer = hasAdministrativeOversight(profile, null);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endOfTomorrow = new Date(startOfToday);
@@ -617,6 +825,26 @@ const buildNotifications = (tasks, eventRequests, profile) => {
       });
     }
 
+    if (isAdminViewer && task.status !== "done" && dueDay && dueDay.getTime() < startOfToday.getTime() && !assignedToMe) {
+      items.push({
+        id: `admin-overdue-${task.id}`,
+        tone: C.danger,
+        title: "Team task overdue",
+        detail: `${task.title} assigned to ${task.assignee || "a team member"} is overdue.`,
+        target: "tasks",
+        createdAt: dueDay.getTime(),
+      });
+    } else if (isAdminViewer && task.status !== "done" && dueDay && dueDay.getTime() >= startOfToday.getTime() && dueDay.getTime() < endOfTomorrow.getTime() && !assignedToMe) {
+      items.push({
+        id: `admin-due-${task.id}`,
+        tone: C.gold,
+        title: "Team task due soon",
+        detail: `${task.title} assigned to ${task.assignee || "a team member"} is ${getRelativeDueLabel(task.due_date).toLowerCase()}.`,
+        target: "tasks",
+        createdAt: dueDay.getTime(),
+      });
+    }
+
     if (reviewerForMe && task.status === "in-review") {
       items.push({
         id: `review-${task.id}-${normalizeName(fullName)}`,
@@ -645,7 +873,7 @@ const buildNotifications = (tasks, eventRequests, profile) => {
     });
   });
 
-  if (hasAdministrativeOversight(profile, null)) {
+  if (isAdminViewer) {
     (eventRequests || []).forEach((request) => {
       if (request.status !== "new") return;
       const createdAt = request.created_at ? new Date(request.created_at) : null;
@@ -998,7 +1226,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
     {id:"workspaces",label:"Workspaces",I:Icons.workspace},
     {id:"notifications",label:"Notifications",I:Icons.bell},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
-    {id:"budget",label:"Budget",I:Icons.budget},
+    ...(canViewBudget(profile) ? [{id:"budget",label:"Budget",I:Icons.budget}] : []),
     {id:"calendar",label:"Calendar",I:Icons.calendar},
     ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.people}] : []),
     {id:"trash",label:"Trash",I:Icons.trash},
@@ -2070,12 +2298,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
     setEventForm(createEventRequestBlank(profile));
   };
 
-  const creativeLeadName =
-    previewUsers?.find((user) =>
-      profileHasMinistry(user, "Content/Art")
-      || /creative|art|design/i.test(user?.title || "")
-    )?.full_name || "Creative Team";
-
   const setEventRequestStatus = async (requestId, status) => {
     if (requestId === "demo-event-request") {
       setSelectedRequest((current) => current ? { ...current, status, decided_at: new Date().toISOString() } : current);
@@ -2087,29 +2309,15 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       decided_at: new Date().toISOString(),
       decided_by: profile?.full_name || null,
     };
-    if (
-      status === "approved"
-      && existingRequest
-      && existingRequest.graphics_reference
-      && !existingRequest.graphics_task_created
-    ) {
-      const taskPayload = {
-        church_id: church?.id,
-        title: `Create graphics for ${existingRequest.event_name}`,
-        ministry: "Events",
-        assignee: creativeLeadName,
-        due_date: existingRequest.setup_datetime ? String(existingRequest.setup_datetime).split("T")[0] : null,
-        status: "todo",
-        review_required: false,
-        reviewers: [],
-        review_approvals: [],
-        notes: `Design request from event submission.\n\nEvent: ${existingRequest.event_name}\nSubmitted by: ${existingRequest.contact_name}\nEvent date: ${existingRequest.event_timing}\nGraphics direction: ${existingRequest.graphics_reference}`,
-      };
-      const { data: createdTask } = await supabase.from("tasks").insert(taskPayload).select().single();
-      if (createdTask) {
-        decisionPayload.graphics_task_created = true;
-        decisionPayload.graphics_task_id = createdTask.id;
-        setTasks((current) => [normalizeTask(createdTask), ...(current || [])]);
+    if (status === "approved" && existingRequest && !existingRequest.graphics_task_created) {
+      const taskPayloads = buildApprovedEventTaskChain(existingRequest, church?.id, previewUsers);
+      if (taskPayloads.length > 0) {
+        const { data: createdTasks } = await supabase.from("tasks").insert(taskPayloads).select();
+        if (createdTasks?.length) {
+          decisionPayload.graphics_task_created = true;
+          decisionPayload.graphics_task_id = createdTasks[0]?.id || null;
+          setTasks((current) => [...createdTasks.map(normalizeTask), ...(current || [])]);
+        }
       }
     }
 
@@ -2373,6 +2581,156 @@ function Workspaces({ setActive }) {
             <div style={{fontSize:12,color:C.gold,marginTop:"auto",alignSelf:"flex-end",textAlign:"right"}}>Open board</div>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function AutomationsPage({ churchId, profile, automations, setAutomations, automationRuns, refreshAutomations }) {
+  const [prompt, setPrompt] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const draftAutomations = (automations || []).filter((automation) => automation.status === "draft");
+  const activeAutomations = (automations || []).filter((automation) => automation.status === "active");
+  const canApprove = hasAdministrativeOversight(profile);
+
+  const createDraft = async () => {
+    const requestText = prompt.trim();
+    if (!requestText || !churchId || !profile?.id) return;
+    setError("");
+    setMessage("");
+    setIsGenerating(true);
+    try {
+      const { data, error: functionError } = await supabase.functions.invoke("generate-automation-draft", {
+        body: { request: requestText },
+      });
+      if (functionError) throw functionError;
+      if (!data?.draft) throw new Error("The automation assistant did not return a draft.");
+
+      const payload = {
+        church_id: churchId,
+        created_by: profile.id,
+        name: data.draft.name,
+        description: data.draft.description,
+        status: "draft",
+        trigger_type: data.draft.trigger_type,
+        trigger_config: data.draft.trigger_config,
+        action_config: data.draft.action_config,
+        approval_required: data.draft.approval_required,
+      };
+      const { data: savedDraft, error: saveError } = await supabase.from("automations").insert(payload).select().single();
+      if (saveError) throw saveError;
+      const normalizedDraft = normalizeAutomation(savedDraft);
+      setAutomations((current) => [normalizedDraft, ...(current || [])]);
+      setPrompt("");
+      setMessage(`Draft created: ${normalizedDraft.name}`);
+      refreshAutomations?.();
+    } catch (draftError) {
+      setError(draftError instanceof Error ? draftError.message : "We could not create that automation draft.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
+      <div style={{marginBottom:24,textAlign:"left"}}>
+        <h2 style={pageTitleStyle}>Automations</h2>
+        <p style={{color:C.muted,fontSize:13,marginTop:4,maxWidth:760}}>
+          Build church automations from plain-English requests. Shepherd’s AI assistant can turn a simple request into a draft workflow your team can review before it goes live.
+        </p>
+      </div>
+
+      <div className="card" style={{padding:22,marginBottom:20,textAlign:"left"}}>
+        <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <h3 style={sectionTitleStyle}>Create With AI</h3>
+          <button className="btn-gold" onClick={createDraft} disabled={isGenerating || !prompt.trim() || !churchId || !profile?.id}>
+            {isGenerating ? "Generating..." : "Generate Draft"}
+          </button>
+        </div>
+        <p style={{fontSize:12,color:C.muted,lineHeight:1.6,marginBottom:14}}>
+          Describe what you want in normal language. Shepherd will turn it into a safe automation draft with a trigger, audience, and actions.
+        </p>
+        <textarea
+          className="input-field"
+          rows={4}
+          value={prompt}
+          onChange={(e)=>setPrompt(e.target.value)}
+          placeholder="Example: Every Monday at 9:00 AM remind ministry directors about tasks due this week."
+          style={{resize:"vertical"}}
+        />
+        {error && <div style={{fontSize:12,color:C.danger,marginTop:10}}>{error}</div>}
+        {message && <div style={{fontSize:12,color:C.success,marginTop:10}}>{message}</div>}
+        <div style={{fontSize:12,color:C.muted,marginTop:10}}>
+          First version plan: AI creates a draft only. {canApprove ? "You can review drafts before they go live." : "Someone with administrative oversight reviews drafts before they go live."}
+        </div>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:18,marginBottom:20}}>
+        <div className="card" style={{padding:22,textAlign:"left"}}>
+          <h3 style={sectionTitleStyle}>Drafts</h3>
+          <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:16}}>
+            {draftAutomations.length === 0 && (
+              <div style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,fontSize:13,color:C.muted}}>
+                No drafts yet. Use Create With AI to turn a plain-English request into a reviewable workflow.
+              </div>
+            )}
+            {draftAutomations.map((automation) => (
+              <div key={automation.name} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"start"}}>
+                  <div style={{fontSize:16,fontWeight:600,color:C.text}}>{automation.name}</div>
+                  <span className="badge" style={{background:C.goldGlow,color:C.gold,border:`1px solid ${C.goldDim}`}}>{automation.status.replace(/^./, (char) => char.toUpperCase())}</span>
+                </div>
+                <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.55}}>Trigger: {formatAutomationTrigger(automation)}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.55}}>Action: {formatAutomationAction(automation)}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:10}}>
+                  Approval: Church account admin, Church Administrator, or Senior Pastor
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card" style={{padding:22,textAlign:"left"}}>
+          <h3 style={sectionTitleStyle}>Active</h3>
+          <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:16}}>
+            {activeAutomations.length === 0 && (
+              <div style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,fontSize:13,color:C.muted}}>
+                No active automations yet. Once a draft is approved, it will appear here.
+              </div>
+            )}
+            {activeAutomations.map((automation) => (
+              <div key={automation.name} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"start"}}>
+                  <div style={{fontSize:16,fontWeight:600,color:C.text}}>{automation.name}</div>
+                  <span className="badge" style={{background:"rgba(82,200,122,.15)",color:C.success,border:`1px solid rgba(82,200,122,.3)`}}>{automation.status.replace(/^./, (char) => char.toUpperCase())}</span>
+                </div>
+                <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.55}}>Trigger: {formatAutomationTrigger(automation)}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.55}}>Action: {formatAutomationAction(automation)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card" style={{padding:22,textAlign:"left"}}>
+          <h3 style={sectionTitleStyle}>Run History</h3>
+          <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:16}}>
+            {automationRuns.length === 0 && (
+              <div style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,fontSize:13,color:C.muted}}>
+                No automation runs logged yet. When automations run, success and failure details will appear here.
+              </div>
+            )}
+            {automationRuns.map((run) => (
+              <div key={run.id} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"start"}}>
+                  <div style={{fontSize:16,fontWeight:600,color:C.text}}>{run.automation_name || "Automation run"}</div>
+                  <span className="badge" style={{background:run.status === "succeeded" ? "rgba(82,200,122,.15)" : run.status === "running" ? "rgba(91,143,232,.15)" : "rgba(224,82,82,.15)",color:run.status === "succeeded" ? C.success : run.status === "running" ? C.blue : C.danger,border:`1px solid ${run.status === "succeeded" ? "rgba(82,200,122,.3)" : run.status === "running" ? "rgba(91,143,232,.3)" : "rgba(224,82,82,.3)"}`}}>{run.status.replace(/^./, (char) => char.toUpperCase())}</span>
+                </div>
+                <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.55}}>{run.run_summary || "Run completed."}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:6}}>{formatAutomationRunTime(run.started_at || run.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -3470,38 +3828,252 @@ function Members({ people, setPeople, churchId, church, profile }) {
 }
 
 // ── Budget ─────────────────────────────────────────────────────────────────
-function Budget({ transactions, setTransactions, churchId, church, profile }) {
+function Budget({ transactions, setTransactions, churchId, profile, setProfile, ministries, setMinistries, previewUsers, setPreviewUsers }) {
   const isPreview = churchId === "preview";
-  const canEditBudget = canManageBudget(profile, church);
+  const financeView = isFinanceUser(profile);
+  const visibleMinistries = getBudgetScopeMinistries(profile);
+  const canEditBudget = canViewBudget(profile);
+  const defaultMinistry = visibleMinistries[0] || "Admin";
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({description:"",amount:"",ministry:"Admin",category:"Operations",date:new Date().toISOString().split("T")[0],type:"expense"});
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [selectedLedgerMinistry, setSelectedLedgerMinistry] = useState(defaultMinistry);
+  const [form, setForm] = useState({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
+  const [budgetForm, setBudgetForm] = useState({ id: null, ministry: defaultMinistry, budget: "", assignedStaffId: "", items: [{ label: "", amount: "" }] });
+  const ledgerMinistryNames = [...new Set([
+    ...((ministries || []).map((entry) => entry.name).filter(Boolean)),
+    ...(financeView ? [] : visibleMinistries),
+  ])].sort((left, right) => left.localeCompare(right));
+  const activeLedgerMinistry = selectedLedgerMinistry || defaultMinistry;
+  const selectedMinistryRecord = (ministries || []).find((entry) => entry.name === activeLedgerMinistry);
+  const selectedMinistryBudgetItems = normalizeBudgetItems(selectedMinistryRecord?.budget_items);
 
-  const income = transactions.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
-  const expense = transactions.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+  const canManageBudgetLinesForMinistry = (ministry) => financeView || visibleMinistries.includes(ministry);
+
+  const openTransactionModal = (ministry = defaultMinistry) => {
+    setSelectedLedgerMinistry(ministry);
+    setForm((current) => ({
+      ...current,
+      ministry,
+      category: "",
+    }));
+    setShowModal(true);
+  };
+  const openBudgetModal = (ministry = "") => {
+    const existingMinistry = (ministries || []).find((entry) => entry.name === ministry) || null;
+    const assignedUser = (previewUsers || []).find((user) => (user.ministries || []).includes(ministry));
+    const normalizedItems = normalizeBudgetItems(existingMinistry?.budget_items);
+    setBudgetForm({
+      id: existingMinistry?.id || null,
+      ministry: ministry || "",
+      budget: existingMinistry?.budget !== undefined && existingMinistry?.budget !== null ? String(existingMinistry.budget) : "",
+      assignedStaffId: assignedUser?.id || "",
+      items: normalizedItems.length > 0 ? normalizedItems.map((item) => ({ label: item.label, amount: String(item.amount) })) : [{ label: "", amount: "" }],
+    });
+    setShowBudgetModal(true);
+  };
+
+  if (!canViewBudget(profile)) {
+    return (
+      <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+        <div style={{marginBottom:24}}>
+          <h2 style={pageTitleStyle}>Budget</h2>
+          <p style={{color:C.muted,fontSize:13,marginTop:4}}>Budget visibility is limited to Finance and ministry leaders.</p>
+        </div>
+        <div className="card" style={{padding:24}}>
+          <p style={{color:C.muted,fontSize:14,lineHeight:1.6}}>
+            Your account does not currently have a ministry ledger assigned. Once a ministry is attached to your profile, Shepherd will show you that ministry's budget and transactions here.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const scopedTransactions = financeView
+    ? transactions.filter((transaction) => ledgerMinistryNames.includes(transaction.ministry))
+    : transactions.filter((transaction) => visibleMinistries.includes(transaction.ministry));
+
+  const ministrySummaries = (financeView ? ledgerMinistryNames : visibleMinistries)
+    .map((ministry) => {
+      const budgetRow = (ministries || []).find((entry) => entry.name === ministry);
+      const ministryTransactions = scopedTransactions.filter((transaction) => transaction.ministry === ministry);
+      const spent = ministryTransactions
+        .filter((transaction) => transaction.amount < 0)
+        .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
+      const income = ministryTransactions
+        .filter((transaction) => transaction.amount > 0)
+        .reduce((sum, transaction) => sum + transaction.amount, 0);
+      const budgetAmount = Number(budgetRow?.budget || 0);
+      return {
+        ministry,
+        budget: budgetAmount,
+        spent,
+        income,
+        remaining: budgetAmount - spent,
+        transactions: ministryTransactions.length,
+      };
+    })
+    .filter((summary) => financeView || summary.transactions > 0 || summary.budget > 0);
+
+  const income = scopedTransactions.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+  const expense = scopedTransactions.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+  const categorySuggestions = [...new Set(
+    scopedTransactions
+      .filter((transaction) => transaction.ministry === activeLedgerMinistry)
+      .map((transaction) => transaction.category)
+      .filter(Boolean)
+  )];
+  const ministryLineItemSuggestions = selectedMinistryBudgetItems.map((item) => item.label);
 
   const save = async () => {
-    if (!form.description||!form.amount) return;
+    if (!form.description||!form.amount||!form.category||!form.ministry) return;
     const amt = parseFloat(form.amount)*(form.type==="expense"?-1:1);
     if (isPreview) {
       setTransactions([{ ...form, id: `txn-${Date.now()}`, amount: amt, church_id: churchId }, ...transactions]);
       setShowModal(false);
-      setForm({description:"",amount:"",ministry:"Admin",category:"Operations",date:new Date().toISOString().split("T")[0],type:"expense"});
+      setForm({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
       return;
     }
     const { data } = await supabase.from("transactions").insert({description:form.description,amount:amt,ministry:form.ministry,category:form.category,date:form.date,church_id:churchId}).select().single();
     setTransactions([data,...transactions]);
     setShowModal(false);
-    setForm({description:"",amount:"",ministry:"Admin",category:"Operations",date:new Date().toISOString().split("T")[0],type:"expense"});
+    setForm({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
+  };
+
+  const saveBudget = async () => {
+    const trimmedMinistry = budgetForm.ministry.trim();
+    if (!financeView || !trimmedMinistry) return;
+    const normalizedItems = normalizeBudgetItems((budgetForm.items || []).map((item) => ({
+      label: item.label,
+      amount: item.amount,
+    })));
+    const nextBudget = normalizedItems.length > 0
+      ? normalizedItems.reduce((sum, item) => sum + item.amount, 0)
+      : (Number.parseFloat(budgetForm.budget || "0") || 0);
+    if (Number.isNaN(nextBudget)) return;
+    const previousName = (ministries || []).find((entry) => entry.id === budgetForm.id)?.name || trimmedMinistry;
+    const payload = {
+      church_id: churchId,
+      name: trimmedMinistry,
+      color: CATEGORY_STYLES[trimmedMinistry]?.color || C.gold,
+      budget: nextBudget,
+      spent: 0,
+      budget_categories: [...new Set(normalizedItems.map((item) => item.label))],
+      budget_items: normalizedItems,
+    };
+    if (isPreview) {
+      setMinistries?.((current) => {
+        const others = (current || []).filter((entry) => entry.id !== budgetForm.id && entry.name !== previousName);
+        return [...others, { ...payload, id: budgetForm.id || `ministry-${trimmedMinistry}` }].sort((left, right) => left.name.localeCompare(right.name));
+      });
+      setShowBudgetModal(false);
+      return;
+    }
+    const ministryQuery = budgetForm.id
+      ? supabase.from("ministries").update(payload).eq("id", budgetForm.id)
+      : supabase.from("ministries").upsert(payload, { onConflict: "church_id,name" });
+    const { data, error } = await ministryQuery.select().single();
+    if (error) return;
+    if (previousName !== trimmedMinistry) {
+      const matchingTransactions = transactions.filter((transaction) => transaction.ministry === previousName);
+      if (matchingTransactions.length > 0) {
+        await supabase.from("transactions").update({ ministry: trimmedMinistry }).eq("church_id", churchId).eq("ministry", previousName);
+        setTransactions((current) => current.map((transaction) => transaction.ministry === previousName ? { ...transaction, ministry: trimmedMinistry } : transaction));
+      }
+    }
+    const updatedStaff = await Promise.all((previewUsers || []).map(async (user) => {
+      const existingMinistries = Array.isArray(user.ministries) ? user.ministries : [];
+      const strippedMinistries = existingMinistries.filter((ministry) => ministry !== previousName && ministry !== trimmedMinistry);
+      const nextMinistries = user.id === budgetForm.assignedStaffId ? [...strippedMinistries, trimmedMinistry] : strippedMinistries;
+      if (JSON.stringify(existingMinistries) === JSON.stringify(nextMinistries)) return user;
+      if (!isPreview) {
+        await supabase.from("church_staff").update({ ministries: nextMinistries }).eq("id", user.id);
+        await supabase.from("profiles").update({ ministries: nextMinistries }).eq("staff_id", user.id);
+      }
+      return normalizeAccessUser({ ...user, ministries: nextMinistries });
+    }));
+    setPreviewUsers?.(updatedStaff.sort((left, right) => left.full_name.localeCompare(right.full_name)));
+    if (profile?.staff_id) {
+      const refreshedProfile = updatedStaff.find((user) => user.id === profile.staff_id);
+      if (refreshedProfile) {
+        setProfile?.((current) => current ? { ...current, ministries: refreshedProfile.ministries } : current);
+      }
+    }
+    setMinistries?.((current) => {
+      const others = (current || []).filter((entry) => entry.id !== data.id && entry.name !== data.name);
+      return [...others, data].sort((left, right) => left.name.localeCompare(right.name));
+    });
+    setShowBudgetModal(false);
+  };
+
+  const updateBudgetItem = (index, field, value) => {
+    setBudgetForm((current) => ({
+      ...current,
+      items: (current.items || []).map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item),
+    }));
+  };
+
+  const addBudgetItemRow = () => {
+    setBudgetForm((current) => ({
+      ...current,
+      items: [...(current.items || []), { label: "", amount: "" }],
+    }));
+  };
+
+  const removeBudgetItemRow = (index) => {
+    setBudgetForm((current) => {
+      const nextItems = (current.items || []).filter((_, itemIndex) => itemIndex !== index);
+      return {
+        ...current,
+        items: nextItems.length > 0 ? nextItems : [{ label: "", amount: "" }],
+      };
+    });
+  };
+
+  const removeBudgetMinistry = async () => {
+    if (!financeView || !budgetForm.id) return;
+    const ministryName = budgetForm.ministry;
+    if (isPreview) {
+      setMinistries?.((current) => (current || []).filter((entry) => entry.id !== budgetForm.id));
+      setPreviewUsers?.((current) => (current || []).map((user) => normalizeAccessUser({
+        ...user,
+        ministries: (user.ministries || []).filter((ministry) => ministry !== ministryName),
+      })));
+      setShowBudgetModal(false);
+      return;
+    }
+    await supabase.from("ministries").delete().eq("id", budgetForm.id);
+    const updatedStaff = await Promise.all((previewUsers || []).map(async (user) => {
+      const nextMinistries = (user.ministries || []).filter((ministry) => ministry !== ministryName);
+      if (JSON.stringify(user.ministries || []) === JSON.stringify(nextMinistries)) return user;
+      await supabase.from("church_staff").update({ ministries: nextMinistries }).eq("id", user.id);
+      await supabase.from("profiles").update({ ministries: nextMinistries }).eq("staff_id", user.id);
+      return normalizeAccessUser({ ...user, ministries: nextMinistries });
+    }));
+    setPreviewUsers?.(updatedStaff.sort((left, right) => left.full_name.localeCompare(right.full_name)));
+    if (profile?.staff_id) {
+      const refreshedProfile = updatedStaff.find((user) => user.id === profile.staff_id);
+      if (refreshedProfile) {
+        setProfile?.((current) => current ? { ...current, ministries: refreshedProfile.ministries } : current);
+      }
+    }
+    setMinistries?.((current) => (current || []).filter((entry) => entry.id !== budgetForm.id));
+    setShowBudgetModal(false);
   };
 
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
-        <div>
-          <h2 style={pageTitleStyle}>Budget & Finance</h2>
-          <p style={{color:C.muted,fontSize:13,marginTop:4}}>Track ministry spending and income</p>
+        <div style={{textAlign:"left",justifySelf:"start"}}>
+          <h2 style={pageTitleStyle}>{financeView ? "Budget Ledger" : "Your Budgets"}</h2>
+          <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+            {financeView
+              ? "See every ministry's budget standing and manage the church ledger."
+              : "These are the budgets currently assigned to you. If something is missing, reach out to the Finance Director so they can attach the right ministry budget to your profile in the ministry editor."}
+          </p>
         </div>
-        {canEditBudget && <button className="btn-gold" onClick={()=>setShowModal(true)}><Icons.plus/>Add Transaction</button>}
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {financeView && <button className="btn-outline" onClick={() => openBudgetModal()}><Icons.plus/>Create New Budget</button>}
+        </div>
       </div>
       <div className="mobile-three-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:28}}>
         {[
@@ -3515,12 +4087,72 @@ function Budget({ transactions, setTransactions, churchId, church, profile }) {
           </div>
         ))}
       </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16,marginBottom:28}}>
+        {ministrySummaries.length === 0 && (
+          <div className="card" style={{padding:24,textAlign:"left",gridColumn:"1 / -1"}}>
+            <div style={{...sectionTitleStyle,fontSize:24,marginBottom:8}}>No budgets yet</div>
+            <div style={{fontSize:13,color:C.muted,lineHeight:1.6}}>
+              {financeView
+                ? "Create each ministry budget intentionally from scratch. Once budgets are added, they will appear here with their own transaction controls."
+                : "No budgets have been attached to you yet. If something should be here, ask the Finance Director to create the budget and attach it to your ministry profile."}
+            </div>
+          </div>
+        )}
+        {ministrySummaries.map((summary) => (
+          <div key={summary.ministry} className="stat-card" style={{borderTop:`3px solid ${CATEGORY_STYLES[summary.ministry]?.color || C.gold}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+              <div>
+                <div style={{...sectionTitleStyle,fontSize:24}}>{summary.ministry}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4}}>{summary.transactions} transactions</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span className={`badge ${getTag(summary.ministry)}`}>{summary.ministry}</span>
+                {financeView && (
+                  <button
+                    className="btn-outline"
+                    onClick={() => openBudgetModal(summary.ministry)}
+                    style={{padding:"7px 9px",minWidth:0}}
+                    aria-label={`Edit ${summary.ministry} budget`}
+                    title={`Edit ${summary.ministry} budget`}
+                  >
+                    <Icons.pen/>
+                  </button>
+                )}
+              </div>
+            </div>
+            <div style={{display:"grid",gap:8,marginTop:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.muted}}>
+                <span>Budget</span>
+                <span style={{color:C.text}}>{fmt(summary.budget)}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.muted}}>
+                <span>Spent</span>
+                <span style={{color:C.danger}}>{fmt(summary.spent)}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.muted}}>
+                <span>Remaining</span>
+                <span style={{color:summary.remaining >= 0 ? C.success : C.danger}}>{fmt(summary.remaining)}</span>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
+              <button className="btn-gold" onClick={() => openTransactionModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
+                <Icons.plus/>Add Transaction
+              </button>
+              {canManageBudgetLinesForMinistry(summary.ministry) && (
+                <button className="btn-outline" onClick={() => openBudgetModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
+                  <Icons.pen/>{financeView ? "Edit Budget" : "Edit Line Items"}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
       <div className="card" style={{overflow:"hidden"}}>
         <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
-          <h3 style={sectionTitleStyle}>Recent Transactions</h3>
+          <h3 style={sectionTitleStyle}>{financeView ? "Church Ledger" : "Your Ministry Ledger"}</h3>
         </div>
-        {transactions.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No transactions yet.</div>}
-        {transactions.map(t=>(
+        {scopedTransactions.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No transactions yet for this ledger.</div>}
+        {scopedTransactions.map(t=>(
           <div key={t.id} className="table-row" style={{gridTemplateColumns:"1fr 110px 100px 90px"}}>
             <div>
               <div style={{fontSize:13,color:C.text}}>{t.description}</div>
@@ -3549,21 +4181,116 @@ function Budget({ transactions, setTransactions, churchId, church, profile }) {
               ))}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <input className="input-field" placeholder="Description" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
-              <div className="budget-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <input className="input-field" placeholder="Amount ($)" type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
-                <input className="input-field" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-                <select className="input-field" value={form.ministry} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
-                  {TASK_CATEGORIES.map(m=><option key={m}>{m}</option>)}
-                </select>
-                <select className="input-field" value={form.category} onChange={e=>setForm({...form,category:e.target.value})} style={{background:C.surface}}>
-                  {["Operations","Equipment","Events","Programs","Facilities","Resources","Licensing","Income","Other"].map(c=><option key={c}>{c}</option>)}
-                </select>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Description</label>
+                <input className="input-field" placeholder="Description" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
               </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Amount</label>
+                <input className="input-field" placeholder="Amount ($)" type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date</label>
+                <input className="input-field" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
+                <input className="input-field" value={form.ministry} readOnly />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Item</label>
+                <input className="input-field" list="budget-category-options" placeholder={selectedMinistryBudgetItems.length > 0 ? "Choose a line item" : "Finance needs to create line items first"} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/>
+                <datalist id="budget-category-options">
+                  {[...ministryLineItemSuggestions, ...categorySuggestions].filter((value, index, values) => value && values.indexOf(value) === index).map((category) => (
+                    <option key={category} value={category} />
+                  ))}
+                </datalist>
+              </div>
+              {selectedMinistryBudgetItems.length > 0 && (
+                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                  Available line items: {selectedMinistryBudgetItems.map((item) => item.label).join(", ")}
+                </div>
+              )}
+              {selectedMinistryBudgetItems.length === 0 && (
+                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                  No line items have been created for this ministry yet. Finance can add them in the ministry budget editor.
+                </div>
+              )}
             </div>
             <div style={{display:"flex",gap:10,marginTop:20,justifyContent:"flex-end"}}>
               <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
               <button className="btn-gold" onClick={save}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showBudgetModal && canManageBudgetLinesForMinistry(budgetForm.ministry || defaultMinistry) && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowBudgetModal(false)} style={{alignItems:"flex-start",paddingTop:24}}>
+          <div className="modal fadeIn">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <h3 style={sectionTitleStyle}>{financeView ? "Set Ministry Budget" : "Edit Budget Line Items"}</h3>
+              <button onClick={()=>setShowBudgetModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
+                <input className="input-field" value={budgetForm.ministry} onChange={(e)=>setBudgetForm({...budgetForm,ministry:e.target.value})} placeholder="Ministry name" readOnly={!financeView} />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Starting Budget</label>
+                <input className="input-field" type="number" placeholder="0" value={budgetForm.budget} onChange={(e)=>setBudgetForm({...budgetForm,budget:e.target.value})} readOnly={!financeView}/>
+              </div>
+              {financeView && (
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Attach Ministry Lead</label>
+                <select className="input-field" value={budgetForm.assignedStaffId} onChange={(e)=>setBudgetForm({...budgetForm,assignedStaffId:e.target.value})} style={{background:C.surface}}>
+                  <option value="">No one attached</option>
+                  {(previewUsers || []).map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}
+                </select>
+              </div>
+              )}
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Items</label>
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {(budgetForm.items || []).map((item, index) => (
+                    <div key={`budget-item-${index}`} className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:10,alignItems:"end"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        <label style={{fontSize:11,color:C.muted,textAlign:"left"}}>Label</label>
+                        <input className="input-field" placeholder="Summer Camp" value={item.label} onChange={(e)=>updateBudgetItem(index, "label", e.target.value)} />
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        <label style={{fontSize:11,color:C.muted,textAlign:"left"}}>Amount</label>
+                        <input className="input-field" type="number" placeholder="0" value={item.amount} onChange={(e)=>updateBudgetItem(index, "amount", e.target.value)} />
+                      </div>
+                      <button className="btn-outline" type="button" onClick={() => removeBudgetItemRow(index)} style={{padding:"10px 12px",justifyContent:"center"}}>
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button className="btn-outline" type="button" onClick={addBudgetItemRow} style={{justifyContent:"center"}}>
+                  <Icons.plus/>Add Line Item
+                </button>
+                <div style={{fontSize:12,color:C.muted,textAlign:"left"}}>
+                  These line items become budget buckets you can attach transactions to later.
+                </div>
+              </div>
+            </div>
+            <div style={{fontSize:12,color:C.muted,marginTop:12,lineHeight:1.6,textAlign:"left"}}>
+              {financeView
+                ? "This sets the ministry’s working budget inside Shepherd. If you add line items, the total budget is calculated from them automatically."
+                : "You can add and adjust line items for this ministry budget here. Finance still controls the main ministry budget and staff assignment."}
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:20,justifyContent:"space-between",flexWrap:"wrap"}}>
+              {financeView && budgetForm.id ? (
+                <button className="btn-outline" onClick={removeBudgetMinistry} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                  Remove Ministry
+                </button>
+              ) : <div />}
+              <div style={{display:"flex",gap:10}}>
+              <button className="btn-outline" onClick={()=>setShowBudgetModal(false)}>Cancel</button>
+              <button className="btn-gold" onClick={saveBudget}>Save Budget</button>
+              </div>
             </div>
           </div>
         </div>
@@ -3908,7 +4635,7 @@ export default function App() {
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash}/>,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} />,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
-    budget:     <Budget transactions={transactions} setTransactions={setTransactions} churchId={church?.id} church={church} profile={profile}/>,
+    budget:     <Budget transactions={transactions} setTransactions={setTransactions} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
     ministries: <Ministries ministries={ministries}/>,
     calendar:   <CalendarView tasks={tasks}/>,
   };

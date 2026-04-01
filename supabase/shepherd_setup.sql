@@ -929,36 +929,5 @@ for all
 using (public.user_can_manage_church(church_id))
 with check (public.user_can_manage_church(church_id));
 
-insert into public.churches (id, name, code, account_admin_email)
-values ('11111111-1111-1111-1111-111111111111', 'Reach Church', '0712', 'yabs@reachjax.com')
-on conflict (code) do update
-set
-  name = excluded.name,
-  account_admin_email = excluded.account_admin_email;
-
-insert into public.church_staff (
-  church_id,
-  full_name,
-  role,
-  staff_roles,
-  title,
-  ministries,
-  can_see_team_overview,
-  can_see_admin_overview,
-  read_only_oversight
-)
-values
-  ('11111111-1111-1111-1111-111111111111', 'Eric Souza', 'senior_pastor', array['senior_pastor'], 'Senior Pastor', array['Services','Operations'], true, true, false),
-  ('11111111-1111-1111-1111-111111111111', 'Will Potts', 'worship_pastor', array['worship_pastor'], 'Worship Pastor', array['Worship','Services'], true, false, false),
-  ('11111111-1111-1111-1111-111111111111', 'Joel', 'finance_director', array['finance_director'], 'Finance Director', array['Missions','Finances','Operations'], true, false, false),
-  ('11111111-1111-1111-1111-111111111111', 'Shannan', 'church_administrator', array['church_administrator'], 'Church Administrator', array['Admin','Operations'], true, true, false),
-  ('11111111-1111-1111-1111-111111111111', 'Yabs', 'youth_pastor', array['youth_pastor','art_director'], 'Youth Pastor & Art Director', array['Content/Art','Youth','Young Adults','Events'], true, true, false)
-on conflict (church_id, full_name) do update
-set
-  role = excluded.role,
-  staff_roles = excluded.staff_roles,
-  title = excluded.title,
-  ministries = excluded.ministries,
-  can_see_team_overview = excluded.can_see_team_overview,
-  can_see_admin_overview = excluded.can_see_admin_overview,
-  read_only_oversight = excluded.read_only_oversight;
+-- New churches are created through create_church_with_admin(...)
+-- and their staff roster is intentionally built through the Church Team flow.

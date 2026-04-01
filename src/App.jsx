@@ -234,6 +234,16 @@ const normalizeBudgetItems = (items) => Array.isArray(items)
       .filter((item) => item.label)
   : [];
 const normalizeName = (value) => (value || "").trim().toLowerCase();
+const tokenizeName = (value) => normalizeName(value).split(/\s+/).filter(Boolean);
+const isPotentialDuplicateStaffName = (left, right) => {
+  const leftTokens = tokenizeName(left);
+  const rightTokens = tokenizeName(right);
+  if (leftTokens.length === 0 || rightTokens.length === 0) return false;
+  if (leftTokens.join(" ") === rightTokens.join(" ")) return true;
+  if (leftTokens[0] !== rightTokens[0]) return false;
+  if (leftTokens.length === 1 || rightTokens.length === 1) return true;
+  return leftTokens.some((token) => rightTokens.includes(token)) && (leftTokens.length <= 2 || rightTokens.length <= 2);
+};
 const samePerson = (left, right) => normalizeName(left) !== "" && normalizeName(left) === normalizeName(right);
 const listIncludesPerson = (list, fullName) => Array.isArray(list) && list.some((entry) => samePerson(entry, fullName));
 const profileHasMinistry = (profile, ministry) => Array.isArray(profile?.ministries) && profile.ministries.some((entry) => samePerson(entry, ministry));
@@ -1162,7 +1172,7 @@ function AuthScreen() {
               </select>
             </>
           ) : (
-            <select className="input-field" value={form.userId} onChange={e=>setForm({...form,userId:e.target.value})} style={{background:C.surface}} disabled={!churchAccess.church || lookupLoading}>
+            <select className="input-field" value={form.userId} onChange={e=>setForm({...form,userId:e.target.value})} style={{background:C.surface}} disabled={!churchAccess.church || lookupLoading || churchAccess.users.length === 0}>
               <option value="">{lookupLoading ? "Looking up church..." : "Select your name"}</option>
               {churchAccess.users.map((user) => (
                 <option key={user.id} value={user.id}>
@@ -1170,6 +1180,11 @@ function AuthScreen() {
                 </option>
               ))}
             </select>
+          )}
+          {!isChurchRegistration && selectedChurchId && churchAccess.church && churchAccess.users.length === 0 && (
+            <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+              No staff have been added to this church yet. Ask the church account admin to add the team in <span style={{color:C.text}}>Church Team</span> before anyone else uses First Time Login.
+            </div>
           )}
           {(mode === "signup" || isChurchRegistration) && (
             <input className="input-field" placeholder="Email address" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
@@ -1715,6 +1730,16 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
         entry?.church_id === church.id && samePerson(entry.full_name, fullName)
       )?.id
       || null;
+    const likelyDuplicate = (previewUsers || []).find((entry) =>
+      entry?.church_id === church.id
+      && entry.id !== editingMemberId
+      && isPotentialDuplicateStaffName(entry.full_name, fullName)
+    );
+    if (!existingMemberId && likelyDuplicate) {
+      setSaving(false);
+      setError(`This looks like it may duplicate ${likelyDuplicate.full_name}. Open that team member and edit the existing record instead of creating a second version of the same person.`);
+      return;
+    }
     const query = existingMemberId
       ? supabase.from("church_staff").update(finalPayload).eq("id", existingMemberId)
       : supabase.from("church_staff").upsert(finalPayload, { onConflict: "church_id,full_name" });

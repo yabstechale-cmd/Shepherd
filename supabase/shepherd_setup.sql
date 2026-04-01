@@ -101,6 +101,7 @@ create table if not exists public.tasks (
   review_required boolean not null default false,
   reviewers text[] not null default '{}',
   review_approvals text[] not null default '{}',
+  review_history jsonb not null default '[]'::jsonb,
   notes text,
   created_at timestamptz not null default now()
 );
@@ -114,6 +115,7 @@ alter table public.tasks add column if not exists status text not null default '
 alter table public.tasks add column if not exists review_required boolean not null default false;
 alter table public.tasks add column if not exists reviewers text[] not null default '{}';
 alter table public.tasks add column if not exists review_approvals text[] not null default '{}';
+alter table public.tasks add column if not exists review_history jsonb not null default '[]'::jsonb;
 alter table public.tasks add column if not exists notes text;
 alter table public.tasks add column if not exists created_at timestamptz not null default now();
 

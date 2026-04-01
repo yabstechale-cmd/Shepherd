@@ -217,6 +217,7 @@ const normalizeTask = (task) => ({
   review_approvals: Array.isArray(task?.review_approvals) ? task.review_approvals : [],
   review_required: task?.review_required ?? false,
   comments: Array.isArray(task?.comments) ? task.comments : [],
+  review_history: Array.isArray(task?.review_history) ? task.review_history : [],
 });
 const normalizePurchaseOrder = (order) => ({
   ...order,
@@ -297,6 +298,22 @@ const canDeleteChurchAccount = (profile, church) => hasAdministrativeOversight(p
 const canManageAllTasks = (profile, church) => hasAdministrativeOversight(profile, church);
 const canEditTask = (profile, church, task) => canManageAllTasks(profile, church) || samePerson(task?.assignee, profile?.full_name);
 const canReviewTask = (profile, task) => task?.review_required && task?.status === "in-review" && listIncludesPerson(task?.reviewers, profile?.full_name);
+const getTaskReviewerDecision = (task, reviewer) => {
+  if (!reviewer) return null;
+  const history = Array.isArray(task?.review_history) ? [...task.review_history] : [];
+  const match = history
+    .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0))
+    .find((entry) => samePerson(entry?.reviewer, reviewer));
+  if (!match) return null;
+  return {
+    action: match.action === "denied" ? "denied" : match.action === "approved" ? "approved" : "pending",
+    created_at: match.created_at || "",
+  };
+};
+const canApproveTaskReview = (profile, task) =>
+  canReviewTask(profile, task)
+  && !getTaskReviewerDecision(task, profile?.full_name)
+  && ["in-review"].includes(task?.status || "todo");
 const canManagePeople = (profile, church) => hasAdministrativeOversight(profile, church);
 const isFinanceUser = (profile) => profileHasMinistry(profile, "Finances") || (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
 const isFinanceDirector = (profile) => (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
@@ -1374,12 +1391,16 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
         <BrandMark size={80} color={C.gold}/>
       </div>
       <div style={{padding:collapsed?"20px 16px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"space-between"}}>
-        {!collapsed && <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:32,height:32,borderRadius:8,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <button
+          onClick={() => setActive("dashboard")}
+          title="Go to dashboard"
+          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left"}}
+        >
+          <div style={{width:32,height:32,borderRadius:8,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <BrandMark size={14} color={C.gold}/>
           </div>
-          <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em"}}>Shepherd</span>
-        </div>}
+          {!collapsed && <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em"}}>Shepherd</span>}
+        </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4}}><Icons.menu/></button>
       </div>
       <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1}}>
@@ -2456,10 +2477,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
   };
 
   const setEventRequestStatus = async (requestId, status) => {
-    if (requestId === "demo-event-request") {
-      setSelectedRequest((current) => current ? { ...current, status, decided_at: new Date().toISOString() } : current);
-      return;
-    }
     const existingRequest = requests.find((request) => request.id === requestId);
     const decisionPayload = {
       status,
@@ -2893,19 +2910,8 @@ function AutomationsPage({ churchId, profile, automations, setAutomations, autom
   );
 }
 
-function ContentMediaBoard({ tasks, setActive, previewUsers }) {
-  const isLocalhost = typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
-  const sampleAssignees = previewUsers?.map((user) => user.full_name).filter(Boolean);
-  const demoAssignees = sampleAssignees?.length > 0 ? sampleAssignees : ["Team Member 1", "Team Member 2", "Team Member 3", "Team Member 4"];
-  const demoContentTasks = [
-    { id: "content-demo-1", title: "Build Easter announcement slides", assignee: demoAssignees[0], ministry: "Content/Art", status: "todo", due_date: "2026-03-31", review_required: false },
-    { id: "content-demo-2", title: "Edit Sunday bumper video", assignee: demoAssignees[0], ministry: "Content/Art", status: "in-progress", due_date: "2026-03-29", review_required: false },
-    { id: "content-demo-3", title: "Review youth camp promo reel", assignee: demoAssignees[0], ministry: "Content/Art", status: "in-review", due_date: "2026-03-30", review_required: true },
-    { id: "content-demo-4", title: "Publish women's breakfast flyer", assignee: demoAssignees[1] || demoAssignees[0], ministry: "Content/Art", status: "done", due_date: "2026-03-25", review_required: false },
-  ].map(normalizeTask);
-
-  const sourceTasks = tasks.length === 0 && isLocalhost ? demoContentTasks : tasks;
-  const contentTasks = sourceTasks.filter(isContentTask);
+function ContentMediaBoard({ tasks, setActive }) {
+  const contentTasks = tasks.filter(isContentTask);
   const columns = [
     { id: "todo", title: "Not Started", detail: "New asks, fresh requests, and creative work that has not started yet." },
     { id: "in-progress", title: "In Progress", detail: "Active design, editing, filming, writing, and production work in motion." },
@@ -3161,22 +3167,58 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const greeting = getTimeOfDayGreeting();
   const dailyVerse = getDailyVerse();
-  const teamSummary = previewUsers.map((user) => {
+  const teamSummary = previewUsers
+    .filter((user) => !samePerson(user.full_name, profile?.full_name))
+    .map((user) => {
     const assigned = tasks.filter((task) => samePerson(task.assignee, user.full_name));
+    const openAssigned = assigned.filter((task) => task.status !== "done");
+    const inReviewTasks = openAssigned.filter((task) => task.status === "in-review");
+    const overdueTasks = openAssigned.filter((task) => {
+      if (!task.due_date) return false;
+      const dueDate = new Date(task.due_date);
+      const today = new Date();
+      const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+      const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      return dueDay.getTime() < todayDay.getTime();
+    });
     const currentTask =
       assigned.find((task) => task.status === "in-progress")
       || assigned
         .filter((task) => task.status !== "done")
         .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0]
       || null;
+    const upcomingTask = openAssigned
+      .filter((task) => task.id !== currentTask?.id)
+      .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0]
+      || null;
+    const workloadSummary = currentTask
+      ? currentTask.status === "in-progress"
+        ? "Currently in progress"
+        : currentTask.status === "in-review"
+          ? "Waiting on review"
+          : "Next priority"
+      : openAssigned.length > 0
+        ? "Upcoming work"
+        : "Clear right now";
+    const workloadDetail = overdueTasks.length > 0
+      ? `${overdueTasks.length} overdue ${overdueTasks.length === 1 ? "task" : "tasks"}`
+      : inReviewTasks.length > 0
+        ? `${inReviewTasks.length} item${inReviewTasks.length === 1 ? "" : "s"} in review`
+        : upcomingTask?.due_date
+          ? `Next due ${fmtDate(upcomingTask.due_date)}`
+          : openAssigned.length > 0
+            ? `${openAssigned.length} active task${openAssigned.length === 1 ? "" : "s"}`
+            : "No open tasks";
     return {
       ...user,
-      openTasks: assigned.filter((task) => task.status !== "done").length,
+      openTasks: openAssigned.length,
       inProgressTasks: assigned.filter((task) => task.status === "in-progress").length,
+      inReviewTasks: inReviewTasks.length,
+      overdueTasks: overdueTasks.length,
       currentTask,
-      nextTask: assigned
-        .filter((task) => task.status !== "done")
-        .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0],
+      nextTask: upcomingTask,
+      workloadSummary,
+      workloadDetail,
     };
   });
   const recentAdminWork = tasks
@@ -3211,44 +3253,57 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
                 className="dashboard-team-row"
                 key={member.id}
                 style={{
-                  padding:16,
+                  padding:18,
                   border:`1px solid ${member.currentTask?.status === "in-progress" ? C.goldDim : C.border}`,
-                  borderRadius:12,
+                  borderRadius:14,
                   background:member.currentTask?.status === "in-progress" ? C.goldGlow : C.surface,
                   display:"grid",
-                  gridTemplateColumns:"minmax(180px, 220px) minmax(220px, 1fr) 110px",
-                  gap:16,
-                  alignItems:"center"
+                  gridTemplateColumns:"minmax(0,1fr) minmax(220px, 260px)",
+                  gap:18,
+                  alignItems:"start",
+                  textAlign:"left"
                 }}
               >
-                <div>
-                  <div style={{fontSize:14,fontWeight:600,color:C.text}}>{member.full_name}</div>
-                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{member.title}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6}}>
-                    Working on now
+                <div style={{display:"grid",gap:14,justifyItems:"start",textAlign:"left"}}>
+                  <div style={{display:"grid",gap:4,justifyItems:"start",textAlign:"left"}}>
+                    <div style={{fontSize:18,fontWeight:600,color:C.text,lineHeight:1.25}}>{member.full_name}</div>
+                    <div style={{fontSize:12,color:C.muted}}>{member.title}</div>
                   </div>
-                  {member.currentTask ? (
-                    <>
-                      <div style={{fontSize:14,color:C.text,fontWeight:500}}>{member.currentTask.title}</div>
-                      <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
-                        <span className={`badge ${getTag(member.currentTask.ministry)}`}>{member.currentTask.ministry}</span>
-                        <span className="badge" style={{background:"rgba(255,255,255,.04)",color:member.currentTask.status === "in-progress" ? C.blue : C.muted,border:`1px solid ${C.border}`}}>
-                          {member.currentTask.status === "in-progress" ? "In Progress" : "To Do"}
-                        </span>
-                        {member.currentTask.due_date && <span style={{fontSize:11,color:C.muted}}>Due {fmtDate(member.currentTask.due_date)}</span>}
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{fontSize:13,color:C.muted}}>No active task right now.</div>
+                  <div style={{display:"grid",gap:6,justifyItems:"start",textAlign:"left"}}>
+                    <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>
+                      Current focus
+                    </div>
+                    {member.currentTask ? (
+                      <>
+                        <div style={{fontSize:15,color:C.text,fontWeight:500,lineHeight:1.45}}>{member.currentTask.title}</div>
+                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                          <span className={`badge ${getTag(member.currentTask.ministry)}`}>{member.currentTask.ministry}</span>
+                          <span className="badge" style={{background:"rgba(255,255,255,.04)",color:member.currentTask.status === "in-progress" ? C.blue : C.muted,border:`1px solid ${C.border}`}}>
+                            {member.currentTask.status === "in-progress" ? "In Progress" : member.currentTask.status === "in-review" ? "In Review" : "To Do"}
+                          </span>
+                          {member.currentTask.due_date && <span style={{fontSize:11,color:C.muted}}>Due {fmtDate(member.currentTask.due_date)}</span>}
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{fontSize:13,color:C.muted}}>No active task right now.</div>
+                    )}
+                  </div>
+                </div>
+                <div className="dashboard-team-row-right" style={{textAlign:"left",display:"grid",gap:8,alignSelf:"stretch",padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:"rgba(255,255,255,.02)"}}>
+                  <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>
+                    Workload snapshot
+                  </div>
+                  <div style={{fontSize:16,fontWeight:600,color:member.overdueTasks > 0 ? C.danger : member.inReviewTasks > 0 ? C.blue : C.gold,lineHeight:1.35}}>
+                    {member.workloadSummary}
+                  </div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                    {member.workloadDetail}
+                  </div>
+                  {member.nextTask && (
+                    <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>
+                      <span style={{color:C.muted}}>Then:</span> {member.nextTask.title}
+                    </div>
                   )}
-                </div>
-                <div className="dashboard-team-row-right" style={{textAlign:"right"}}>
-                  <div style={{fontSize:28,fontFamily:"'Young Serif Medium', Georgia, serif",color:member.inProgressTasks ? C.blue : C.gold}}>
-                    {member.openTasks}
-                  </div>
-                  <div style={{fontSize:11,color:C.muted}}>open tasks</div>
                 </div>
               </div>
             ))}
@@ -3324,7 +3379,6 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
 // ── Tasks ──────────────────────────────────────────────────────────────────
 function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveItemToTrash }) {
   const isPreview = churchId === "preview";
-  const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
   const canCreateTasks = true;
   const canAssignToAnyone = hasAdministrativeOversight(profile, church);
   const [mFilter, setMFilter] = useState("All");
@@ -3341,19 +3395,8 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const [orderedCategories, setOrderedCategories] = useState(() => getStoredCategoryOrder());
   const teamNames = previewUsers?.map((user) => user.full_name) || [];
   const allowedAssignees = canAssignToAnyone ? teamNames : [profile?.full_name].filter(Boolean);
-  const sampleAssignees = teamNames.length > 0 ? teamNames : [profile?.full_name || "Yabs", "Eric Souza", "Shannan", "Will Potts", "Joel"];
-  const sampleTasks = [
-    { id: "sample-1", title: "Finalize Sunday announcement slides", ministry: "Worship", assignee: sampleAssignees[3] || sampleAssignees[0], due_date: "2026-03-30", status: "todo", notes: "Pull approved graphics and confirm lyric moments.", share_link:"https://drive.google.com/", review_required: true, reviewers: [sampleAssignees[0] || "Yabs"], review_approvals: [], comments:[{id:"c1",author:sampleAssignees[3] || "Will Potts",body:"Need the final export by Thursday for rehearsal.",created_at:"2026-03-27T10:00:00"}] },
-    { id: "sample-2", title: "Order supplies for youth hangout", ministry: "Youth", assignee: sampleAssignees[0], due_date: "2026-04-01", status: "todo", notes: "Snacks, cups, and guest check-in tags.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
-    { id: "sample-3", title: "Meet with missions team leader", ministry: "Missions", assignee: sampleAssignees[4] || sampleAssignees[0], due_date: "2026-03-29", status: "in-progress", notes: "Review spring outreach budget and volunteer needs.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
-    { id: "sample-4", title: "Draft Easter social graphics", ministry: "Content/Art", assignee: sampleAssignees[3] || sampleAssignees[0], due_date: "2026-04-03", status: "in-review", notes: "Waiting on final approval before exporting story sizes.", share_link:"https://www.figma.com/", review_required: true, reviewers: [sampleAssignees[0], sampleAssignees[1] || "Eric Souza", sampleAssignees[2] || "Shannan"], review_approvals: [sampleAssignees[2] || "Shannan"], comments:[{id:"c2",author:sampleAssignees[2] || "Shannan",body:"Looks strong. Once Eric signs off we can schedule the post.",created_at:"2026-03-27T12:15:00"}] },
-    { id: "sample-5", title: "Review coffee volunteer schedule", ministry: "Operations", assignee: sampleAssignees[2] || sampleAssignees[0], due_date: "2026-03-28", status: "in-progress", notes: "Make sure both services are covered.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
-    { id: "sample-6", title: "Reconcile event reimbursement receipts", ministry: "Finances", assignee: sampleAssignees[4] || sampleAssignees[0], due_date: "2026-03-27", status: "done", notes: "Filed and ready for records.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
-    { id: "sample-7", title: "Follow up with men’s breakfast leader", ministry: "Men's", assignee: sampleAssignees[1] || sampleAssignees[0], due_date: "2026-04-02", status: "todo", notes: "Confirm room setup and serving volunteers.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
-    { id: "sample-8", title: "Confirm nursery classroom rotation", ministry: "Kids", assignee: sampleAssignees[2] || sampleAssignees[0], due_date: "2026-03-31", status: "done", notes: "Updated for the next four Sundays.", review_required: false, reviewers: [], review_approvals: [], comments:[] },
-  ].map(normalizeTask);
-  const boardTasks = isLocalhost && tasks.length === 0 ? sampleTasks : tasks;
-  const mentionableNames = [...new Set((teamNames.length > 0 ? teamNames : sampleAssignees).filter(Boolean))];
+  const boardTasks = tasks;
+  const mentionableNames = [...new Set(teamNames.filter(Boolean))];
 
   const getMentionContext = (value, cursor) => {
     const beforeCursor = value.slice(0, cursor);
@@ -3378,8 +3421,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     const isMine = isTaskForUser(t, profile?.full_name);
     const assigneeMatch =
       aFilter === "all" ||
-      (aFilter === "mine" && isMine) ||
-      (aFilter === "team" && !isMine);
+      (aFilter === "mine" && isMine);
     return ministryMatch && assigneeMatch;
   });
 
@@ -3431,11 +3473,12 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       review_required: safeForm.review_required,
       reviewers: safeForm.reviewers,
       review_approvals: safeForm.review_approvals,
+      review_history: safeForm.review_history || [],
       church_id: churchId,
     };
     if (editing) {
       let result = await supabase.from("tasks").update(dbPayload).eq("id",editing.id).select().single();
-      if (result.error && /review_required|reviewers|review_approvals|share_link/i.test(result.error.message || "")) {
+      if (result.error && /review_required|reviewers|review_approvals|review_history|share_link/i.test(result.error.message || "")) {
         const fallbackPayload = {
           title: safeForm.title,
           ministry: safeForm.ministry,
@@ -3453,7 +3496,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       if (result.data) setTasks(tasks.map(t=>t.id===editing.id?normalizeTask(result.data):t));
     } else {
       let result = await supabase.from("tasks").insert(dbPayload).select().single();
-      if (result.error && /review_required|reviewers|review_approvals|share_link/i.test(result.error.message || "")) {
+      if (result.error && /review_required|reviewers|review_approvals|review_history|share_link/i.test(result.error.message || "")) {
         const fallbackPayload = {
           title: safeForm.title,
           ministry: safeForm.ministry,
@@ -3478,13 +3521,20 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     if (nextStatus === "done" && task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))) {
       return;
     }
+    const changes = nextStatus === "in-review" && task.status !== "in-review"
+      ? { status: nextStatus, review_approvals: [], review_history: [] }
+      : { status: nextStatus };
     if (isPreview) {
-      const updated = normalizeTask({ ...task, status: nextStatus });
+      const updated = normalizeTask({ ...task, ...changes });
       setTasks(tasks.map((t) => t.id === task.id ? updated : t));
       syncTaskInView(updated);
       return;
     }
-    const { data } = await supabase.from("tasks").update({status:nextStatus}).eq("id",task.id).select().single();
+    let result = await supabase.from("tasks").update(changes).eq("id",task.id).select().single();
+    if (result.error && /review_history/i.test(result.error.message || "")) {
+      result = await supabase.from("tasks").update({ status: nextStatus, review_approvals: changes.review_approvals || [] }).eq("id", task.id).select().single();
+    }
+    const { data } = result;
     setTasks(tasks.map(t=>t.id===task.id?normalizeTask(data):t));
     syncTaskInView(data);
   };
@@ -3499,17 +3549,44 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     });
   };
 
-  const approveReview = async (task) => {
-    const approvals = [...new Set([...(task.review_approvals || []), profile?.full_name].filter(Boolean))];
-    const allApproved = task.reviewers.length > 0 && task.reviewers.every((name) => listIncludesPerson(approvals, name));
-    const nextStatus = allApproved ? "done" : task.status;
+  const updateTaskReviewStatus = async (task, status) => {
+    if (!task?.id || !canApproveTaskReview(profile, task)) return;
+    const nowIso = new Date().toISOString();
+    const nextHistory = [
+      ...(task.review_history || []),
+      {
+        id: `${task.id}-${status}-${nowIso}`,
+        reviewer: profile?.full_name || "Reviewer",
+        action: status,
+        created_at: nowIso,
+      },
+    ];
+    const approvals = status === "approved"
+      ? [...new Set([...(task.review_approvals || []), profile?.full_name].filter(Boolean))]
+      : [];
+    const allApproved = status === "approved" && task.reviewers.length > 0 && task.reviewers.every((name) => listIncludesPerson(approvals, name));
+    const changes = status === "approved"
+      ? {
+          review_approvals: approvals,
+          review_history: nextHistory,
+          status: allApproved ? "done" : "in-review",
+        }
+      : {
+          review_approvals: [],
+          review_history: nextHistory,
+          status: "in-progress",
+        };
     if (isPreview) {
-      const updated = normalizeTask({ ...task, review_approvals: approvals, status: nextStatus });
+      const updated = normalizeTask({ ...task, ...changes });
       setTasks(tasks.map((entry) => entry.id === task.id ? updated : entry));
       syncTaskInView(updated);
       return;
     }
-    const { data } = await supabase.from("tasks").update({ review_approvals: approvals, status: nextStatus }).eq("id", task.id).select().single();
+    let result = await supabase.from("tasks").update(changes).eq("id", task.id).select().single();
+    if (result.error && /review_history/i.test(result.error.message || "")) {
+      result = await supabase.from("tasks").update({ review_approvals: changes.review_approvals, status: changes.status }).eq("id", task.id).select().single();
+    }
+    const { data } = result;
     setTasks(tasks.map((entry) => entry.id === task.id ? normalizeTask(data) : entry));
     syncTaskInView(data);
   };
@@ -3593,7 +3670,6 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
         <div className="task-filter-group" style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2}}>
           {[
             { id: "mine", label: "My Tasks" },
-            { id: "team", label: "Others" },
             { id: "all", label: "Everyone" },
           ].map((option) => (
             <button
@@ -3771,25 +3847,48 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                 {selectedTask.review_required ? (
                   <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
                     {selectedTask.reviewers.map((reviewer) => {
-                      const approved = listIncludesPerson(selectedTask.review_approvals, reviewer);
+                      const decision = getTaskReviewerDecision(selectedTask, reviewer);
                       const isCurrentReviewer = samePerson(reviewer, profile?.full_name);
+                      const reviewerCanRespond = isCurrentReviewer && canApproveTaskReview(profile, selectedTask);
+                      const decisionLabel = decision?.action === "approved"
+                        ? "Approved"
+                        : decision?.action === "denied"
+                          ? "Denied"
+                          : "Pending";
+                      const decisionTone = decision?.action === "approved"
+                        ? C.success
+                        : decision?.action === "denied"
+                          ? C.danger
+                          : C.muted;
                       return (
-                        <div key={reviewer} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
-                          <div>
-                            <div style={{fontSize:13,color:C.text}}>{reviewer}</div>
-                            {isCurrentReviewer && !approved && (
-                              <div style={{fontSize:11,color:C.gold,marginTop:3}}>Awaiting your review</div>
-                            )}
+                        <div key={reviewer} style={{display:"flex",flexDirection:"column",gap:8,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                          <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                            <div>
+                              <div style={{fontSize:13,color:C.text}}>{reviewer}</div>
+                              {decision?.created_at && (
+                                <div style={{fontSize:11,color:C.muted,marginTop:3}}>
+                                  {new Date(decision.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                                </div>
+                              )}
+                              {isCurrentReviewer && !decision && (
+                                <div style={{fontSize:11,color:C.gold,marginTop:3}}>Awaiting your review</div>
+                              )}
+                            </div>
+                            <div style={{fontSize:12,color:decisionTone,fontWeight:600}}>{decisionLabel}</div>
                           </div>
-                          <div style={{fontSize:12,color:approved ? C.success : C.muted}}>{approved ? "Approved" : "Pending review"}</div>
+                          {reviewerCanRespond && (
+                            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                              <button className="btn-outline" onClick={()=>updateTaskReviewStatus(selectedTask, "approved")} style={{padding:"7px 10px",color:C.success,borderColor:"rgba(82,200,122,.35)"}}>
+                                Approve
+                              </button>
+                              <button className="btn-outline" onClick={()=>updateTaskReviewStatus(selectedTask, "denied")} style={{padding:"7px 10px",color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                                Deny
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
-                    {canReviewTask(profile, selectedTask) && !listIncludesPerson(selectedTask.review_approvals, profile?.full_name) && (
-                      <button className="btn-outline" onClick={()=>approveReview(selectedTask)} style={{justifyContent:"center",marginTop:6}}>
-                        Approve Review
-                      </button>
-                    )}
                   </div>
                 ) : (
                   <div style={{fontSize:13,color:C.muted,marginTop:6}}>This task does not require review.</div>
@@ -5208,7 +5307,7 @@ export default function App() {
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
-    "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} previewUsers={previewUsers} />,
+    "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
     "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
     notifications: <NotificationsPage notifications={notifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash}/>,

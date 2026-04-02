@@ -3997,9 +3997,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
         <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <div style={{textAlign:"left"}}>
-              <h3 style={sectionTitleStyle}>
-                {hasAdminOversight ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
-              </h3>
+              <h3 style={sectionTitleStyle}>Team Snapshot</h3>
               <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.5}}>
                 {teamSummary.length} team members in view
               </div>

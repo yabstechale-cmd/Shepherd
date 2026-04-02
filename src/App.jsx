@@ -4452,15 +4452,33 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const addComment = async () => {
     if (!selectedTask || !commentDraft.trim()) return;
     setTaskCommentError("");
-    const nextComment = {
-      id: crypto.randomUUID(),
-      author: profile?.full_name || "Staff",
-      body: commentDraft.trim(),
-      created_at: new Date().toISOString(),
-    };
-    const nextComments = [...(selectedTask.comments || []), nextComment];
-    const saved = await saveTaskComments(selectedTask.id, nextComments);
-    if (!saved) return;
+    if (isPreview) {
+      const nextComment = {
+        id: crypto.randomUUID(),
+        author: profile?.full_name || "Staff",
+        body: commentDraft.trim(),
+        created_at: new Date().toISOString(),
+      };
+      const nextComments = [...(selectedTask.comments || []), nextComment];
+      const saved = await saveTaskComments(selectedTask.id, nextComments);
+      if (!saved) return;
+      setCommentDraft("");
+      setCommentCursor(0);
+      return;
+    }
+    const { data, error } = await supabase.rpc("add_task_comment", {
+      p_task_id: selectedTask.id,
+      p_comment_id: crypto.randomUUID(),
+      p_body: commentDraft.trim(),
+    });
+    if (error) {
+      setTaskCommentError(error.message || "We couldn't save that comment.");
+      return;
+    }
+    const nextComments = Array.isArray(data) ? data : [];
+    setTaskCommentError("");
+    setTasks((current) => current.map((task) => task.id === selectedTask.id ? normalizeTask({ ...task, comments: nextComments }) : task));
+    setSelectedTask((current) => current?.id === selectedTask.id ? normalizeTask({ ...current, comments: nextComments }) : current);
     setCommentDraft("");
     setCommentCursor(0);
   };
@@ -4496,6 +4514,23 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
 
   const saveEditedComment = async (comment) => {
     if (!selectedTask?.id || !canManageComment(comment, profile) || !editingCommentDraft.trim()) return;
+    setTaskCommentError("");
+    if (!isPreview) {
+      const { data, error } = await supabase.rpc("update_task_comment", {
+        p_task_id: selectedTask.id,
+        p_comment_id: comment.id,
+        p_body: editingCommentDraft.trim(),
+      });
+      if (error) {
+        setTaskCommentError(error.message || "We couldn't save that comment.");
+        return;
+      }
+      const nextComments = Array.isArray(data) ? data : [];
+      setTasks((current) => current.map((task) => task.id === selectedTask.id ? normalizeTask({ ...task, comments: nextComments }) : task));
+      setSelectedTask((current) => current?.id === selectedTask.id ? normalizeTask({ ...current, comments: nextComments }) : current);
+      cancelEditComment();
+      return;
+    }
     const nextComments = (selectedTask.comments || []).map((entry) => entry.id === comment.id ? {
       ...entry,
       body: editingCommentDraft.trim(),
@@ -4508,6 +4543,22 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
 
   const deleteTaskComment = async (comment) => {
     if (!selectedTask?.id || !canManageComment(comment, profile)) return;
+    setTaskCommentError("");
+    if (!isPreview) {
+      const { data, error } = await supabase.rpc("delete_task_comment", {
+        p_task_id: selectedTask.id,
+        p_comment_id: comment.id,
+      });
+      if (error) {
+        setTaskCommentError(error.message || "We couldn't delete that comment.");
+        return;
+      }
+      const nextComments = Array.isArray(data) ? data : [];
+      setTasks((current) => current.map((task) => task.id === selectedTask.id ? normalizeTask({ ...task, comments: nextComments }) : task));
+      setSelectedTask((current) => current?.id === selectedTask.id ? normalizeTask({ ...current, comments: nextComments }) : current);
+      if (editingCommentId === comment.id) cancelEditComment();
+      return;
+    }
     const nextComments = (selectedTask.comments || []).filter((entry) => entry.id !== comment.id);
     const saved = await saveTaskComments(selectedTask.id, nextComments);
     if (!saved) return;

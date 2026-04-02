@@ -788,6 +788,211 @@ grant execute on function public.create_church_with_admin(text, text, text, text
 grant execute on function public.user_can_manage_church(uuid) to authenticated;
 grant execute on function public.delete_church_account(uuid) to authenticated;
 
+create or replace function public.add_task_comment(
+  p_task_id uuid,
+  p_comment_id text,
+  p_body text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  task_row public.tasks%rowtype;
+  commenter_name text;
+  commenter_church uuid;
+  new_comment jsonb;
+  next_comments jsonb;
+begin
+  select full_name, church_id
+  into commenter_name, commenter_church
+  from public.profiles
+  where id = auth.uid();
+
+  if commenter_name is null then
+    raise exception 'Profile not found for current user';
+  end if;
+
+  select *
+  into task_row
+  from public.tasks
+  where id = p_task_id;
+
+  if task_row.id is null then
+    raise exception 'Task not found';
+  end if;
+
+  if task_row.church_id <> commenter_church then
+    raise exception 'You do not have access to this task';
+  end if;
+
+  if trim(coalesce(p_body, '')) = '' then
+    raise exception 'Comment body is required';
+  end if;
+
+  new_comment := jsonb_build_object(
+    'id', coalesce(nullif(trim(p_comment_id), ''), gen_random_uuid()::text),
+    'author', commenter_name,
+    'body', trim(p_body),
+    'created_at', now()
+  );
+
+  next_comments := coalesce(task_row.comments, '[]'::jsonb) || jsonb_build_array(new_comment);
+
+  update public.tasks
+  set comments = next_comments
+  where id = p_task_id;
+
+  return next_comments;
+end;
+$$;
+
+grant execute on function public.add_task_comment(uuid, text, text) to authenticated;
+
+create or replace function public.update_task_comment(
+  p_task_id uuid,
+  p_comment_id text,
+  p_body text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  task_row public.tasks%rowtype;
+  commenter_name text;
+  commenter_church uuid;
+  next_comments jsonb;
+begin
+  select full_name, church_id
+  into commenter_name, commenter_church
+  from public.profiles
+  where id = auth.uid();
+
+  if commenter_name is null then
+    raise exception 'Profile not found for current user';
+  end if;
+
+  select *
+  into task_row
+  from public.tasks
+  where id = p_task_id;
+
+  if task_row.id is null then
+    raise exception 'Task not found';
+  end if;
+
+  if task_row.church_id <> commenter_church then
+    raise exception 'You do not have access to this task';
+  end if;
+
+  if trim(coalesce(p_body, '')) = '' then
+    raise exception 'Comment body is required';
+  end if;
+
+  if not exists (
+    select 1
+    from jsonb_array_elements(coalesce(task_row.comments, '[]'::jsonb)) as entry
+    where entry->>'id' = p_comment_id
+      and lower(coalesce(entry->>'author', '')) = lower(commenter_name)
+  ) then
+    raise exception 'You can only edit your own comments';
+  end if;
+
+  select coalesce(
+    jsonb_agg(
+      case
+        when entry.value->>'id' = p_comment_id then
+          jsonb_set(
+            jsonb_set(entry.value, '{body}', to_jsonb(trim(p_body))),
+            '{updated_at}',
+            to_jsonb(now())
+          )
+        else entry.value
+      end
+      order by entry.ordinality
+    ),
+    '[]'::jsonb
+  )
+  into next_comments
+  from jsonb_array_elements(coalesce(task_row.comments, '[]'::jsonb)) with ordinality as entry(value, ordinality);
+
+  update public.tasks
+  set comments = next_comments
+  where id = p_task_id;
+
+  return next_comments;
+end;
+$$;
+
+grant execute on function public.update_task_comment(uuid, text, text) to authenticated;
+
+create or replace function public.delete_task_comment(
+  p_task_id uuid,
+  p_comment_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  task_row public.tasks%rowtype;
+  commenter_name text;
+  commenter_church uuid;
+  next_comments jsonb;
+begin
+  select full_name, church_id
+  into commenter_name, commenter_church
+  from public.profiles
+  where id = auth.uid();
+
+  if commenter_name is null then
+    raise exception 'Profile not found for current user';
+  end if;
+
+  select *
+  into task_row
+  from public.tasks
+  where id = p_task_id;
+
+  if task_row.id is null then
+    raise exception 'Task not found';
+  end if;
+
+  if task_row.church_id <> commenter_church then
+    raise exception 'You do not have access to this task';
+  end if;
+
+  if not exists (
+    select 1
+    from jsonb_array_elements(coalesce(task_row.comments, '[]'::jsonb)) as entry
+    where entry->>'id' = p_comment_id
+      and lower(coalesce(entry->>'author', '')) = lower(commenter_name)
+  ) then
+    raise exception 'You can only delete your own comments';
+  end if;
+
+  select coalesce(
+    jsonb_agg(entry.value order by entry.ordinality),
+    '[]'::jsonb
+  )
+  into next_comments
+  from jsonb_array_elements(coalesce(task_row.comments, '[]'::jsonb)) with ordinality as entry(value, ordinality)
+  where entry.value->>'id' <> p_comment_id;
+
+  update public.tasks
+  set comments = next_comments
+  where id = p_task_id;
+
+  return next_comments;
+end;
+$$;
+
+grant execute on function public.delete_task_comment(uuid, text) to authenticated;
+
 drop policy if exists "church code lookup" on public.churches;
 create policy "church code lookup"
 on public.churches

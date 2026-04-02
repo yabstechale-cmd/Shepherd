@@ -245,6 +245,7 @@ const normalizeEventWorkflow = (workflow) => ({
   checklist_items: Array.isArray(workflow?.checklist_items) ? workflow.checklist_items : [],
   notes_entries: Array.isArray(workflow?.notes_entries) ? workflow.notes_entries : [],
   steps: Array.isArray(workflow?.steps) ? workflow.steps : [],
+  ...getEventWorkflowMeta(workflow),
 });
 const normalizeAutomation = (automation) => ({
   ...automation,
@@ -710,11 +711,22 @@ const hasEventOpsNeeds = (request) =>
 const eventNeedsFinanceReview = (request) => /fee|fees|payment|payments|paid|ticket|tickets|registration|cost|budget|reimburse/i.test(String(request?.additional_information || ""));
 const findStaffLead = (staff, matcher) => (staff || []).find((user) => matcher(user))?.full_name || "";
 const createDefaultEventChecklist = () => ([]);
+const getEventWorkflowMeta = (workflow) => {
+  const metaEntry = Array.isArray(workflow?.steps)
+    ? workflow.steps.find((entry) => entry?.type === "event_meta")
+    : null;
+  return {
+    start_time: metaEntry?.start_time || "",
+    end_time: metaEntry?.end_time || "",
+  };
+};
 const createEventPlanningBlank = (profile, request = null) => ({
   id: null,
   eventName: request?.event_name || "",
   startDate: request?.single_date || request?.multi_start_date || request?.recurring_start_date || "",
   endDate: request?.multi_end_date || request?.single_date || request?.recurring_start_date || "",
+  startTime: "",
+  endTime: "",
   location: request ? getEventLocationSummary(request) : "",
   mainContact: request?.contact_name || profile?.full_name || "",
   linkedRequestId: request?.id || "",
@@ -2693,6 +2705,8 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         eventName: workflow.event_name || workflow.title || "",
         startDate: workflow.start_date || workflow.target_date || "",
         endDate: workflow.end_date || workflow.start_date || workflow.target_date || "",
+        startTime: workflow.start_time || "",
+        endTime: workflow.end_time || "",
         location: workflow.location || "",
         mainContact: workflow.main_contact || "",
         linkedRequestId: workflow.linked_event_request_id || "",
@@ -2727,7 +2741,14 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       timeline_items: selectedWorkflow?.timeline_items || [],
       checklist_items: selectedWorkflow?.checklist_items || createDefaultEventChecklist(),
       notes_entries: selectedWorkflow?.notes_entries || [],
-      steps: selectedWorkflow?.steps || [],
+      steps: [
+        ...((selectedWorkflow?.steps || []).filter((entry) => entry?.type !== "event_meta")),
+        {
+          type: "event_meta",
+          start_time: workflowForm.startTime || "",
+          end_time: workflowForm.endTime || "",
+        },
+      ],
     };
     setWorkflowError("");
     if (workflowForm.id) {
@@ -3180,6 +3201,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                       <div style={{fontSize:14,color:C.text,marginTop:4}}>
                         {selectedWorkflow.start_date ? fmtDate(selectedWorkflow.start_date) : "—"}{selectedWorkflow.end_date && selectedWorkflow.end_date !== selectedWorkflow.start_date ? ` - ${fmtDate(selectedWorkflow.end_date)}` : ""}
                       </div>
+                      {(selectedWorkflow.start_time || selectedWorkflow.end_time) && (
+                        <div style={{fontSize:12,color:C.muted,marginTop:4}}>
+                          {selectedWorkflow.start_time || "Start time TBD"}{selectedWorkflow.end_time ? ` - ${selectedWorkflow.end_time}` : ""}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Location</div>
@@ -3655,10 +3681,25 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                   ))}
                 </select>
               </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date Or Dates</label>
-                <input className="input-field" type="date" value={workflowForm.startDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, startDate: e.target.value }))} />
-                <input className="input-field" type="date" value={workflowForm.endDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, endDate: e.target.value }))} />
+              <div style={{display:"grid",gap:10}}>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>From Date</label>
+                  <input className="input-field" type="date" value={workflowForm.startDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, startDate: e.target.value }))} />
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>To Date</label>
+                  <input className="input-field" type="date" value={workflowForm.endDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, endDate: e.target.value }))} />
+                </div>
+                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Start Time</label>
+                    <input className="input-field" type="time" value={workflowForm.startTime || ""} onChange={(e)=>setWorkflowForm((current) => ({ ...current, startTime: e.target.value }))} />
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>End Time</label>
+                    <input className="input-field" type="time" value={workflowForm.endTime || ""} onChange={(e)=>setWorkflowForm((current) => ({ ...current, endTime: e.target.value }))} />
+                  </div>
+                </div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Location</label>

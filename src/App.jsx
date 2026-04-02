@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 
@@ -39,6 +39,7 @@ const ACTIVE_PAGE_STORAGE_KEY = "shepherd-active-page";
 const STAFF_NOTEPAD_STORAGE_PREFIX = "shepherd-staff-notepad";
 const TASK_COLUMN_STATE_STORAGE_PREFIX = "shepherd-task-columns";
 const DASHBOARD_SECTION_STATE_STORAGE_PREFIX = "shepherd-dashboard-sections";
+const TASK_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-task-discussion-sections";
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const Icon = ({ d, size = 20 }) => (
@@ -170,7 +171,8 @@ const GS = () => (
       .app-sidebar-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 12px !important}
       .app-sidebar-nav .nav-item{margin-bottom:0;flex-shrink:0}
       .app-sidebar-footer{padding:10px 12px !important}
-      .section-header{flex-direction:column;align-items:flex-start !important;gap:12px}
+      .section-header{flex-direction:row;align-items:flex-start !important;justify-content:space-between;flex-wrap:wrap;gap:12px}
+      .section-header > :first-child{flex:1;min-width:0}
       .section-header .btn-outline,.section-header .btn-gold{justify-content:center}
       .dashboard-note-row{flex-direction:column}
       .dashboard-note-row .btn-outline{margin-left:0 !important;width:100%;justify-content:center}
@@ -478,6 +480,7 @@ const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || 
 const getStaffNotepadStorageKey = (profileId) => `${STAFF_NOTEPAD_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getTaskColumnStateStorageKey = (profileId) => `${TASK_COLUMN_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getDashboardSectionStateStorageKey = (profileId) => `${DASHBOARD_SECTION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
+const getTaskDiscussionStateStorageKey = (profileId) => `${TASK_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getStoredActivePage = () => {
   if (typeof window === "undefined") return "dashboard";
   return window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
@@ -978,6 +981,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
         title: "New task assigned",
         detail: `${task.title} was assigned to you.`,
         target: "tasks",
+        taskId: task.id,
         createdAt: createdAt.getTime(),
       });
     }
@@ -989,6 +993,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
         title: "Task overdue",
         detail: `${task.title} is overdue.`,
         target: "tasks",
+        taskId: task.id,
         createdAt: dueDay.getTime(),
       });
     } else if (assignedToMe && task.status !== "done" && dueDay && dueDay.getTime() >= startOfToday.getTime() && dueDay.getTime() < endOfTomorrow.getTime()) {
@@ -998,6 +1003,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
         title: getRelativeDueLabel(task.due_date),
         detail: `${task.title} needs attention soon.`,
         target: "tasks",
+        taskId: task.id,
         createdAt: dueDay.getTime(),
       });
     }
@@ -1009,6 +1015,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
         title: "Team task overdue",
         detail: `${task.title} assigned to ${task.assignee || "a team member"} is overdue.`,
         target: "tasks",
+        taskId: task.id,
         createdAt: dueDay.getTime(),
       });
     } else if (isAdminViewer && task.status !== "done" && dueDay && dueDay.getTime() >= startOfToday.getTime() && dueDay.getTime() < endOfTomorrow.getTime() && !assignedToMe) {
@@ -1018,6 +1025,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
         title: "Team task due soon",
         detail: `${task.title} assigned to ${task.assignee || "a team member"} is ${getRelativeDueLabel(task.due_date).toLowerCase()}.`,
         target: "tasks",
+        taskId: task.id,
         createdAt: dueDay.getTime(),
       });
     }
@@ -1029,6 +1037,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
         title: "Review requested",
         detail: `${task.title} is waiting on your review.`,
         target: "tasks",
+        taskId: task.id,
         createdAt: dueDay?.getTime() || createdAt?.getTime() || now.getTime(),
       });
     }
@@ -1045,6 +1054,8 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
         title: "You were mentioned in a task",
         detail: `${comment.author} mentioned you in ${task.title}.`,
         target: "tasks",
+        taskId: task.id,
+        commentId: comment.id,
         createdAt: commentDate.getTime(),
       });
     });
@@ -3805,7 +3816,7 @@ function PublicEventRequestPage() {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, setActive, profile, church, previewUsers, notifications, markNotificationRead, unreadCount, markAllNotificationsRead, browserPermission, enableBrowserNotifications }) {
+function Dashboard({ tasks, setActive, profile, church, previewUsers, notifications, unreadCount, openNotificationTarget }) {
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const greeting = getTimeOfDayGreeting();
   const dailyVerse = getDailyVerse();
@@ -4079,11 +4090,6 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
             <button className="btn-outline" onClick={() => setNotificationsOpen((current) => !current)} style={{padding:"5px 12px",fontSize:12}}>
               {notificationsOpen ? "Collapse" : "Expand"}
             </button>
-            {browserPermission !== "granted" && (
-              <button className="btn-outline" onClick={enableBrowserNotifications} style={{padding:"5px 12px",fontSize:12}}>Enable Browser Alerts</button>
-            )}
-            <button className="btn-outline" onClick={markAllNotificationsRead} style={{padding:"5px 12px",fontSize:12}} disabled={unreadCount === 0}>Mark all read</button>
-            <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open tasks</button>
           </div>
         </div>
         {notificationsOpen ? (
@@ -4096,7 +4102,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
                   <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
                   <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
                 </div>
-                <button className="btn-outline" onClick={()=>{markNotificationRead(item.id); setActive(item.target || "tasks");}} style={{padding:"5px 10px",fontSize:12,marginLeft:"auto"}}>
+                <button className="btn-outline" onClick={()=>openNotificationTarget?.(item)} style={{padding:"5px 10px",fontSize:12,marginLeft:"auto"}}>
                   Open
                 </button>
               </div>
@@ -4203,7 +4209,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
-function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveItemToTrash }) {
+function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveItemToTrash, taskOpenRequest, clearTaskOpenRequest }) {
   const isPreview = churchId === "preview";
   const canCreateTasks = true;
   const canAssignToAnyone = hasAdministrativeOversight(profile, church);
@@ -4216,9 +4222,20 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const [commentDraft, setCommentDraft] = useState("");
   const [commentCursor, setCommentCursor] = useState(0);
   const [taskCommentError, setTaskCommentError] = useState("");
+  const [taskCommentsOpen, setTaskCommentsOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(getTaskDiscussionStateStorageKey(profile?.id)) || "{}");
+      return stored.taskCommentsOpen ?? true;
+    } catch {
+      return true;
+    }
+  });
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentDraft, setEditingCommentDraft] = useState("");
+  const [highlightedTaskCommentId, setHighlightedTaskCommentId] = useState(null);
   const commentInputRef = useRef(null);
+  const taskCommentRefs = useRef({});
   const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:"",share_link:"",review_required:false,reviewers:[],review_approvals:[],comments:[]};
   const [form, setForm] = useState(blank);
   const [orderedCategories, setOrderedCategories] = useState(() => getStoredCategoryOrder());
@@ -4272,6 +4289,10 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const openTask = (task) => {
     setSelectedTask(normalizeTask(task));
     setCommentDraft("");
+    setTaskCommentError("");
+    setEditingCommentId(null);
+    setEditingCommentDraft("");
+    setHighlightedTaskCommentId(null);
   };
 
   const syncTaskInView = (updatedTask) => {
@@ -4541,6 +4562,38 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     window.localStorage.setItem(getTaskColumnStateStorageKey(profile?.id), JSON.stringify(collapsedColumns));
   }, [profile?.id, collapsedColumns]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(getTaskDiscussionStateStorageKey(profile?.id), JSON.stringify({
+      taskCommentsOpen,
+    }));
+  }, [profile?.id, taskCommentsOpen]);
+
+  useEffect(() => {
+    if (!taskOpenRequest?.taskId) return;
+    const task = tasks.find((entry) => entry.id === taskOpenRequest.taskId);
+    if (task) {
+      const frame = window.requestAnimationFrame(() => {
+        openTask(task);
+        setTaskCommentsOpen(true);
+        setHighlightedTaskCommentId(taskOpenRequest.commentId || null);
+      });
+      clearTaskOpenRequest?.();
+      return () => window.cancelAnimationFrame(frame);
+    }
+    clearTaskOpenRequest?.();
+  }, [taskOpenRequest, tasks, clearTaskOpenRequest]);
+
+  useEffect(() => {
+    if (!selectedTask?.id || !highlightedTaskCommentId || !taskCommentsOpen) return;
+    const target = taskCommentRefs.current[highlightedTaskCommentId];
+    if (target) {
+      window.requestAnimationFrame(() => {
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
+    }
+  }, [selectedTask?.id, highlightedTaskCommentId, taskCommentsOpen]);
+
   const toggleColumn = (statusKey) => {
     setCollapsedColumns((current) => ({
       ...current,
@@ -4704,7 +4757,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
         </div>
       )}
       {selectedTask && (
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelectedTask(null)}>
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelectedTask(null)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
           <div className="modal fadeIn" style={{maxWidth:760}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{selectedTask.title}</h3>
@@ -4797,11 +4850,33 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                   <div style={{fontSize:13,color:C.muted,marginTop:6}}>This task does not require review.</div>
                 )}
               </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Comments</div>
-                <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:8}}>
+              <div style={{display:"grid",gap:10}}>
+                <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+                  <div style={{textAlign:"left"}}>
+                    <div style={{fontSize:12,color:C.muted}}>Team Discussion</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>Everyone who can view this task can read and join the conversation here.</div>
+                  </div>
+                  <button className="btn-outline" onClick={() => setTaskCommentsOpen((current) => !current)} style={{padding:"5px 10px",fontSize:12}}>
+                    {taskCommentsOpen ? "Collapse" : "Expand"}
+                  </button>
+                </div>
+                {taskCommentsOpen ? (
+                <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:2}}>
                   {(selectedTask.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).length > 0 ? (selectedTask.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).map((comment) => (
-                    <div key={comment.id} style={{padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                    <div
+                      key={comment.id}
+                      ref={(node) => {
+                        if (node) taskCommentRefs.current[comment.id] = node;
+                        else delete taskCommentRefs.current[comment.id];
+                      }}
+                      style={{
+                        padding:"10px 12px",
+                        border:`1px solid ${highlightedTaskCommentId === comment.id ? C.goldDim : C.border}`,
+                        borderRadius:10,
+                        background:highlightedTaskCommentId === comment.id ? C.goldGlow : C.surface,
+                        boxShadow: highlightedTaskCommentId === comment.id ? "0 0 0 1px rgba(201,168,76,.25)" : "none",
+                      }}
+                    >
                       <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
                         <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
                         <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
@@ -4867,6 +4942,9 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                   {taskCommentError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{taskCommentError}</div>}
                   <button className="btn-gold" onClick={addComment} style={{alignSelf:"flex-end"}}>Add Comment</button>
                 </div>
+                ) : (
+                  <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Discussion collapsed. Expand it when you want to catch up or reply.</div>
+                )}
               </div>
             </div>
             <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end",flexWrap:"wrap"}}>
@@ -6078,10 +6156,11 @@ export default function App() {
   const [trashItems, setTrashItems] = useState([]);
   const [previewUsers, setPreviewUsers] = useState([]);
   const [active, setActive] = useState(getStoredActivePage);
+  const [taskOpenRequest, setTaskOpenRequest] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
-  const [browserPermission, setBrowserPermission] = useState(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+  const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
   const shownNotificationIdsRef = useRef(new Set());
   const allowedPages = new Set([
     "dashboard",
@@ -6113,15 +6192,26 @@ export default function App() {
     setReadNotificationIds((current) => current.includes(id) ? current : [...current, id]);
   };
 
-  const markAllNotificationsRead = () => {
-    setReadNotificationIds((current) => [...new Set([...current, ...notifications.map((item) => item.id)])]);
-  };
+  const openNotificationTarget = useCallback((item) => {
+    if (!item) return;
+    markNotificationRead(item.id);
+    if (item.target === "tasks") {
+      if (item.taskId) {
+        setTaskOpenRequest({
+          taskId: item.taskId,
+          commentId: item.commentId || null,
+          requestId: crypto.randomUUID(),
+        });
+      }
+      setActive("tasks");
+      return;
+    }
+    setActive(item.target || "dashboard");
+  }, []);
 
-  const enableBrowserNotifications = async () => {
-    if (typeof Notification === "undefined") return;
-    const permission = await Notification.requestPermission();
-    setBrowserPermission(permission);
-  };
+  const clearTaskOpenRequest = useCallback(() => {
+    setTaskOpenRequest(null);
+  }, []);
 
   const moveItemToTrash = (item) => {
     if (!item) return;
@@ -6320,14 +6410,14 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead} unreadCount={unreadNotifications.length} markAllNotificationsRead={markAllNotificationsRead} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
+    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} unreadCount={unreadNotifications.length} openNotificationTarget={openNotificationTarget}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead} unreadCount={unreadNotifications.length} markAllNotificationsRead={markAllNotificationsRead} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} unreadCount={unreadNotifications.length} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
     "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
-    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash}/>,
+    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest}/>,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} />,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,

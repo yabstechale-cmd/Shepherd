@@ -40,6 +40,7 @@ const STAFF_NOTEPAD_STORAGE_PREFIX = "shepherd-staff-notepad";
 const TASK_COLUMN_STATE_STORAGE_PREFIX = "shepherd-task-columns";
 const DASHBOARD_SECTION_STATE_STORAGE_PREFIX = "shepherd-dashboard-sections";
 const TASK_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-task-discussion-sections";
+const PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-po-discussion-sections";
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const Icon = ({ d, size = 20 }) => (
@@ -163,8 +164,8 @@ const GS = () => (
     .table-row{display:grid;padding:14px 18px;border-bottom:1px solid ${C.border};align-items:center;gap:12px}
     .table-row:hover{background:rgba(255,255,255,.02)}
     .table-row:last-child{border-bottom:none}
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
-    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;max-height:90vh;overflow-y:auto}
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:64px 20px 28px;overflow-y:auto;overscroll-behavior:contain}
+    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;max-height:calc(100vh - 92px);overflow-y:auto;margin:0 auto}
     @media (max-width: 760px){
       .app-shell{flex-direction:column}
       .app-sidebar{width:100% !important;min-height:auto !important;border-right:none !important;border-bottom:1px solid ${C.border}}
@@ -203,7 +204,8 @@ const GS = () => (
       .request-details-grid{grid-template-columns:1fr !important}
       .mobile-pad{padding:24px 18px !important}
       .mobile-auth-glow{width:360px !important;height:360px !important;top:10% !important}
-      .modal{padding:22px}
+      .modal-overlay{padding:56px 16px 24px}
+      .modal{padding:22px;max-height:calc(100vh - 80px)}
     }
   `}</style>
 );
@@ -481,6 +483,7 @@ const getStaffNotepadStorageKey = (profileId) => `${STAFF_NOTEPAD_STORAGE_PREFIX
 const getTaskColumnStateStorageKey = (profileId) => `${TASK_COLUMN_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getDashboardSectionStateStorageKey = (profileId) => `${DASHBOARD_SECTION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getTaskDiscussionStateStorageKey = (profileId) => `${TASK_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
+const getPurchaseOrderDiscussionStateStorageKey = (profileId) => `${PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getStoredActivePage = () => {
   if (typeof window === "undefined") return "dashboard";
   return window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
@@ -853,18 +856,17 @@ const getRelativeDueLabel = (date) => {
 const commentMentionsProfile = (comment, profile) => {
   if (!comment?.body || !profile?.full_name) return false;
   const body = String(comment.body || "");
-  const fullName = profile.full_name.trim();
-  const firstName = (profile.full_name.split(" ")[0] || "").trim();
-  const candidates = [fullName, firstName].filter(Boolean);
-  return candidates.some((name) => {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const token = getStaffMentionToken(profile.full_name);
+  return [token].filter(Boolean).some((name) => {
+    const escaped = escapeRegExp(name);
     return new RegExp(`@${escaped}(?=$|[^a-zA-Z])`, "i").test(body);
   });
 };
 const canManageComment = (comment, profile) => samePerson(comment?.author, profile?.full_name);
+const getStaffMentionToken = (name) => String(name || "").replace(/\s+/g, "").trim();
 const getMentionContext = (value, cursor) => {
   const beforeCursor = value.slice(0, cursor);
-  const match = beforeCursor.match(/(?:^|\s)@([a-zA-Z][a-zA-Z\s]*)$/);
+  const match = beforeCursor.match(/(?:^|\s)@([a-zA-Z][a-zA-Z]*)$/);
   if (!match) return null;
   const query = match[1];
   const tokenStart = cursor - query.length - 1;
@@ -878,11 +880,7 @@ const escapeRegExp = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/
 const getMentionCandidates = (names = []) => {
   const seen = new Set();
   return names
-    .flatMap((name) => {
-      const fullName = String(name || "").trim();
-      const firstName = fullName.split(" ")[0]?.trim() || "";
-      return [fullName, firstName];
-    })
+    .map((name) => getStaffMentionToken(name))
     .filter(Boolean)
     .filter((name) => {
       const key = name.toLowerCase();
@@ -1043,11 +1041,25 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
     }
 
     (task.comments || []).forEach((comment) => {
-      if (!commentMentionsProfile(comment, profile)) return;
-      if (samePerson(comment.author, fullName)) return;
       const commentDate = comment.created_at ? new Date(comment.created_at) : null;
       if (!commentDate) return;
       if (now.getTime() - commentDate.getTime() > 14 * 86400000) return;
+
+      if (assignedToMe && !samePerson(comment.author, fullName)) {
+        items.push({
+          id: `task-comment-${task.id}-${comment.id}-${normalizeName(fullName)}`,
+          tone: C.blue,
+          title: "New comment on your task",
+          detail: `${comment.author} commented on ${task.title}.`,
+          target: "tasks",
+          taskId: task.id,
+          commentId: comment.id,
+          createdAt: commentDate.getTime(),
+        });
+      }
+
+      if (!commentMentionsProfile(comment, profile)) return;
+      if (samePerson(comment.author, fullName)) return;
       items.push({
         id: `comment-mention-${task.id}-${comment.id}-${normalizeName(fullName)}`,
         tone: C.blue,
@@ -4251,23 +4263,11 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const allowedAssignees = canAssignToAnyone ? teamNames : [profile?.full_name].filter(Boolean);
   const boardTasks = tasks;
   const mentionableNames = [...new Set(teamNames.filter(Boolean))];
-
-  const getMentionContext = (value, cursor) => {
-    const beforeCursor = value.slice(0, cursor);
-    const match = beforeCursor.match(/(?:^|\s)@([a-zA-Z][a-zA-Z\s]*)$/);
-    if (!match) return null;
-    const query = match[1];
-    const tokenStart = cursor - query.length - 1;
-    return {
-      query,
-      start: tokenStart,
-      end: cursor,
-    };
-  };
+  const mentionableStaff = mentionableNames.map((name) => ({ fullName: name, token: getStaffMentionToken(name) })).filter((entry) => entry.token);
 
   const mentionContext = getMentionContext(commentDraft, commentCursor);
   const mentionSuggestions = mentionContext
-    ? mentionableNames.filter((name) => name.toLowerCase().includes(mentionContext.query.trim().toLowerCase()) && !samePerson(name, profile?.full_name)).slice(0, 5)
+    ? mentionableStaff.filter((entry) => entry.token.toLowerCase().includes(mentionContext.query.trim().toLowerCase()) && !samePerson(entry.fullName, profile?.full_name)).slice(0, 5)
     : [];
 
   const filtered = boardTasks.filter((t) => {
@@ -4568,13 +4568,14 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const insertMention = (name) => {
     const context = getMentionContext(commentDraft, commentCursor);
     if (!context) return;
-    const nextValue = `${commentDraft.slice(0, context.start)}@${name} ${commentDraft.slice(context.end)}`;
+    const mentionToken = getStaffMentionToken(name);
+    const nextValue = `${commentDraft.slice(0, context.start)}@${mentionToken} ${commentDraft.slice(context.end)}`;
     setCommentDraft(nextValue);
-    setCommentCursor(context.start + name.length + 2);
+    setCommentCursor(context.start + mentionToken.length + 2);
     window.requestAnimationFrame(() => {
       const textarea = commentInputRef.current;
       if (!textarea) return;
-      const nextCursor = context.start + name.length + 2;
+      const nextCursor = context.start + mentionToken.length + 2;
       textarea.focus();
       textarea.setSelectionRange(nextCursor, nextCursor);
     });
@@ -4976,20 +4977,20 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                     />
                     {mentionSuggestions.length > 0 && (
                       <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 6px)",border:`1px solid ${C.border}`,borderRadius:12,background:C.card,boxShadow:"0 12px 28px rgba(0,0,0,.28)",zIndex:20,overflow:"hidden"}}>
-                        {mentionSuggestions.map((name) => (
+                        {mentionSuggestions.map((entry) => (
                           <button
-                            key={name}
+                            key={entry.fullName}
                             type="button"
-                            onClick={() => insertMention(name)}
+                            onClick={() => insertMention(entry.fullName)}
                             style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"left",background:"transparent",border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",color:C.text,fontSize:13}}
                           >
-                            @{name}
+                            @{entry.token}
                           </button>
                         ))}
                       </div>
                     )}
                   </div>
-                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstName` or `@Full Name` to notify someone in this task.</div>
+                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstLast` to notify someone in this task.</div>
                   {taskCommentError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{taskCommentError}</div>}
                   <button className="btn-gold" onClick={addComment} style={{alignSelf:"flex-end"}}>Add Comment</button>
                 </div>
@@ -5155,6 +5156,14 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const [purchaseOrderCommentCursor, setPurchaseOrderCommentCursor] = useState({});
   const [editingPurchaseOrderComments, setEditingPurchaseOrderComments] = useState({});
   const purchaseOrderCommentInputRef = useRef(null);
+  const [purchaseOrderDiscussionOpen, setPurchaseOrderDiscussionOpen] = useState(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      return JSON.parse(window.localStorage.getItem(getPurchaseOrderDiscussionStateStorageKey(profile?.id)) || "{}");
+    } catch {
+      return {};
+    }
+  });
   const [selectedLedgerMinistry, setSelectedLedgerMinistry] = useState(defaultMinistry);
   const [form, setForm] = useState({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
   const [budgetForm, setBudgetForm] = useState({ id: null, ministry: defaultMinistry, budget: "", assignedStaffId: "", items: [{ label: "", amount: "" }] });
@@ -5176,15 +5185,21 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const selectedMinistryRecord = (ministries || []).find((entry) => entry.name === activeLedgerMinistry);
   const selectedMinistryBudgetItems = normalizeBudgetItems(selectedMinistryRecord?.budget_items);
   const mentionableNames = [...new Set((previewUsers || []).map((user) => user.full_name).filter(Boolean))];
+  const mentionableStaff = mentionableNames.map((name) => ({ fullName: name, token: getStaffMentionToken(name) })).filter((entry) => entry.token);
   const activePurchaseOrderCommentId = Object.keys(purchaseOrderCommentCursor).find((id) => typeof purchaseOrderCommentCursor[id] === "number") || "";
   const activePurchaseOrderCommentDraft = activePurchaseOrderCommentId ? (purchaseOrderCommentDrafts[activePurchaseOrderCommentId] || "") : "";
   const activePurchaseOrderCommentSelection = activePurchaseOrderCommentId ? (purchaseOrderCommentCursor[activePurchaseOrderCommentId] || 0) : 0;
   const purchaseOrderMentionContext = getMentionContext(activePurchaseOrderCommentDraft, activePurchaseOrderCommentSelection);
   const purchaseOrderMentionSuggestions = purchaseOrderMentionContext
-    ? mentionableNames.filter((name) => name.toLowerCase().includes(purchaseOrderMentionContext.query.trim().toLowerCase()) && !samePerson(name, profile?.full_name)).slice(0, 5)
+    ? mentionableStaff.filter((entry) => entry.token.toLowerCase().includes(purchaseOrderMentionContext.query.trim().toLowerCase()) && !samePerson(entry.fullName, profile?.full_name)).slice(0, 5)
     : [];
 
   const canManageBudgetLinesForMinistry = (ministry) => financeView || visibleMinistries.includes(ministry);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(getPurchaseOrderDiscussionStateStorageKey(profile?.id), JSON.stringify(purchaseOrderDiscussionOpen));
+  }, [profile?.id, purchaseOrderDiscussionOpen]);
 
   const resetTransactionForm = (ministry = defaultMinistry, type = "expense") => ({
     description: "",
@@ -5552,8 +5567,9 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const insertPurchaseOrderMention = (orderId, name) => {
     if (!orderId || !purchaseOrderMentionContext) return;
     const draft = purchaseOrderCommentDrafts[orderId] || "";
-    const nextValue = `${draft.slice(0, purchaseOrderMentionContext.start)}@${name} ${draft.slice(purchaseOrderMentionContext.end)}`;
-    const nextCursor = purchaseOrderMentionContext.start + name.length + 2;
+    const mentionToken = getStaffMentionToken(name);
+    const nextValue = `${draft.slice(0, purchaseOrderMentionContext.start)}@${mentionToken} ${draft.slice(purchaseOrderMentionContext.end)}`;
+    const nextCursor = purchaseOrderMentionContext.start + mentionToken.length + 2;
     setPurchaseOrderCommentDrafts((current) => ({ ...current, [orderId]: nextValue }));
     setPurchaseOrderCommentCursor((current) => ({ ...current, [orderId]: nextCursor }));
     window.requestAnimationFrame(() => {
@@ -5791,82 +5807,101 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 </div>
               </div>
             </div>
-            <div style={{display:"flex",flexDirection:"column",gap:10,textAlign:"left"}}>
-              <div style={{fontSize:12,color:C.muted}}>Comments</div>
-              {(order.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).length > 0 ? (
-                (order.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).map((comment) => (
-                  <div key={comment.id} style={{padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
-                    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
-                      <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
-                      <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
-                        {new Date(comment.updated_at || comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
-                        {comment.updated_at && <div>Edited</div>}
-                      </div>
-                    </div>
-                    {editingPurchaseOrderComments[order.id]?.id === comment.id ? (
-                      <div style={{display:"grid",gap:10,marginTop:8}}>
-                        <textarea
-                          className="input-field"
-                          rows={3}
-                          value={editingPurchaseOrderComments[order.id]?.body || ""}
-                          onChange={(e)=>setEditingPurchaseOrderComments((current) => ({
-                            ...current,
-                            [order.id]: { id: comment.id, body: e.target.value },
-                          }))}
-                          style={{resize:"vertical"}}
-                        />
-                        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-                          <button className="btn-outline" onClick={() => cancelEditPurchaseOrderComment(order.id)} style={{padding:"6px 10px",fontSize:12}}>Cancel</button>
-                          <button className="btn-gold" onClick={() => saveEditedPurchaseOrderComment(order, comment)} style={{padding:"6px 12px",fontSize:12}}>Save</button>
+            <div style={{display:"grid",gap:10,textAlign:"left"}}>
+              <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontSize:12,color:C.muted}}>Comments</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>Everyone who can view this purchase order can read and join the conversation here.</div>
+                </div>
+                <button
+                  className="btn-outline"
+                  onClick={() => setPurchaseOrderDiscussionOpen((current) => ({ ...current, [order.id]: !(current?.[order.id] ?? true) }))}
+                  style={{padding:"5px 10px",fontSize:12}}
+                >
+                  {(purchaseOrderDiscussionOpen?.[order.id] ?? true) ? "Collapse" : "Expand"}
+                </button>
+              </div>
+              {(purchaseOrderDiscussionOpen?.[order.id] ?? true) ? (
+                <div style={{display:"grid",gap:10}}>
+                  {(order.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).length > 0 ? (
+                    (order.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).map((comment) => (
+                      <div key={comment.id} style={{padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                          <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
+                          <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+                            {new Date(comment.updated_at || comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                            {comment.updated_at && <div>Edited</div>}
+                          </div>
                         </div>
+                        {editingPurchaseOrderComments[order.id]?.id === comment.id ? (
+                          <div style={{display:"grid",gap:10,marginTop:8}}>
+                            <textarea
+                              className="input-field"
+                              rows={3}
+                              value={editingPurchaseOrderComments[order.id]?.body || ""}
+                              onChange={(e)=>setEditingPurchaseOrderComments((current) => ({
+                                ...current,
+                                [order.id]: { id: comment.id, body: e.target.value },
+                              }))}
+                              style={{resize:"vertical"}}
+                            />
+                            <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                              <button className="btn-outline" onClick={() => cancelEditPurchaseOrderComment(order.id)} style={{padding:"6px 10px",fontSize:12}}>Cancel</button>
+                              <button className="btn-gold" onClick={() => saveEditedPurchaseOrderComment(order, comment)} style={{padding:"6px 12px",fontSize:12}}>Save</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, mentionableNames)}</div>
+                        )}
+                        {canManageComment(comment, profile) && editingPurchaseOrderComments[order.id]?.id !== comment.id && (
+                          <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+                            <button className="btn-outline" onClick={() => beginEditPurchaseOrderComment(order.id, comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
+                            <button className="btn-outline" onClick={() => deletePurchaseOrderComment(order, comment)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>Delete</button>
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, mentionableNames)}</div>
-                    )}
-                    {canManageComment(comment, profile) && editingPurchaseOrderComments[order.id]?.id !== comment.id && (
-                      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
-                        <button className="btn-outline" onClick={() => beginEditPurchaseOrderComment(order.id, comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
-                        <button className="btn-outline" onClick={() => deletePurchaseOrderComment(order, comment)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>Delete</button>
+                    ))
+                  ) : (
+                    <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>No comments yet.</div>
+                  )}
+                  <div style={{position:"relative"}}>
+                    <textarea
+                      ref={activePurchaseOrderCommentId === order.id ? purchaseOrderCommentInputRef : null}
+                      className="input-field"
+                      rows={2}
+                      placeholder="Add a question or comment"
+                      value={purchaseOrderCommentDrafts[order.id] || ""}
+                      onChange={(e) => {
+                        setPurchaseOrderCommentDrafts((current) => ({ ...current, [order.id]: e.target.value }));
+                        setPurchaseOrderCommentCursor({ [order.id]: e.target.selectionStart });
+                      }}
+                      onKeyUp={(e) => setPurchaseOrderCommentCursor({ [order.id]: e.currentTarget.selectionStart })}
+                      onClick={(e) => setPurchaseOrderCommentCursor({ [order.id]: e.currentTarget.selectionStart })}
+                      style={{resize:"vertical"}}
+                    />
+                    {activePurchaseOrderCommentId === order.id && purchaseOrderMentionSuggestions.length > 0 && (
+                      <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 6px)",border:`1px solid ${C.border}`,borderRadius:12,background:C.card,boxShadow:"0 12px 28px rgba(0,0,0,.28)",zIndex:20,overflow:"hidden"}}>
+                        {purchaseOrderMentionSuggestions.map((entry) => (
+                          <button
+                            key={`${order.id}-${entry.fullName}`}
+                            type="button"
+                            onClick={() => insertPurchaseOrderMention(order.id, entry.fullName)}
+                            style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"left",background:"transparent",border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",color:C.text,fontSize:13}}
+                          >
+                            @{entry.token}
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
-                ))
+                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstLast` to notify someone in this purchase order.</div>
+                  <div style={{display:"flex",justifyContent:"flex-end"}}>
+                    <button className="btn-outline" onClick={() => addPurchaseOrderComment(order)} style={{padding:"7px 10px"}}>Add Comment</button>
+                  </div>
+                </div>
               ) : (
-                <div style={{fontSize:13,color:C.muted}}>No comments yet.</div>
+                <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Discussion collapsed. Expand it when you want to catch up or reply.</div>
               )}
-              <div style={{position:"relative"}}>
-                <textarea
-                  ref={activePurchaseOrderCommentId === order.id ? purchaseOrderCommentInputRef : null}
-                  className="input-field"
-                  rows={2}
-                  placeholder="Add a question or comment"
-                  value={purchaseOrderCommentDrafts[order.id] || ""}
-                  onChange={(e) => {
-                    setPurchaseOrderCommentDrafts((current) => ({ ...current, [order.id]: e.target.value }));
-                    setPurchaseOrderCommentCursor({ [order.id]: e.target.selectionStart });
-                  }}
-                  onKeyUp={(e) => setPurchaseOrderCommentCursor({ [order.id]: e.currentTarget.selectionStart })}
-                  onClick={(e) => setPurchaseOrderCommentCursor({ [order.id]: e.currentTarget.selectionStart })}
-                  style={{resize:"vertical"}}
-                />
-                {activePurchaseOrderCommentId === order.id && purchaseOrderMentionSuggestions.length > 0 && (
-                  <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 6px)",border:`1px solid ${C.border}`,borderRadius:12,background:C.card,boxShadow:"0 12px 28px rgba(0,0,0,.28)",zIndex:20,overflow:"hidden"}}>
-                    {purchaseOrderMentionSuggestions.map((name) => (
-                      <button
-                        key={`${order.id}-${name}`}
-                        type="button"
-                        onClick={() => insertPurchaseOrderMention(order.id, name)}
-                        style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"left",background:"transparent",border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",color:C.text,fontSize:13}}
-                      >
-                        @{name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div style={{display:"flex",justifyContent:"flex-end"}}>
-                <button className="btn-outline" onClick={() => addPurchaseOrderComment(order)} style={{padding:"7px 10px"}}>Add Comment</button>
-              </div>
             </div>
           </div>
         ))}

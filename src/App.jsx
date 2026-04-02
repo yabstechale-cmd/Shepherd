@@ -858,6 +858,7 @@ const commentMentionsProfile = (comment, profile) => {
     return new RegExp(`@${escaped}(?=$|[^a-zA-Z])`, "i").test(body);
   });
 };
+const canManageComment = (comment, profile) => samePerson(comment?.author, profile?.full_name);
 const getMentionContext = (value, cursor) => {
   const beforeCursor = value.slice(0, cursor);
   const match = beforeCursor.match(/(?:^|\s)@([a-zA-Z][a-zA-Z\s]*)$/);
@@ -4214,6 +4215,8 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const [taskFormError, setTaskFormError] = useState("");
   const [commentDraft, setCommentDraft] = useState("");
   const [commentCursor, setCommentCursor] = useState(0);
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentDraft, setEditingCommentDraft] = useState("");
   const commentInputRef = useRef(null);
   const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:"",share_link:"",review_required:false,reviewers:[],review_approvals:[],comments:[]};
   const [form, setForm] = useState(blank);
@@ -4424,22 +4427,63 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     syncTaskInView(data);
   };
 
-  const addComment = () => {
+  const addComment = async () => {
     if (!selectedTask || !commentDraft.trim()) return;
     const nextComment = {
-      id: `comment-${Date.now()}`,
+      id: crypto.randomUUID(),
       author: profile?.full_name || "Staff",
       body: commentDraft.trim(),
       created_at: new Date().toISOString(),
     };
-    const updated = normalizeTask({
-      ...selectedTask,
-      comments: [...(selectedTask.comments || []), nextComment],
-    });
-    setSelectedTask(updated);
+    const nextComments = [...(selectedTask.comments || []), nextComment];
+    const saved = await saveTaskComments(selectedTask.id, nextComments);
+    if (!saved) return;
     setCommentDraft("");
     setCommentCursor(0);
-    setTasks((current) => current.map((task) => task.id === updated.id ? updated : task));
+  };
+
+  const saveTaskComments = async (taskId, nextComments) => {
+    if (!taskId) return false;
+    if (isPreview) {
+      setTasks((current) => current.map((task) => task.id === taskId ? normalizeTask({ ...task, comments: nextComments }) : task));
+      setSelectedTask((current) => current?.id === taskId ? normalizeTask({ ...current, comments: nextComments }) : current);
+      return true;
+    }
+    const { error } = await supabase.from("tasks").update({ comments: nextComments }).eq("id", taskId);
+    if (error) return false;
+    setTasks((current) => current.map((task) => task.id === taskId ? normalizeTask({ ...task, comments: nextComments }) : task));
+    setSelectedTask((current) => current?.id === taskId ? normalizeTask({ ...current, comments: nextComments }) : current);
+    return true;
+  };
+
+  const beginEditComment = (comment) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentDraft(comment.body || "");
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentDraft("");
+  };
+
+  const saveEditedComment = async (comment) => {
+    if (!selectedTask?.id || !canManageComment(comment, profile) || !editingCommentDraft.trim()) return;
+    const nextComments = (selectedTask.comments || []).map((entry) => entry.id === comment.id ? {
+      ...entry,
+      body: editingCommentDraft.trim(),
+      updated_at: new Date().toISOString(),
+    } : entry);
+    const saved = await saveTaskComments(selectedTask.id, nextComments);
+    if (!saved) return;
+    cancelEditComment();
+  };
+
+  const deleteTaskComment = async (comment) => {
+    if (!selectedTask?.id || !canManageComment(comment, profile)) return;
+    const nextComments = (selectedTask.comments || []).filter((entry) => entry.id !== comment.id);
+    const saved = await saveTaskComments(selectedTask.id, nextComments);
+    if (!saved) return;
+    if (editingCommentId === comment.id) cancelEditComment();
   };
 
   const insertMention = (name) => {
@@ -4754,10 +4798,33 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                       <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
                         <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
                         <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
-                          {new Date(comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                          {new Date(comment.updated_at || comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                          {comment.updated_at && <div>Edited</div>}
                         </div>
                       </div>
-                      <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, teamNames)}</div>
+                      {editingCommentId === comment.id ? (
+                        <div style={{display:"grid",gap:10,marginTop:8}}>
+                          <textarea
+                            className="input-field"
+                            rows={3}
+                            value={editingCommentDraft}
+                            onChange={(e)=>setEditingCommentDraft(e.target.value)}
+                            style={{resize:"vertical"}}
+                          />
+                          <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                            <button className="btn-outline" onClick={cancelEditComment} style={{padding:"6px 10px",fontSize:12}}>Cancel</button>
+                            <button className="btn-gold" onClick={() => saveEditedComment(comment)} style={{padding:"6px 12px",fontSize:12}}>Save</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, teamNames)}</div>
+                      )}
+                      {canManageComment(comment, profile) && editingCommentId !== comment.id && (
+                        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+                          <button className="btn-outline" onClick={() => beginEditComment(comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
+                          <button className="btn-outline" onClick={() => deleteTaskComment(comment)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>Delete</button>
+                        </div>
+                      )}
                     </div>
                   )) : (
                     <div style={{fontSize:13,color:C.muted}}>No comments yet.</div>
@@ -4949,6 +5016,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const [purchaseOrderSubmitting, setPurchaseOrderSubmitting] = useState(false);
   const [purchaseOrderCommentDrafts, setPurchaseOrderCommentDrafts] = useState({});
   const [purchaseOrderCommentCursor, setPurchaseOrderCommentCursor] = useState({});
+  const [editingPurchaseOrderComments, setEditingPurchaseOrderComments] = useState({});
   const purchaseOrderCommentInputRef = useRef(null);
   const [selectedLedgerMinistry, setSelectedLedgerMinistry] = useState(defaultMinistry);
   const [form, setForm] = useState({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
@@ -5300,6 +5368,50 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     setPurchaseOrderCommentDrafts((current) => ({ ...current, [order.id]: "" }));
     setPurchaseOrderCommentCursor((current) => ({ ...current, [order.id]: 0 }));
   };
+  const beginEditPurchaseOrderComment = (orderId, comment) => {
+    setEditingPurchaseOrderComments((current) => ({
+      ...current,
+      [orderId]: { id: comment.id, body: comment.body || "" },
+    }));
+  };
+  const cancelEditPurchaseOrderComment = (orderId) => {
+    setEditingPurchaseOrderComments((current) => {
+      const next = { ...current };
+      delete next[orderId];
+      return next;
+    });
+  };
+  const savePurchaseOrderComments = async (orderId, nextComments) => {
+    if (!orderId) return false;
+    const changes = { comments: nextComments };
+    if (isPreview) {
+      setPurchaseOrders((current) => (current || []).map((entry) => entry.id === orderId ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
+      return true;
+    }
+    const { error } = await supabase.from("purchase_orders").update(changes).eq("id", orderId);
+    if (error) return false;
+    setPurchaseOrders((current) => (current || []).map((entry) => entry.id === orderId ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
+    return true;
+  };
+  const saveEditedPurchaseOrderComment = async (order, comment) => {
+    const editingState = editingPurchaseOrderComments[order.id];
+    if (!order?.id || !comment?.id || !editingState?.body?.trim() || !canManageComment(comment, profile)) return;
+    const nextComments = (order.comments || []).map((entry) => entry.id === comment.id ? {
+      ...entry,
+      body: editingState.body.trim(),
+      updated_at: new Date().toISOString(),
+    } : entry);
+    const saved = await savePurchaseOrderComments(order.id, nextComments);
+    if (!saved) return;
+    cancelEditPurchaseOrderComment(order.id);
+  };
+  const deletePurchaseOrderComment = async (order, comment) => {
+    if (!order?.id || !comment?.id || !canManageComment(comment, profile)) return;
+    const nextComments = (order.comments || []).filter((entry) => entry.id !== comment.id);
+    const saved = await savePurchaseOrderComments(order.id, nextComments);
+    if (!saved) return;
+    if (editingPurchaseOrderComments[order.id]?.id === comment.id) cancelEditPurchaseOrderComment(order.id);
+  };
   const insertPurchaseOrderMention = (orderId, name) => {
     if (!orderId || !purchaseOrderMentionContext) return;
     const draft = purchaseOrderCommentDrafts[orderId] || "";
@@ -5550,10 +5662,36 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                     <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
                       <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
                       <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
-                        {new Date(comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                        {new Date(comment.updated_at || comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                        {comment.updated_at && <div>Edited</div>}
                       </div>
                     </div>
-                    <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, mentionableNames)}</div>
+                    {editingPurchaseOrderComments[order.id]?.id === comment.id ? (
+                      <div style={{display:"grid",gap:10,marginTop:8}}>
+                        <textarea
+                          className="input-field"
+                          rows={3}
+                          value={editingPurchaseOrderComments[order.id]?.body || ""}
+                          onChange={(e)=>setEditingPurchaseOrderComments((current) => ({
+                            ...current,
+                            [order.id]: { id: comment.id, body: e.target.value },
+                          }))}
+                          style={{resize:"vertical"}}
+                        />
+                        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                          <button className="btn-outline" onClick={() => cancelEditPurchaseOrderComment(order.id)} style={{padding:"6px 10px",fontSize:12}}>Cancel</button>
+                          <button className="btn-gold" onClick={() => saveEditedPurchaseOrderComment(order, comment)} style={{padding:"6px 12px",fontSize:12}}>Save</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, mentionableNames)}</div>
+                    )}
+                    {canManageComment(comment, profile) && editingPurchaseOrderComments[order.id]?.id !== comment.id && (
+                      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+                        <button className="btn-outline" onClick={() => beginEditPurchaseOrderComment(order.id, comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
+                        <button className="btn-outline" onClick={() => deletePurchaseOrderComment(order, comment)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>Delete</button>
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (

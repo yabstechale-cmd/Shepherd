@@ -35,6 +35,7 @@ const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
 const TRASH_STORAGE_PREFIX = "shepherd-trash";
+const ACTIVE_PAGE_STORAGE_KEY = "shepherd-active-page";
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const Icon = ({ d, size = 20 }) => (
@@ -470,6 +471,10 @@ const STATUS_STYLES = {
 };
 const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
 const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
+const getStoredActivePage = () => {
+  if (typeof window === "undefined") return "dashboard";
+  return window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
+};
 const formatAutomationTrigger = (automation) => {
   if (!automation) return "Trigger not configured";
   if (automation.trigger_type === "schedule") {
@@ -1424,9 +1429,8 @@ function AuthScreen() {
 function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
-    {id:"workspaces",label:"Workspaces",I:Icons.workspace},
-    {id:"notifications",label:"Notifications",I:Icons.bell},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
+    {id:"workspaces",label:"Workspaces",I:Icons.workspace},
     ...(canViewBudget(profile) ? [{id:"budget",label:"Finances",I:Icons.budget}] : []),
     {id:"calendar",label:"Calendar",I:Icons.calendar},
     ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.people}] : []),
@@ -1455,7 +1459,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
           <div key={id} className={`nav-item${active===id?" active":""}`} onClick={()=>setActive(id)} title={collapsed?label:""} style={{justifyContent:collapsed?"center":"flex-start"}}>
             <div style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
               {iconComponent()}
-              {id === "notifications" && unreadCount > 0 && (
+              {id === "dashboard" && unreadCount > 0 && (
                 <span style={{position:"absolute",top:-6,right:-8,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
@@ -3756,10 +3760,12 @@ function PublicEventRequestPage() {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, people, setActive, profile, church, previewUsers, notifications, markNotificationRead }) {
+function Dashboard({ tasks, people, setActive, profile, church, previewUsers, notifications, markNotificationRead, unreadCount, markAllNotificationsRead, browserPermission, enableBrowserNotifications }) {
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const greeting = getTimeOfDayGreeting();
   const dailyVerse = getDailyVerse();
+  const [teamSnapshotOpen, setTeamSnapshotOpen] = useState(true);
+  const [notificationsOpen, setNotificationsOpen] = useState(true);
   const teamSummary = previewUsers
     .filter((user) => !samePerson(user.full_name, profile?.full_name))
     .map((user) => {
@@ -3838,8 +3844,14 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
             <h3 style={sectionTitleStyle}>
               {hasAdminOversight ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
             </h3>
-            <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open task board</button>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+              <button className="btn-outline" onClick={() => setTeamSnapshotOpen((current) => !current)} style={{padding:"5px 12px",fontSize:12}}>
+                {teamSnapshotOpen ? "Collapse" : "Expand"}
+              </button>
+              <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open task board</button>
+            </div>
           </div>
+          {teamSnapshotOpen ? (
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {teamSummary.map((member) => (
               <div
@@ -3901,26 +3913,44 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
               </div>
             ))}
           </div>
+          ) : (
+            <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Team snapshot collapsed. Expand it when you want to review everyone else’s workload.</div>
+          )}
         </div>
       )}
       <div className="card" style={{padding:22,marginBottom:20}}>
         <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <h3 style={sectionTitleStyle}>Notifications</h3>
-          <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open tasks</button>
-        </div>
-        {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No new notifications right now.</p>}
-        {notifications.map((item) => (
-          <div className="dashboard-note-row" key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`,alignItems:"flex-start"}}>
-            <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:5,flexShrink:0}} />
-            <div style={{textAlign:"left"}}>
-              <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
-              <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
-            </div>
-            <button className="btn-outline" onClick={()=>{markNotificationRead(item.id); setActive(item.target || "tasks");}} style={{padding:"5px 10px",fontSize:12,marginLeft:"auto"}}>
-              Open
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button className="btn-outline" onClick={() => setNotificationsOpen((current) => !current)} style={{padding:"5px 12px",fontSize:12}}>
+              {notificationsOpen ? "Collapse" : "Expand"}
             </button>
+            {browserPermission !== "granted" && (
+              <button className="btn-outline" onClick={enableBrowserNotifications} style={{padding:"5px 12px",fontSize:12}}>Enable Browser Alerts</button>
+            )}
+            <button className="btn-outline" onClick={markAllNotificationsRead} style={{padding:"5px 12px",fontSize:12}} disabled={unreadCount === 0}>Mark all read</button>
+            <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open tasks</button>
           </div>
-        ))}
+        </div>
+        {notificationsOpen ? (
+          <>
+            {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No new notifications right now.</p>}
+            {notifications.map((item) => (
+              <div className="dashboard-note-row" key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`,alignItems:"flex-start"}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:5,flexShrink:0}} />
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
+                </div>
+                <button className="btn-outline" onClick={()=>{markNotificationRead(item.id); setActive(item.target || "tasks");}} style={{padding:"5px 10px",fontSize:12,marginLeft:"auto"}}>
+                  Open
+                </button>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Notifications collapsed. Expand this section to review and open them.</div>
+        )}
       </div>
       <div>
         <div className="card" style={{padding:22}}>
@@ -5672,12 +5702,27 @@ export default function App() {
   const [eventRequests, setEventRequests] = useState(null);
   const [trashItems, setTrashItems] = useState([]);
   const [previewUsers, setPreviewUsers] = useState([]);
-  const [active, setActive] = useState("dashboard");
+  const [active, setActive] = useState(getStoredActivePage);
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [browserPermission, setBrowserPermission] = useState(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
   const shownNotificationIdsRef = useRef(new Set());
+  const allowedPages = new Set([
+    "dashboard",
+    "account",
+    "workspaces",
+    "events-board",
+    "content-media-board",
+    "operations-board",
+    "tasks",
+    "trash",
+    "members",
+    "budget",
+    "calendar",
+    ...(shouldShowChurchTeam(profile, church) ? ["church-team"] : []),
+  ]);
+  const safeActive = allowedPages.has(active) ? active : "dashboard";
 
   const notifications = useMemo(
     () => buildNotifications(tasks, eventRequests, purchaseOrders, profile),
@@ -5819,6 +5864,11 @@ export default function App() {
   }, [profile?.id, readNotificationIds]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, safeActive);
+  }, [safeActive]);
+
+  useEffect(() => {
     if (typeof window === "undefined" || !church?.id) return;
     window.localStorage.setItem(getTrashStorageKey(church.id), JSON.stringify(trashItems));
   }, [church?.id, trashItems]);
@@ -5895,14 +5945,13 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
+    dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead} unreadCount={unreadNotifications.length} markAllNotificationsRead={markAllNotificationsRead} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead} unreadCount={unreadNotifications.length} markAllNotificationsRead={markAllNotificationsRead} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
     "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
-    notifications: <NotificationsPage notifications={notifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash}/>,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} />,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
@@ -5915,8 +5964,8 @@ export default function App() {
     <>
       <GS/>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar active={active} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length}/>
-        <main style={{flex:1,overflowY:"auto",background:C.bg}}>{pages[active] || pages.dashboard}</main>
+        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length}/>
+        <main style={{flex:1,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
       </div>
     </>
   );

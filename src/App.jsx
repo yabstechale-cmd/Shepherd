@@ -36,6 +36,9 @@ const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
 const TRASH_STORAGE_PREFIX = "shepherd-trash";
 const ACTIVE_PAGE_STORAGE_KEY = "shepherd-active-page";
+const STAFF_NOTEPAD_STORAGE_PREFIX = "shepherd-staff-notepad";
+const TASK_COLUMN_STATE_STORAGE_PREFIX = "shepherd-task-columns";
+const DASHBOARD_SECTION_STATE_STORAGE_PREFIX = "shepherd-dashboard-sections";
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const Icon = ({ d, size = 20 }) => (
@@ -168,7 +171,7 @@ const GS = () => (
       .app-sidebar-nav .nav-item{margin-bottom:0;flex-shrink:0}
       .app-sidebar-footer{padding:10px 12px !important}
       .section-header{flex-direction:column;align-items:flex-start !important;gap:12px}
-      .section-header .btn-outline,.section-header .btn-gold{width:100%;justify-content:center}
+      .section-header .btn-outline,.section-header .btn-gold{justify-content:center}
       .dashboard-note-row{flex-direction:column}
       .dashboard-note-row .btn-outline{margin-left:0 !important;width:100%;justify-content:center}
       .dashboard-followup-row{flex-wrap:wrap}
@@ -452,6 +455,7 @@ const displayHeadingStyle = {
   fontFamily: "'Young Serif Medium', Georgia, serif",
   fontWeight: 500,
   letterSpacing: "0.01em",
+  lineHeight: 1.12,
 };
 const pageTitleStyle = {
   ...displayHeadingStyle,
@@ -471,6 +475,9 @@ const STATUS_STYLES = {
 };
 const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
 const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
+const getStaffNotepadStorageKey = (profileId) => `${STAFF_NOTEPAD_STORAGE_PREFIX}:${profileId || "anonymous"}`;
+const getTaskColumnStateStorageKey = (profileId) => `${TASK_COLUMN_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
+const getDashboardSectionStateStorageKey = (profileId) => `${DASHBOARD_SECTION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getStoredActivePage = () => {
   if (typeof window === "undefined") return "dashboard";
   return window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
@@ -3521,7 +3528,7 @@ function ContentMediaBoard({ tasks, setActive }) {
       <div className="card" style={{padding:22}}>
         <div className="events-board-header" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div style={{textAlign:"left"}}>
-            <h3 style={{...pageTitleStyle,textAlign:"left",fontSize:"clamp(34px, 7vw, 46px)",lineHeight:1.06,maxWidth:680}}>
+            <h3 style={{...pageTitleStyle,textAlign:"left",fontSize:"clamp(34px, 7vw, 46px)",lineHeight:1.12,maxWidth:680}}>
               Content &amp; Media Board
             </h3>
             <p style={{color:C.muted,fontSize:13,marginTop:8,maxWidth:620,textAlign:"left",lineHeight:1.55}}>
@@ -3760,12 +3767,56 @@ function PublicEventRequestPage() {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, people, setActive, profile, church, previewUsers, notifications, markNotificationRead, unreadCount, markAllNotificationsRead, browserPermission, enableBrowserNotifications }) {
+function Dashboard({ tasks, setActive, profile, church, previewUsers, notifications, markNotificationRead, unreadCount, markAllNotificationsRead, browserPermission, enableBrowserNotifications }) {
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const greeting = getTimeOfDayGreeting();
   const dailyVerse = getDailyVerse();
-  const [teamSnapshotOpen, setTeamSnapshotOpen] = useState(true);
-  const [notificationsOpen, setNotificationsOpen] = useState(true);
+  const [teamSnapshotOpen, setTeamSnapshotOpen] = useState(() => {
+    if (typeof window === "undefined" || !profile?.id) return true;
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
+      return stored.teamSnapshotOpen ?? true;
+    } catch {
+      return true;
+    }
+  });
+  const [notificationsOpen, setNotificationsOpen] = useState(() => {
+    if (typeof window === "undefined" || !profile?.id) return true;
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
+      return stored.notificationsOpen ?? true;
+    } catch {
+      return true;
+    }
+  });
+  const [personalNotepadEntries, setPersonalNotepadEntries] = useState(() => {
+    if (typeof window === "undefined" || !profile?.id) return [];
+    try {
+      const raw = window.localStorage.getItem(getStaffNotepadStorageKey(profile.id));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      if (typeof parsed === "string" && parsed.trim()) {
+        return [{
+          id: crypto.randomUUID(),
+          body: parsed.trim(),
+          created_at: new Date().toISOString(),
+        }];
+      }
+      return [];
+    } catch {
+      const legacy = window.localStorage.getItem(getStaffNotepadStorageKey(profile.id));
+      return legacy?.trim() ? [{
+        id: crypto.randomUUID(),
+        body: legacy.trim(),
+        created_at: new Date().toISOString(),
+      }] : [];
+    }
+  });
+  const [notepadDraft, setNotepadDraft] = useState("");
+  const [editingNotepadId, setEditingNotepadId] = useState(null);
+  const [editingNotepadDraft, setEditingNotepadDraft] = useState("");
+  const [draggedNotepadId, setDraggedNotepadId] = useState(null);
   const teamSummary = previewUsers
     .filter((user) => !samePerson(user.full_name, profile?.full_name))
     .map((user) => {
@@ -3820,14 +3871,69 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
       workloadDetail,
     };
   });
-  const recentAdminWork = tasks
-    .filter((task) => ["Admin", "Operations", "Finances"].includes(task.ministry))
-    .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
-    .slice(0, 4);
+  useEffect(() => {
+    if (typeof window === "undefined" || !profile?.id) return;
+    window.localStorage.setItem(getStaffNotepadStorageKey(profile.id), JSON.stringify(personalNotepadEntries));
+  }, [profile?.id, personalNotepadEntries]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !profile?.id) return;
+    window.localStorage.setItem(getDashboardSectionStateStorageKey(profile.id), JSON.stringify({
+      teamSnapshotOpen,
+      notificationsOpen,
+    }));
+  }, [profile?.id, teamSnapshotOpen, notificationsOpen]);
+
+  const postPersonalNote = () => {
+    if (!notepadDraft.trim()) return;
+    setPersonalNotepadEntries((current) => [
+      {
+        id: crypto.randomUUID(),
+        body: notepadDraft.trim(),
+        created_at: new Date().toISOString(),
+      },
+      ...(current || []),
+    ]);
+    setNotepadDraft("");
+  };
+  const startEditingPersonalNote = (entry) => {
+    setEditingNotepadId(entry.id);
+    setEditingNotepadDraft(entry.body);
+  };
+  const saveEditedPersonalNote = () => {
+    if (!editingNotepadId || !editingNotepadDraft.trim()) return;
+    setPersonalNotepadEntries((current) => (current || []).map((entry) => entry.id === editingNotepadId ? {
+      ...entry,
+      body: editingNotepadDraft.trim(),
+      updated_at: new Date().toISOString(),
+    } : entry));
+    setEditingNotepadId(null);
+    setEditingNotepadDraft("");
+  };
+  const deletePersonalNote = (entryId) => {
+    setPersonalNotepadEntries((current) => (current || []).filter((entry) => entry.id !== entryId));
+    if (editingNotepadId === entryId) {
+      setEditingNotepadId(null);
+      setEditingNotepadDraft("");
+    }
+  };
+  const movePersonalNote = (draggedId, targetId) => {
+    if (!draggedId || !targetId || draggedId === targetId) return;
+    setPersonalNotepadEntries((current) => {
+      const items = [...(current || [])];
+      const draggedIndex = items.findIndex((entry) => entry.id === draggedId);
+      const targetIndex = items.findIndex((entry) => entry.id === targetId);
+      if (draggedIndex === -1 || targetIndex === -1) return current;
+      const [draggedItem] = items.splice(draggedIndex, 1);
+      items.splice(targetIndex, 0, draggedItem);
+      return items;
+    });
+  };
+
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
       <div style={{marginBottom:28}}>
-        <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:42,fontWeight:500,color:C.text,letterSpacing:"0.01em"}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
+        <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:42,fontWeight:500,color:C.text,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
         <p style={{color:C.muted,marginTop:4,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
           {profile?.canSeeTeamOverview
             ? profile?.readOnlyOversight
@@ -3839,12 +3945,17 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
         </p>
       </div>
       {previewUsers.length > 0 && (
-        <div className="card" style={{padding:22,marginBottom:20}}>
+        <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={sectionTitleStyle}>
-              {hasAdminOversight ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
-            </h3>
-            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{textAlign:"left"}}>
+              <h3 style={sectionTitleStyle}>
+                {hasAdminOversight ? "Administrative Team Snapshot" : "Leadership Team Snapshot"}
+              </h3>
+              <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.5}}>
+                {teamSummary.length} team members in view
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end",marginLeft:"auto"}}>
               <button className="btn-outline" onClick={() => setTeamSnapshotOpen((current) => !current)} style={{padding:"5px 12px",fontSize:12}}>
                 {teamSnapshotOpen ? "Collapse" : "Expand"}
               </button>
@@ -3914,14 +4025,19 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
             ))}
           </div>
           ) : (
-            <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Team snapshot collapsed. Expand it when you want to review everyone else’s workload.</div>
+            <div style={{fontSize:13,color:C.muted,textAlign:"left",marginTop:4}}>Team snapshot collapsed. Expand it when you want to review everyone else’s workload.</div>
           )}
         </div>
       )}
-      <div className="card" style={{padding:22,marginBottom:20}}>
+      <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
         <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <h3 style={sectionTitleStyle}>Notifications</h3>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          <div style={{textAlign:"left"}}>
+            <h3 style={sectionTitleStyle}>Notifications</h3>
+            <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.5}}>
+              {unreadCount} unread notification{unreadCount === 1 ? "" : "s"}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end",marginLeft:"auto"}}>
             <button className="btn-outline" onClick={() => setNotificationsOpen((current) => !current)} style={{padding:"5px 12px",fontSize:12}}>
               {notificationsOpen ? "Collapse" : "Expand"}
             </button>
@@ -3934,7 +4050,7 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
         </div>
         {notificationsOpen ? (
           <>
-            {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No new notifications right now.</p>}
+            {notifications.length === 0 && <p style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"left"}}>No new notifications right now.</p>}
             {notifications.map((item) => (
               <div className="dashboard-note-row" key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`,alignItems:"flex-start"}}>
                 <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:5,flexShrink:0}} />
@@ -3949,50 +4065,99 @@ function Dashboard({ tasks, people, setActive, profile, church, previewUsers, no
             ))}
           </>
         ) : (
-          <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Notifications collapsed. Expand this section to review and open them.</div>
+          <div style={{fontSize:13,color:C.muted,textAlign:"left",marginTop:4}}>Notifications collapsed. Expand this section to review and open them.</div>
         )}
       </div>
       <div>
         <div className="card" style={{padding:22}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={sectionTitleStyle}>
-              {hasAdminOversight ? "Admin Watchlist" : "Pastoral Follow-ups"}
-            </h3>
-            <button className="btn-outline" onClick={()=>setActive("members")} style={{padding:"5px 12px",fontSize:12}}>View all</button>
+            <h3 style={sectionTitleStyle}>Personal Notepad</h3>
           </div>
-          {hasAdminOversight ? (
-            <>
-              {recentAdminWork.map((task) => (
-                <div className="dashboard-followup-row" key={task.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
-                  <div style={{width:36,height:36,borderRadius:"50%",background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:C.gold,flexShrink:0}}>
-                    {task.assignee?.split(" ").map((part) => part[0]).join("").slice(0,2)}
+          <p style={{fontSize:12,color:C.muted,lineHeight:1.6,textAlign:"left",marginBottom:12}}>
+            Keep quick reminders for yourself here. This notepad is private to your account, and your notes can be dragged and dropped into the order you want.
+          </p>
+          <div style={{display:"grid",gap:12}}>
+            <textarea
+              className="input-field"
+              rows={4}
+              placeholder="Write down a quick reminder, thought, or next step for yourself..."
+              value={notepadDraft}
+              onChange={(e)=>setNotepadDraft(e.target.value)}
+              style={{resize:"vertical"}}
+            />
+            <div style={{display:"flex",justifyContent:"flex-end"}}>
+              <button className="btn-gold" onClick={postPersonalNote}>Post</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {personalNotepadEntries.length === 0 && (
+                <div style={{padding:"18px 14px",border:`1px dashed ${C.border}`,borderRadius:12,fontSize:13,color:C.muted,textAlign:"left"}}>
+                  No notes yet.
+                </div>
+              )}
+              {personalNotepadEntries.map((entry) => (
+                <div
+                  key={entry.id}
+                  draggable={editingNotepadId !== entry.id}
+                  onDragStart={() => setDraggedNotepadId(entry.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    movePersonalNote(draggedNotepadId, entry.id);
+                    setDraggedNotepadId(null);
+                  }}
+                  onDragEnd={() => setDraggedNotepadId(null)}
+                  style={{
+                    padding:"16px 16px 14px",
+                    border:`1px solid ${C.goldDim}`,
+                    borderRadius:14,
+                    background:`linear-gradient(180deg, ${C.goldGlow} 0%, rgba(201,168,76,0.08) 18%, ${C.card} 100%)`,
+                    boxShadow:"0 12px 28px rgba(0,0,0,.2)",
+                    position:"relative",
+                    overflow:"hidden",
+                    cursor: editingNotepadId === entry.id ? "default" : "grab",
+                    opacity: draggedNotepadId === entry.id ? 0.72 : 1,
+                    textAlign:"left",
+                  }}
+                >
+                  <div style={{position:"absolute",left:0,right:0,top:0,height:3,background:`linear-gradient(90deg, ${C.goldDim} 0%, ${C.gold} 55%, ${C.goldDim} 100%)`}} />
+                  <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",position:"relative"}}>
+                    <div style={{fontSize:11,color:C.muted}}>
+                      {entry.updated_at ? "Edited note" : "Posted note"}
+                    </div>
+                    <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+                      {new Date(entry.updated_at || entry.created_at).toLocaleString("en-US", { month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit" })}
+                    </div>
                   </div>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:500,color:C.text}}>{task.title}</div>
-                    <div style={{fontSize:12,color:C.muted,marginTop:2}}>{task.assignee} • {task.ministry}</div>
+                  {editingNotepadId === entry.id ? (
+                    <div style={{display:"grid",gap:10,marginTop:10,position:"relative"}}>
+                      <textarea
+                        className="input-field"
+                        rows={4}
+                        value={editingNotepadDraft}
+                        onChange={(e)=>setEditingNotepadDraft(e.target.value)}
+                        style={{resize:"vertical"}}
+                      />
+                      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                        <button className="btn-outline" onClick={() => { setEditingNotepadId(null); setEditingNotepadDraft(""); }} style={{padding:"6px 10px",fontSize:12}}>Cancel</button>
+                        <button className="btn-gold" onClick={saveEditedPersonalNote} style={{padding:"6px 12px",fontSize:12}}>Save</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{fontSize:13,color:C.text,marginTop:8,lineHeight:1.7,whiteSpace:"pre-line",position:"relative"}}>{entry.body}</div>
+                  )}
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:12,position:"relative"}}>
+                    {editingNotepadId !== entry.id && (
+                      <button className="btn-outline" onClick={() => startEditingPersonalNote(entry)} style={{padding:"6px 10px",fontSize:12}}>
+                        Edit
+                      </button>
+                    )}
+                    <button className="btn-outline" onClick={() => deletePersonalNote(entry.id)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>
+                      Delete
+                    </button>
                   </div>
-                  <span className={`badge ${getTag(task.ministry)}`}>{task.status}</span>
                 </div>
               ))}
-              {recentAdminWork.length===0&&<p style={{color:C.muted,fontSize:13}}>No admin watchlist items right now.</p>}
-            </>
-          ) : (
-            <>
-              {people.filter(p=>p.status==="follow-up"||p.prayer_request).map(p=>(
-                <div className="dashboard-followup-row" key={p.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
-                  <div style={{width:36,height:36,borderRadius:"50%",background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:600,color:C.gold,flexShrink:0}}>
-                    {p.full_name?.[0]}
-                  </div>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:500,color:C.text}}>{p.full_name}</div>
-                    {p.prayer_request&&<div style={{fontSize:12,color:C.muted,marginTop:2}}>{p.prayer_request}</div>}
-                  </div>
-                  {p.status==="follow-up"&&<span className="badge tag-board" style={{marginLeft:"auto",alignSelf:"flex-start"}}>Follow-up</span>}
-                </div>
-              ))}
-              {people.filter(p=>p.status==="follow-up"||p.prayer_request).length===0&&<p style={{color:C.muted,fontSize:13}}>No follow-ups needed right now.</p>}
-            </>
-          )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -4016,6 +4181,14 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:"",share_link:"",review_required:false,reviewers:[],review_approvals:[],comments:[]};
   const [form, setForm] = useState(blank);
   const [orderedCategories, setOrderedCategories] = useState(() => getStoredCategoryOrder());
+  const [collapsedColumns, setCollapsedColumns] = useState(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      return JSON.parse(window.localStorage.getItem(getTaskColumnStateStorageKey(profile?.id)) || "{}");
+    } catch {
+      return {};
+    }
+  });
   const teamNames = previewUsers?.map((user) => user.full_name) || [];
   const allowedAssignees = canAssignToAnyone ? teamNames : [profile?.full_name].filter(Boolean);
   const boardTasks = tasks;
@@ -4275,6 +4448,18 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     done: filtered.filter((task) => task.status === "done"),
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(getTaskColumnStateStorageKey(profile?.id), JSON.stringify(collapsedColumns));
+  }, [profile?.id, collapsedColumns]);
+
+  const toggleColumn = (statusKey) => {
+    setCollapsedColumns((current) => ({
+      ...current,
+      [statusKey]: !current?.[statusKey],
+    }));
+  };
+
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
@@ -4312,14 +4497,20 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16,alignItems:"start"}}>
         {["todo","in-progress","in-review","done"].map((statusKey) => (
-          <div key={statusKey} className="card" style={{padding:16,minHeight:420,borderTop:`3px solid ${STATUS_STYLES[statusKey].accent}`,background:`linear-gradient(180deg, ${STATUS_STYLES[statusKey].surface} 0%, ${C.card} 24%)`}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
+          <div key={statusKey} className="card" style={{padding:16,minHeight:collapsedColumns?.[statusKey] ? "auto" : 420,borderTop:`3px solid ${STATUS_STYLES[statusKey].accent}`,background:`linear-gradient(180deg, ${STATUS_STYLES[statusKey].surface} 0%, ${C.card} 24%)`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:collapsedColumns?.[statusKey] ? 0 : 14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
               <div>
                 <div style={{fontSize:15,fontWeight:600,color:STATUS_STYLES[statusKey].accent}}>{STATUS_STYLES[statusKey].label}</div>
                 <div style={{fontSize:11,color:C.muted,marginTop:2}}>{groupedTasks[statusKey].length} tasks</div>
               </div>
-              <div style={{width:10,height:10,borderRadius:"50%",background:STATUS_STYLES[statusKey].accent,flexShrink:0}} />
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:STATUS_STYLES[statusKey].accent,flexShrink:0}} />
+                <button className="btn-outline" onClick={() => toggleColumn(statusKey)} style={{padding:"5px 10px",fontSize:12}}>
+                  {collapsedColumns?.[statusKey] ? "Expand" : "Collapse"}
+                </button>
+              </div>
             </div>
+            {!collapsedColumns?.[statusKey] && (
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               {groupedTasks[statusKey].map((task) => (
                 <button
@@ -4346,6 +4537,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
               ))}
               {groupedTasks[statusKey].length===0 && <div style={{padding:"28px 12px",textAlign:"center",color:C.muted,fontSize:13,border:`1px dashed ${C.border}`,borderRadius:12}}>No tasks in {STATUS_STYLES[statusKey].label.toLowerCase()}.</div>}
             </div>
+            )}
           </div>
         ))}
       </div>
@@ -5945,9 +6137,9 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead} unreadCount={unreadNotifications.length} markAllNotificationsRead={markAllNotificationsRead} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
+    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead} unreadCount={unreadNotifications.length} markAllNotificationsRead={markAllNotificationsRead} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard tasks={tasks} people={people} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead} unreadCount={unreadNotifications.length} markAllNotificationsRead={markAllNotificationsRead} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} markNotificationRead={markNotificationRead} unreadCount={unreadNotifications.length} markAllNotificationsRead={markAllNotificationsRead} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,

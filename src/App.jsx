@@ -164,8 +164,8 @@ const GS = () => (
     .table-row{display:grid;padding:14px 18px;border-bottom:1px solid ${C.border};align-items:center;gap:12px}
     .table-row:hover{background:rgba(255,255,255,.02)}
     .table-row:last-child{border-bottom:none}
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:64px 20px 28px;overflow-y:auto;overscroll-behavior:contain}
-    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;max-height:calc(100vh - 92px);overflow-y:auto;margin:0 auto}
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:64px 20px 28px;overflow:hidden}
+    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;max-height:calc(100vh - 92px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin:0 auto}
     @media (max-width: 760px){
       .app-shell{flex-direction:column}
       .app-sidebar{width:100% !important;min-height:auto !important;border-right:none !important;border-bottom:1px solid ${C.border}}
@@ -331,7 +331,7 @@ const getTaskReviewerDecision = (task, reviewer) => {
 };
 const canApproveTaskReview = (profile, task) =>
   canReviewTask(profile, task)
-  && !getTaskReviewerDecision(task, profile?.full_name)
+  && !listIncludesPerson(task?.review_approvals, profile?.full_name)
   && ["in-review"].includes(task?.status || "todo");
 const canManagePeople = (profile, church) => hasAdministrativeOversight(profile, church);
 const isFinanceUser = (profile) => profileHasMinistry(profile, "Finances") || (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
@@ -1029,8 +1029,9 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
     }
 
     if (reviewerForMe && task.status === "in-review") {
+      const reviewCycleKey = `${task.review_approvals?.length || 0}-${task.review_history?.length || 0}-${task.status || "todo"}`;
       items.push({
-        id: `review-${task.id}-${normalizeName(fullName)}`,
+        id: `review-${task.id}-${normalizeName(fullName)}-${reviewCycleKey}`,
         tone: C.purple,
         title: "Review requested",
         detail: `${task.title} is waiting on your review.`,

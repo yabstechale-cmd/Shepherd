@@ -238,7 +238,7 @@ const normalizePurchaseOrder = (order) => ({
 const normalizeEventWorkflow = (workflow) => ({
   ...workflow,
   event_name: workflow?.event_name || workflow?.title || "",
-  visibility: workflow?.visibility === "shared" ? "shared" : "private",
+  visibility: "shared",
   location: workflow?.location || "",
   main_contact: workflow?.main_contact || "",
   timeline_items: Array.isArray(workflow?.timeline_items) ? workflow.timeline_items : [],
@@ -718,7 +718,6 @@ const createEventPlanningBlank = (profile, request = null) => ({
   location: request ? getEventLocationSummary(request) : "",
   mainContact: request?.contact_name || profile?.full_name || "",
   linkedRequestId: request?.id || "",
-  visibility: "private",
 });
 const getEventWorkflowPrimaryDate = (workflow) => workflow?.start_date || workflow?.target_date || workflow?.end_date || "";
 const getEventCountdownLabel = (workflow) => {
@@ -2558,6 +2557,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
   const [workflowForm, setWorkflowForm] = useState(() => createEventPlanningBlank(profile));
   const [timelineDraft, setTimelineDraft] = useState({ id: null, title: "", date: "", details: "", includeInTasks: false, reviewRequired: false, reviewers: [] });
   const [showTimelineModal, setShowTimelineModal] = useState(false);
+  const [planningFilter, setPlanningFilter] = useState("mine");
   const [checklistDraft, setChecklistDraft] = useState("");
   const [planningNoteDraft, setPlanningNoteDraft] = useState("");
   const eventColumns = [
@@ -2567,7 +2567,9 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
   ];
   const requests = eventRequests || [];
   const visibleWorkflows = eventWorkflows
-    .filter((workflow) => workflow.visibility === "shared" || samePerson(workflow.owner_name, profile?.full_name))
+    .filter((workflow) => planningFilter === "mine"
+      ? samePerson(workflow.owner_name, profile?.full_name)
+      : !samePerson(workflow.owner_name, profile?.full_name))
     .sort((left, right) => new Date(getEventWorkflowPrimaryDate(left) || left.created_at || 0) - new Date(getEventWorkflowPrimaryDate(right) || right.created_at || 0));
   const canEditWorkflow = (workflow) => samePerson(workflow?.owner_name, profile?.full_name);
   const eventPlanningTeamNames = [...new Set((previewUsers || []).map((user) => user.full_name).filter(Boolean))];
@@ -2694,7 +2696,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         location: workflow.location || "",
         mainContact: workflow.main_contact || "",
         linkedRequestId: workflow.linked_event_request_id || "",
-        visibility: workflow.visibility || "private",
       });
     } else {
       setWorkflowForm(createEventPlanningBlank(profile));
@@ -2715,7 +2716,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       title: workflowForm.eventName.trim(),
       event_name: workflowForm.eventName.trim(),
       owner_name: profile?.full_name || "Staff Member",
-      visibility: workflowForm.visibility,
+      visibility: "shared",
       summary: "",
       target_date: workflowForm.startDate || null,
       start_date: workflowForm.startDate || null,
@@ -2783,11 +2784,69 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
   const addWorkflowTimelineItem = async (workflow) => {
     if (!timelineDraft.title.trim()) return;
     if (timelineDraft.id) {
+      const currentItem = (workflow.timeline_items || []).find((item) => item.id === timelineDraft.id);
+      const assigneeName = currentItem?.linked_task_assignee || profile?.full_name || workflow.main_contact || "Staff";
+      let linkedTaskId = currentItem?.linked_task_id || null;
+      const taskReviewers = timelineDraft.reviewRequired
+        ? (timelineDraft.reviewers || []).filter((name) => !samePerson(name, assigneeName))
+        : [];
+      if (timelineDraft.includeInTasks && !linkedTaskId) {
+        const taskPayload = {
+          church_id: church?.id,
+          title: timelineDraft.title.trim(),
+          ministry: "Events",
+          assignee: assigneeName,
+          due_date: timelineDraft.date || workflow.start_date || null,
+          status: "todo",
+          notes: [
+            `Linked from event plan: ${workflow.event_name || workflow.title}`,
+            timelineDraft.details.trim() || null,
+          ].filter(Boolean).join("\n\n"),
+          review_required: timelineDraft.reviewRequired,
+          reviewers: taskReviewers,
+          review_approvals: [],
+          review_history: [],
+        };
+        const { data: createdTask, error: taskError } = await supabase.from("tasks").insert(taskPayload).select().single();
+        if (taskError) {
+          setWorkflowError(taskError.message || "We couldn't add that timeline step to Tasks.");
+          return;
+        }
+        linkedTaskId = createdTask?.id || null;
+        if (createdTask) {
+          setTasks((current) => [normalizeTask(createdTask), ...(current || [])]);
+        }
+      } else if (linkedTaskId) {
+        const taskPayload = {
+          title: timelineDraft.title.trim(),
+          due_date: timelineDraft.date || workflow.start_date || null,
+          notes: [
+            `Linked from event plan: ${workflow.event_name || workflow.title}`,
+            timelineDraft.details.trim() || null,
+          ].filter(Boolean).join("\n\n"),
+          review_required: timelineDraft.includeInTasks ? timelineDraft.reviewRequired : false,
+          reviewers: timelineDraft.includeInTasks ? taskReviewers : [],
+          review_approvals: [],
+          status: timelineDraft.includeInTasks && timelineDraft.reviewRequired && currentItem?.done ? "in-review" : currentItem?.done ? "done" : "todo",
+        };
+        const { data: updatedTask, error: taskError } = await supabase.from("tasks").update(taskPayload).eq("id", linkedTaskId).select().single();
+        if (taskError) {
+          setWorkflowError(taskError.message || "We couldn't update the linked task.");
+          return;
+        }
+        if (updatedTask) {
+          setTasks((current) => (current || []).map((task) => task.id === updatedTask.id ? normalizeTask(updatedTask) : task));
+        }
+      }
       const nextItems = (workflow.timeline_items || []).map((item) => item.id === timelineDraft.id ? {
         ...item,
         title: timelineDraft.title.trim(),
         date: timelineDraft.date || null,
         details: timelineDraft.details.trim(),
+        linked_task_id: timelineDraft.includeInTasks ? linkedTaskId : item.linked_task_id,
+        linked_task_assignee: timelineDraft.includeInTasks ? assigneeName : item.linked_task_assignee,
+        linked_task_review_required: timelineDraft.includeInTasks ? timelineDraft.reviewRequired : false,
+        linked_task_reviewers: timelineDraft.includeInTasks ? taskReviewers : [],
       } : item);
       await updateWorkflow(workflow, { timeline_items: nextItems });
       setWorkflowError("");
@@ -2796,11 +2855,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       return;
     }
     const assigneeName = profile?.full_name || workflow.main_contact || "Staff";
+    const taskReviewers = timelineDraft.reviewRequired
+      ? (timelineDraft.reviewers || []).filter((name) => !samePerson(name, assigneeName))
+      : [];
     let linkedTaskId = null;
     if (timelineDraft.includeInTasks) {
-      const taskReviewers = timelineDraft.reviewRequired
-        ? (timelineDraft.reviewers || []).filter((name) => !samePerson(name, assigneeName))
-        : [];
       const taskPayload = {
         church_id: church?.id,
         title: timelineDraft.title.trim(),
@@ -2839,6 +2898,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         linked_task_id: linkedTaskId,
         linked_task_assignee: timelineDraft.includeInTasks ? assigneeName : null,
         linked_task_review_required: timelineDraft.includeInTasks ? timelineDraft.reviewRequired : false,
+        linked_task_reviewers: timelineDraft.includeInTasks ? taskReviewers : [],
       },
     ];
     await updateWorkflow(workflow, { timeline_items: nextItems });
@@ -2855,7 +2915,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       details: item.details || "",
       includeInTasks: !!item.linked_task_id,
       reviewRequired: !!item.linked_task_review_required,
-      reviewers: [],
+      reviewers: item.linked_task_review_required && Array.isArray(item.linked_task_reviewers) ? item.linked_task_reviewers : [],
     });
     setShowTimelineModal(true);
   };
@@ -2921,9 +2981,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
     ];
     await updateWorkflow(workflow, { notes_entries: nextNotes });
     setPlanningNoteDraft("");
-  };
-  const toggleWorkflowVisibility = async (workflow) => {
-    await updateWorkflow(workflow, { visibility: workflow.visibility === "shared" ? "private" : "shared" });
   };
   const deleteWorkflow = async (workflow) => {
     if (!workflow?.id) return;
@@ -2999,7 +3056,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
             >
               <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Planning</div>
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-                Build planning workflows for upcoming events and choose whether each one stays private or is shared with others.
+                Build planning workflows for upcoming events and organize them between your own plans and the rest of the team.
               </div>
               <div style={{fontSize:12,color:C.gold,marginTop:"auto",justifySelf:"end"}}>Open planning</div>
             </button>
@@ -3013,10 +3070,26 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                   <div style={{textAlign:"left"}}>
                     <div style={{...sectionTitleStyle,textAlign:"left"}}>Event Planning</div>
                     <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6,maxWidth:680}}>
-                      Start with a short intake, then open the event to build out its planning timeline, checklist, and working notes. Keep it private to yourself or make it visible to the team.
+                      Start with a short intake, then open the event to build out its planning timeline, checklist, and working notes. Use the filters to switch between plans that belong to you and plans created by others.
                     </div>
                   </div>
-                  <button className="btn-outline" onClick={() => openWorkflowModal()}>New Event Plan</button>
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <div className="task-filter-group" style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2}}>
+                      {[
+                        { id: "mine", label: "My Plans" },
+                        { id: "others", label: "Others" },
+                      ].map((option) => (
+                        <button
+                          key={option.id}
+                          onClick={() => setPlanningFilter(option.id)}
+                          style={{padding:"6px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:planningFilter===option.id?C.card:"transparent",color:planningFilter===option.id?C.text:C.muted}}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button className="btn-outline" onClick={() => openWorkflowModal()}>New Event Plan</button>
+                  </div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
                   {workflowLoading && (
@@ -3026,7 +3099,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                   )}
                   {!workflowLoading && visibleWorkflows.length === 0 && (
                     <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted,gridColumn:"1 / -1"}}>
-                      No event plans yet.
+                      {planningFilter === "mine" ? "You have not created any event plans yet." : "No event plans from other team members yet."}
                     </div>
                   )}
                   {!workflowLoading && visibleWorkflows.map((workflow) => {
@@ -3084,16 +3157,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                     </div>
                   </div>
                   <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                    {canEditWorkflow(selectedWorkflow) && (
-                      <button
-                        className="btn-outline"
-                        onClick={() => toggleWorkflowVisibility(selectedWorkflow)}
-                        title={selectedWorkflow.visibility === "shared" ? "Visible to others" : "Private to you"}
-                        style={{display:"flex",alignItems:"center",justifyContent:"center",padding:10,minWidth:0}}
-                      >
-                        {selectedWorkflow.visibility === "shared" ? <Icons.eye /> : <Icons.eyeOff />}
-                      </button>
-                    )}
                     {canEditWorkflow(selectedWorkflow) && (
                       <button className="btn-outline" onClick={() => openWorkflowModal(selectedWorkflow)}>Edit Event Details</button>
                     )}
@@ -3294,66 +3357,70 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                         <input className="input-field" placeholder="Timeline task title" value={timelineDraft.title} onChange={(e)=>setTimelineDraft((current) => ({ ...current, title: e.target.value }))} />
                         <input className="input-field" type="date" value={timelineDraft.date} onChange={(e)=>setTimelineDraft((current) => ({ ...current, date: e.target.value }))} />
                         <textarea className="input-field" rows={4} placeholder="What needs to happen for this step?" value={timelineDraft.details} onChange={(e)=>setTimelineDraft((current) => ({ ...current, details: e.target.value }))} style={{resize:"vertical"}} />
-                        {!timelineDraft.id && (
-                          <>
-                            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,textAlign:"left"}}>
-                              <input
-                                type="checkbox"
-                                checked={!!timelineDraft.includeInTasks}
-                                onChange={(e)=>setTimelineDraft((current) => ({
-                                  ...current,
-                                  includeInTasks: e.target.checked,
-                                  reviewRequired: e.target.checked ? current.reviewRequired : false,
-                                  reviewers: e.target.checked ? current.reviewers : [],
-                                }))}
-                              />
-                              Also add this step to my Tasks list
-                            </label>
-                            {timelineDraft.includeInTasks && (
-                              <div style={{display:"grid",gap:10}}>
-                                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                                  Shepherd will create this as a real task assigned to you, and checking it off here will also move that linked task forward.
-                                </div>
-                                <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,textAlign:"left"}}>
-                                  <input
-                                    type="checkbox"
-                                    checked={!!timelineDraft.reviewRequired}
-                                    onChange={(e)=>setTimelineDraft((current) => ({
-                                      ...current,
-                                      reviewRequired: e.target.checked,
-                                      reviewers: e.target.checked ? current.reviewers : [],
-                                    }))}
-                                  />
-                                  This task needs the review workflow
-                                </label>
-                                {timelineDraft.reviewRequired && (
-                                  <>
-                                    <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                                      Pick the reviewers who need to sign off once this linked task reaches review.
-                                    </div>
-                                    <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-                                      {eventPlanningTeamNames.map((name) => {
-                                        const isAssignedPerson = samePerson(name, profile?.full_name || selectedWorkflow.main_contact || "Staff");
-                                        return (
-                                          <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:isAssignedPerson ? C.muted : C.text,opacity:isAssignedPerson ? 0.72 : 1}}>
-                                            <input
-                                              type="checkbox"
-                                              checked={listIncludesPerson(timelineDraft.reviewers || [], name)}
-                                              onChange={()=>toggleTimelineReviewer(name)}
-                                              disabled={isAssignedPerson}
-                                            />
-                                            {name}
-                                            {isAssignedPerson && <span style={{fontSize:11,color:C.muted}}>(Assigned)</span>}
-                                          </label>
-                                        );
-                                      })}
-                                    </div>
-                                  </>
-                                )}
+                        <>
+                          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,textAlign:"left"}}>
+                            <input
+                              type="checkbox"
+                              checked={!!timelineDraft.includeInTasks}
+                              disabled={!!timelineDraft.id && !!timelineDraft.includeInTasks}
+                              onChange={(e)=>setTimelineDraft((current) => ({
+                                ...current,
+                                includeInTasks: e.target.checked,
+                                reviewRequired: e.target.checked ? current.reviewRequired : false,
+                                reviewers: e.target.checked ? current.reviewers : [],
+                              }))}
+                            />
+                            Also add this step to my Tasks list
+                          </label>
+                          {timelineDraft.id && timelineDraft.includeInTasks && (
+                            <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                              This node is already linked to Tasks. You can still update its review workflow below.
+                            </div>
+                          )}
+                          {timelineDraft.includeInTasks && (
+                            <div style={{display:"grid",gap:10}}>
+                              <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                                Shepherd will create or update the linked task assigned to you, and checking it off here will also move that linked task forward.
                               </div>
-                            )}
-                          </>
-                        )}
+                              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,textAlign:"left"}}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!timelineDraft.reviewRequired}
+                                  onChange={(e)=>setTimelineDraft((current) => ({
+                                    ...current,
+                                    reviewRequired: e.target.checked,
+                                    reviewers: e.target.checked ? current.reviewers : [],
+                                  }))}
+                                />
+                                This task needs the review workflow
+                              </label>
+                              {timelineDraft.reviewRequired && (
+                                <>
+                                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                                    Pick the reviewers who need to sign off once this linked task reaches review.
+                                  </div>
+                                  <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                                    {eventPlanningTeamNames.map((name) => {
+                                      const isAssignedPerson = samePerson(name, profile?.full_name || selectedWorkflow.main_contact || "Staff");
+                                      return (
+                                        <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:isAssignedPerson ? C.muted : C.text,opacity:isAssignedPerson ? 0.72 : 1}}>
+                                          <input
+                                            type="checkbox"
+                                            checked={listIncludesPerson(timelineDraft.reviewers || [], name)}
+                                            onChange={()=>toggleTimelineReviewer(name)}
+                                            disabled={isAssignedPerson}
+                                          />
+                                          {name}
+                                          {isAssignedPerson && <span style={{fontSize:11,color:C.muted}}>(Assigned)</span>}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </>
                       </div>
                       <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:22}}>
                         <div>

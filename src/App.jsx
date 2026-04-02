@@ -4113,7 +4113,9 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
       <div>
         <div className="card" style={{padding:22}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h3 style={sectionTitleStyle}>Personal Notepad</h3>
+            <div style={{textAlign:"left",flex:1}}>
+              <h3 style={{...sectionTitleStyle,textAlign:"left"}}>Personal Notepad</h3>
+            </div>
           </div>
           <p style={{fontSize:12,color:C.muted,lineHeight:1.6,textAlign:"left",marginBottom:12}}>
             Keep quick reminders for yourself here. This notepad is private to your account, and your notes can be dragged and dropped into the order you want.

@@ -4215,6 +4215,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const [taskFormError, setTaskFormError] = useState("");
   const [commentDraft, setCommentDraft] = useState("");
   const [commentCursor, setCommentCursor] = useState(0);
+  const [taskCommentError, setTaskCommentError] = useState("");
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentDraft, setEditingCommentDraft] = useState("");
   const commentInputRef = useRef(null);
@@ -4429,6 +4430,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
 
   const addComment = async () => {
     if (!selectedTask || !commentDraft.trim()) return;
+    setTaskCommentError("");
     const nextComment = {
       id: crypto.randomUUID(),
       author: profile?.full_name || "Staff",
@@ -4445,12 +4447,17 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const saveTaskComments = async (taskId, nextComments) => {
     if (!taskId) return false;
     if (isPreview) {
+      setTaskCommentError("");
       setTasks((current) => current.map((task) => task.id === taskId ? normalizeTask({ ...task, comments: nextComments }) : task));
       setSelectedTask((current) => current?.id === taskId ? normalizeTask({ ...current, comments: nextComments }) : current);
       return true;
     }
     const { error } = await supabase.from("tasks").update({ comments: nextComments }).eq("id", taskId);
-    if (error) return false;
+    if (error) {
+      setTaskCommentError(error.message || "We couldn't save that comment.");
+      return false;
+    }
+    setTaskCommentError("");
     setTasks((current) => current.map((task) => task.id === taskId ? normalizeTask({ ...task, comments: nextComments }) : task));
     setSelectedTask((current) => current?.id === taskId ? normalizeTask({ ...current, comments: nextComments }) : current);
     return true;
@@ -4857,6 +4864,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                     )}
                   </div>
                   <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstName` or `@Full Name` to notify someone in this task.</div>
+                  {taskCommentError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{taskCommentError}</div>}
                   <button className="btn-gold" onClick={addComment} style={{alignSelf:"flex-end"}}>Add Comment</button>
                 </div>
               </div>

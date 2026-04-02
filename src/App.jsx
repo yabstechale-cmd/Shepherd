@@ -849,10 +849,14 @@ const getRelativeDueLabel = (date) => {
 };
 const commentMentionsProfile = (comment, profile) => {
   if (!comment?.body || !profile?.full_name) return false;
-  const body = comment.body.toLowerCase();
-  const fullName = profile.full_name.trim().toLowerCase();
-  const firstName = (profile.full_name.split(" ")[0] || "").trim().toLowerCase();
-  return body.includes(`@${fullName}`) || (firstName && body.includes(`@${firstName}`));
+  const body = String(comment.body || "");
+  const fullName = profile.full_name.trim();
+  const firstName = (profile.full_name.split(" ")[0] || "").trim();
+  const candidates = [fullName, firstName].filter(Boolean);
+  return candidates.some((name) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`@${escaped}(?=$|[^a-zA-Z])`, "i").test(body);
+  });
 };
 const getMentionContext = (value, cursor) => {
   const beforeCursor = value.slice(0, cursor);
@@ -866,29 +870,62 @@ const getMentionContext = (value, cursor) => {
     end: cursor,
   };
 };
-const renderCommentBody = (body) => {
-  const parts = String(body || "").split(/(@[a-zA-Z]+(?:\s[a-zA-Z]+)?)/g);
-  return parts.map((part, index) => {
-    if (/^@[a-zA-Z]+(?:\s[a-zA-Z]+)?$/.test(part)) {
-      return (
-        <span
-          key={`${part}-${index}`}
-          style={{
-            color: C.gold,
-            fontWeight: 600,
-            background: C.goldGlow,
-            borderRadius: 6,
-            padding: "1px 5px",
-            display: "inline-block",
-            margin: "0 1px",
-          }}
-        >
-          {part.trim()}
-        </span>
-      );
+const escapeRegExp = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const getMentionCandidates = (names = []) => {
+  const seen = new Set();
+  return names
+    .flatMap((name) => {
+      const fullName = String(name || "").trim();
+      const firstName = fullName.split(" ")[0]?.trim() || "";
+      return [fullName, firstName];
+    })
+    .filter(Boolean)
+    .filter((name) => {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => b.length - a.length);
+};
+const renderCommentBody = (body, mentionableNames = []) => {
+  const text = String(body || "");
+  const mentionCandidates = getMentionCandidates(mentionableNames);
+  if (mentionCandidates.length === 0) return text;
+
+  const pattern = new RegExp(`@(?:${mentionCandidates.map(escapeRegExp).join("|")})(?=$|[^a-zA-Z])`, "gi");
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(<span key={`text-${lastIndex}`}>{text.slice(lastIndex, match.index)}</span>);
     }
-    return <span key={`${part}-${index}`}>{part}</span>;
-  });
+    parts.push(
+      <span
+        key={`mention-${match.index}`}
+        style={{
+          color: C.gold,
+          fontWeight: 600,
+          background: C.goldGlow,
+          borderRadius: 6,
+          padding: "1px 5px",
+          display: "inline-block",
+          margin: "0 1px",
+        }}
+      >
+        {match[0].trim()}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(<span key={`text-${lastIndex}`}>{text.slice(lastIndex)}</span>);
+  }
+
+  return parts;
 };
 const canReviewPurchaseOrders = (profile) => isFinanceDirector(profile) || isSeniorPastor(profile);
 const getPurchaseOrderReviewerDecision = (order, reviewer) => {
@@ -4720,7 +4757,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                           {new Date(comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
                         </div>
                       </div>
-                      <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body)}</div>
+                      <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, teamNames)}</div>
                     </div>
                   )) : (
                     <div style={{fontSize:13,color:C.muted}}>No comments yet.</div>
@@ -5516,7 +5553,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                         {new Date(comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
                       </div>
                     </div>
-                    <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body)}</div>
+                    <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, mentionableNames)}</div>
                   </div>
                 ))
               ) : (

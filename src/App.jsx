@@ -6848,9 +6848,9 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} unreadCount={unreadNotifications.length} openNotificationTarget={openNotificationTarget}/>,
+    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} unreadCount={unreadNotifications.length} openNotificationTarget={openNotificationTarget}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} unreadCount={unreadNotifications.length} openNotificationTarget={openNotificationTarget}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} unreadCount={unreadNotifications.length} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,

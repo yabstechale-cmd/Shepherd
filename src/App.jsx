@@ -164,8 +164,12 @@ const GS = () => (
     .table-row{display:grid;padding:14px 18px;border-bottom:1px solid ${C.border};align-items:center;gap:12px}
     .table-row:hover{background:rgba(255,255,255,.02)}
     .table-row:last-child{border-bottom:none}
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:64px 20px 28px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;margin:0 auto;box-shadow:0 24px 60px rgba(0,0,0,.42);position:relative;pointer-events:auto}
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:64px 20px 28px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;margin:0 auto;box-shadow:0 24px 60px rgba(0,0,0,.42);position:relative;pointer-events:auto;max-height:min(860px,calc(100dvh - 92px));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+    .modal-shell{display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:0 !important;overflow:hidden !important}
+    .modal-shell-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:28px 28px 20px;border-bottom:1px solid ${C.border};flex-shrink:0}
+    .modal-shell-body{display:flex;flex-direction:column;gap:12px;overflow-y:auto;min-height:0;padding:22px 28px 14px;-webkit-overflow-scrolling:touch}
+    .modal-shell-footer{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding:16px 28px 22px;border-top:1px solid ${C.border};flex-shrink:0;background:${C.card}}
     @media (max-width: 760px){
       .app-shell{flex-direction:column}
       .app-sidebar{width:100% !important;min-height:auto !important;border-right:none !important;border-bottom:1px solid ${C.border}}
@@ -205,7 +209,10 @@ const GS = () => (
       .mobile-pad{padding:24px 18px !important}
       .mobile-auth-glow{width:360px !important;height:360px !important;top:10% !important}
       .modal-overlay{padding:56px 16px 24px}
-      .modal{padding:22px;max-height:calc(100vh - 80px)}
+      .modal{padding:22px;max-height:calc(100dvh - 80px)}
+      .modal-shell-header{padding:22px 22px 16px}
+      .modal-shell-body{padding:18px 22px 12px}
+      .modal-shell-footer{padding:14px 22px 20px}
     }
   `}</style>
 );
@@ -3653,12 +3660,12 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       )}
       {showWorkflowModal && (
         <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowWorkflowModal(false)} style={{alignItems:"flex-start",paddingTop:24,paddingBottom:24}}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:700}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+          <div className="modal fadeIn modal-shell" onClick={(e)=>e.stopPropagation()} style={{maxWidth:700,height:"min(780px, calc(100dvh - 48px))",maxHeight:"calc(100dvh - 48px)"}}>
+            <div className="modal-shell-header">
               <h3 style={sectionTitleStyle}>{workflowForm.id ? "Edit Event Plan" : "New Event Plan"}</h3>
               <button onClick={()=>setShowWorkflowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
             </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div className="modal-shell-body">
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Name Of The Event</label>
                 <input className="input-field" placeholder="Example: Women's Night" value={workflowForm.eventName} onChange={(e)=>setWorkflowForm((current) => ({ ...current, eventName: e.target.value }))} />
@@ -3711,9 +3718,9 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Main Contact Person</label>
                 <input className="input-field" placeholder="Who is leading this event?" value={workflowForm.mainContact} onChange={(e)=>setWorkflowForm((current) => ({ ...current, mainContact: e.target.value }))} />
               </div>
+              {workflowError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{workflowError}</div>}
             </div>
-            {workflowError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{workflowError}</div>}
-            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
+            <div className="modal-shell-footer">
               <button className="btn-outline" onClick={()=>setShowWorkflowModal(false)}>Cancel</button>
               <button className="btn-gold" onClick={saveWorkflow}>Save Event Plan</button>
             </div>

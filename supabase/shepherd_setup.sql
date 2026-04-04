@@ -287,7 +287,7 @@ create table if not exists public.event_workflows (
   title text not null,
   event_name text,
   owner_name text not null,
-  visibility text not null default 'private',
+  visibility text not null default 'shared',
   start_date date,
   end_date date,
   location text,
@@ -306,7 +306,7 @@ alter table public.event_workflows add column if not exists linked_event_request
 alter table public.event_workflows add column if not exists title text;
 alter table public.event_workflows add column if not exists event_name text;
 alter table public.event_workflows add column if not exists owner_name text;
-alter table public.event_workflows add column if not exists visibility text not null default 'private';
+alter table public.event_workflows add column if not exists visibility text not null default 'shared';
 alter table public.event_workflows add column if not exists start_date date;
 alter table public.event_workflows add column if not exists end_date date;
 alter table public.event_workflows add column if not exists location text;
@@ -1116,13 +1116,12 @@ using (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = event_workflows.church_id
-      and (
-        public.user_can_manage_church(event_workflows.church_id)
-        or event_workflows.visibility = 'shared'
-        or event_workflows.owner_name = p.full_name
-      )
   )
 );
+
+update public.event_workflows
+set visibility = 'shared'
+where visibility is distinct from 'shared';
 
 drop policy if exists "event workflows same church insert" on public.event_workflows;
 create policy "event workflows same church insert"

@@ -164,8 +164,8 @@ const GS = () => (
     .table-row{display:grid;padding:14px 18px;border-bottom:1px solid ${C.border};align-items:center;gap:12px}
     .table-row:hover{background:rgba(255,255,255,.02)}
     .table-row:last-child{border-bottom:none}
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:64px 20px 28px;overflow:hidden}
-    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;max-height:calc(100vh - 92px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin:0 auto}
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:64px 20px 28px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;margin:0 auto;box-shadow:0 24px 60px rgba(0,0,0,.42);position:relative;pointer-events:auto}
     @media (max-width: 760px){
       .app-shell{flex-direction:column}
       .app-sidebar{width:100% !important;min-height:auto !important;border-right:none !important;border-bottom:1px solid ${C.border}}
@@ -2191,7 +2191,7 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
       </div>
       {showTeamMemberModal && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTeamMemberModal(false)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
-          <div className="modal fadeIn">
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h3 style={sectionTitleStyle}>{editingMemberId ? "Edit Team Member" : "Create Team Member"}</h3>
               <button onClick={()=>{setShowTeamMemberModal(false); setEditingMemberId(null); setForm(blank); setError("");}} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -3091,7 +3091,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                   <div style={{textAlign:"left"}}>
                     <div style={{...sectionTitleStyle,textAlign:"left"}}>Event Planning</div>
                     <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6,maxWidth:680}}>
-                      Start with a short intake, then open the event to build out its planning timeline, checklist, and working notes. Use the filters to switch between plans that belong to you and plans created by others.
+                      Start with a short intake, then open the event to build out its planning timeline, checklist, and working notes. Use the filters to switch between your own plans and plans created by others.
                     </div>
                   </div>
                   <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
@@ -3120,7 +3120,9 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                   )}
                   {!workflowLoading && visibleWorkflows.length === 0 && (
                     <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted,gridColumn:"1 / -1"}}>
-                      {planningFilter === "mine" ? "You have not created any event plans yet." : "No event plans from other team members yet."}
+                      {planningFilter === "mine"
+                        ? "You have not created any event plans yet."
+                        : "No event plans from other team members yet."}
                     </div>
                   )}
                   {!workflowLoading && visibleWorkflows.map((workflow) => {
@@ -3374,7 +3376,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                 </div>
                 {canEditWorkflow(selectedWorkflow) && showTimelineModal && (
                   <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowTimelineModal(false)}>
-                    <div className="modal fadeIn" style={{maxWidth:680}}>
+                    <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:680}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
                         <h3 style={sectionTitleStyle}>{timelineDraft.id ? "Edit Timeline Node" : "Add Timeline Node"}</h3>
                         <button onClick={()=>setShowTimelineModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -3552,7 +3554,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       </div>
       {showEventForm && (
         <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowEventForm(false)}>
-          <div className="modal fadeIn" style={{maxWidth:760}}>
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:760}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h3 style={sectionTitleStyle}>New Event Request</h3>
               <button onClick={()=>setShowEventForm(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -3568,7 +3570,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       )}
       {requestDetails && (
         <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setSelectedRequest(null)}>
-          <div className="modal fadeIn" style={{maxWidth:760}}>
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:760}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{requestDetails.event_name}</h3>
               <button onClick={()=>setSelectedRequest(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -3651,7 +3653,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
       )}
       {showWorkflowModal && (
         <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowWorkflowModal(false)} style={{alignItems:"flex-start",paddingTop:24,paddingBottom:24}}>
-          <div className="modal fadeIn" style={{maxWidth:700}}>
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:700}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h3 style={sectionTitleStyle}>{workflowForm.id ? "Edit Event Plan" : "New Event Plan"}</h3>
               <button onClick={()=>setShowWorkflowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -5086,7 +5088,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       </div>
       {showModal&&(
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
-          <div className="modal fadeIn">
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h3 style={sectionTitleStyle}>{editing?"Edit Task":"New Task"}</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -5160,7 +5162,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       )}
       {selectedTask && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelectedTask(null)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
-          <div className="modal fadeIn" style={{maxWidth:760}}>
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:760}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{selectedTask.title}</h3>
               <button onClick={()=>setSelectedTask(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -5462,7 +5464,7 @@ function Members({ people, setPeople, churchId, church, profile }) {
       </div>
       {showModal&&(
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
-          <div className="modal fadeIn">
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <h3 style={sectionTitleStyle}>{selected?"Edit Person":"Add Person"}</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -6266,7 +6268,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       </div>
       {showModal&& canEditBudget &&(
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
-          <div className="modal fadeIn">
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <h3 style={sectionTitleStyle}>Add Transaction</h3>
               <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -6324,7 +6326,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       )}
       {showPurchaseOrderModal && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowPurchaseOrderModal(false)} style={{alignItems:"flex-start",paddingTop:24}}>
-          <div className="modal fadeIn">
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <h3 style={sectionTitleStyle}>New Purchase Order</h3>
               <button onClick={()=>setShowPurchaseOrderModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -6419,7 +6421,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       )}
       {showBudgetModal && canManageBudgetLinesForMinistry(budgetForm.ministry || defaultMinistry) && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowBudgetModal(false)} style={{alignItems:"flex-start",paddingTop:24}}>
-          <div className="modal fadeIn">
+          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <h3 style={sectionTitleStyle}>{financeView ? "Set Ministry Budget" : "Edit Budget Line Items"}</h3>
               <button onClick={()=>setShowBudgetModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
@@ -6606,6 +6608,22 @@ export default function App() {
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
   const shownNotificationIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const syncModalState = () => {
+      const hasModal = !!document.querySelector(".modal-overlay");
+      document.body.style.overflow = hasModal ? "hidden" : "";
+    };
+    syncModalState();
+    const observer = new MutationObserver(syncModalState);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      document.body.style.overflow = "";
+    };
+  }, []);
+
   const allowedPages = new Set([
     "dashboard",
     "account",

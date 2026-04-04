@@ -164,12 +164,6 @@ const GS = () => (
     .table-row{display:grid;padding:14px 18px;border-bottom:1px solid ${C.border};align-items:center;gap:12px}
     .table-row:hover{background:rgba(255,255,255,.02)}
     .table-row:last-child{border-bottom:none}
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:64px 20px 28px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-    .modal{background:${C.card};border:1px solid ${C.border};border-radius:18px;width:100%;max-width:520px;padding:28px;margin:0 auto;box-shadow:0 24px 60px rgba(0,0,0,.42);position:relative;pointer-events:auto;max-height:min(860px,calc(100dvh - 92px));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
-    .modal-shell{display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:0 !important;overflow:hidden !important}
-    .modal-shell-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:28px 28px 20px;border-bottom:1px solid ${C.border};flex-shrink:0}
-    .modal-shell-body{display:flex;flex-direction:column;gap:12px;overflow-y:auto;min-height:0;padding:22px 28px 14px;-webkit-overflow-scrolling:touch}
-    .modal-shell-footer{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding:16px 28px 22px;border-top:1px solid ${C.border};flex-shrink:0;background:${C.card}}
     @media (max-width: 760px){
       .app-shell{flex-direction:column}
       .app-sidebar{width:100% !important;min-height:auto !important;border-right:none !important;border-bottom:1px solid ${C.border}}
@@ -208,11 +202,6 @@ const GS = () => (
       .request-details-grid{grid-template-columns:1fr !important}
       .mobile-pad{padding:24px 18px !important}
       .mobile-auth-glow{width:360px !important;height:360px !important;top:10% !important}
-      .modal-overlay{padding:56px 16px 24px}
-      .modal{padding:22px;max-height:calc(100dvh - 80px)}
-      .modal-shell-header{padding:22px 22px 16px}
-      .modal-shell-body{padding:18px 22px 12px}
-      .modal-shell-footer{padding:14px 22px 20px}
     }
   `}</style>
 );
@@ -2166,82 +2155,83 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
           </p>
         </div>
       </div>
-      <div className="card" style={{padding:22,textAlign:"left"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-          <h3 style={sectionTitleStyle}>Current Team</h3>
-          {canEditChurchTeam(profile, church) && (
-            <button className="btn-gold" onClick={openNewMemberModal}><Icons.plus/>Create Team Member</button>
-          )}
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
-          {(previewUsers || []).length === 0 && <div style={{fontSize:13,color:C.muted}}>No team members have been added yet.</div>}
-          {(previewUsers || []).map((user) => (
-            <div key={user.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
-              <div>
-                <div style={{fontSize:14,fontWeight:600,color:C.text}}>{user.full_name}</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:4}}>{user.title}</div>
-                <div style={{fontSize:11,color:C.muted,marginTop:4}}>
-                  {isStaffAccountAdmin(user, church) || user.can_see_admin_overview ? "Administrative Oversight" : "Standard Access"}
-                </div>
+      {showTeamMemberModal ? (
+        <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:18}}>
+          <div>
+            <button className="btn-outline" onClick={()=>{setShowTeamMemberModal(false); setEditingMemberId(null); setForm(blank); setError("");}} style={{marginBottom:14}}>
+              Back to Church Team
+            </button>
+            <h3 style={sectionTitleStyle}>{editingMemberId ? "Edit Team Member" : "Create Team Member"}</h3>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <input className="input-field" placeholder="First name" value={form.first_name} onChange={(e)=>setForm({...form,first_name:e.target.value})}/>
+              <input className="input-field" placeholder="Last name" value={form.last_name} onChange={(e)=>setForm({...form,last_name:e.target.value})}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+              <div style={{fontSize:12,color:C.muted}}>Roles</div>
+              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+                {STAFF_ROLE_OPTIONS.map((option) => (
+                  <label key={option.value} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:C.text}}>
+                    <input
+                      type="checkbox"
+                      checked={form.roles.includes(option.value)}
+                      onChange={() => toggleRoleSelection(option.value)}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
               </div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
-                {canEditChurchTeam(profile, church) && (
-                  <div style={{display:"flex",gap:8}}>
-                    <button className="btn-outline" onClick={()=>startEditingMember(user)} style={{padding:"5px 10px",fontSize:12}}>Edit</button>
-                    <button className="btn-outline" onClick={()=>removeStaffMember(user)} style={{padding:"5px 10px",fontSize:12,borderColor:C.danger,color:C.danger}}>Remove</button>
+            </div>
+            <select
+              className="input-field"
+              value={form.oversight}
+              onChange={(e)=>setForm({...form,oversight:e.target.value})}
+              style={{background:C.surface}}
+            >
+              <option value="standard">Standard Access</option>
+              <option value="admin">Administrative Oversight</option>
+            </select>
+            {error && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{error}</div>}
+            <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:8,flexWrap:"wrap"}}>
+              <button className="btn-outline" onClick={()=>{setShowTeamMemberModal(false); setEditingMemberId(null); setForm(blank); setError("");}}>
+                Cancel
+              </button>
+              <button className="btn-gold" onClick={saveStaffMember} disabled={saving || !canEditChurchTeam(profile, church)}>
+                {saving ? "Saving..." : editingMemberId ? "Save Changes" : "Create Team Member"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="card" style={{padding:22,textAlign:"left"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <h3 style={sectionTitleStyle}>Current Team</h3>
+            {canEditChurchTeam(profile, church) && (
+              <button className="btn-gold" onClick={openNewMemberModal}><Icons.plus/>Create Team Member</button>
+            )}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+            {(previewUsers || []).length === 0 && <div style={{fontSize:13,color:C.muted}}>No team members have been added yet.</div>}
+            {(previewUsers || []).map((user) => (
+              <div key={user.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:C.text}}>{user.full_name}</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:4}}>{user.title}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:4}}>
+                    {isStaffAccountAdmin(user, church) || user.can_see_admin_overview ? "Administrative Oversight" : "Standard Access"}
                   </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      {showTeamMemberModal && (
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTeamMemberModal(false)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={sectionTitleStyle}>{editingMemberId ? "Edit Team Member" : "Create Team Member"}</h3>
-              <button onClick={()=>{setShowTeamMemberModal(false); setEditingMemberId(null); setForm(blank); setError("");}} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <input className="input-field" placeholder="First name" value={form.first_name} onChange={(e)=>setForm({...form,first_name:e.target.value})}/>
-                <input className="input-field" placeholder="Last name" value={form.last_name} onChange={(e)=>setForm({...form,last_name:e.target.value})}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:8,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-                <div style={{fontSize:12,color:C.muted}}>Roles</div>
-                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
-                  {STAFF_ROLE_OPTIONS.map((option) => (
-                    <label key={option.value} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:C.text}}>
-                      <input
-                        type="checkbox"
-                        checked={form.roles.includes(option.value)}
-                        onChange={() => toggleRoleSelection(option.value)}
-                      />
-                      <span>{option.label}</span>
-                    </label>
-                  ))}
+                </div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+                  {canEditChurchTeam(profile, church) && (
+                    <div style={{display:"flex",gap:8}}>
+                      <button className="btn-outline" onClick={()=>startEditingMember(user)} style={{padding:"5px 10px",fontSize:12}}>Edit</button>
+                      <button className="btn-outline" onClick={()=>removeStaffMember(user)} style={{padding:"5px 10px",fontSize:12,borderColor:C.danger,color:C.danger}}>Remove</button>
+                    </div>
+                  )}
                 </div>
               </div>
-              <select
-                className="input-field"
-                value={form.oversight}
-                onChange={(e)=>setForm({...form,oversight:e.target.value})}
-                style={{background:C.surface}}
-              >
-                <option value="standard">Standard Access</option>
-                <option value="admin">Administrative Oversight</option>
-              </select>
-              {error && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{error}</div>}
-              <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:8}}>
-                <button className="btn-outline" onClick={()=>{setShowTeamMemberModal(false); setEditingMemberId(null); setForm(blank); setError("");}}>
-                  Cancel
-                </button>
-                <button className="btn-gold" onClick={saveStaffMember} disabled={saving || !canEditChurchTeam(profile, church)}>
-                  {saving ? "Saving..." : editingMemberId ? "Save Changes" : "Create Team Member"}
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       )}
@@ -3092,7 +3082,81 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         )}
         {eventsSection === "planning" && (
           <div className="card" style={{padding:18,borderTop:`3px solid ${C.blue}`,background:`linear-gradient(180deg, rgba(91,143,232,0.08) 0%, ${C.card} 24%)`}}>
-            {!selectedWorkflow && (
+            {showWorkflowModal && (
+              <div style={{display:"grid",gap:18}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                  <div style={{textAlign:"left"}}>
+                    <button className="btn-outline" onClick={() => setShowWorkflowModal(false)} style={{marginBottom:14}}>
+                      Back to Event Planning
+                    </button>
+                    <h3 style={{...pageTitleStyle,textAlign:"left"}}>{workflowForm.id ? "Edit Event Plan" : "New Event Plan"}</h3>
+                    <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6,maxWidth:640}}>
+                      Capture the core event details here, then open the plan to build out the timeline, checklist, and notes.
+                    </div>
+                  </div>
+                </div>
+                <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:14}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Name Of The Event</label>
+                    <input className="input-field" placeholder="Example: Women's Night" value={workflowForm.eventName} onChange={(e)=>setWorkflowForm((current) => ({ ...current, eventName: e.target.value }))} />
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Link To Event Request</label>
+                    <select className="input-field" value={workflowForm.linkedRequestId} onChange={(e)=>{
+                      const linkedRequest = requests.find((request) => request.id === e.target.value);
+                      setWorkflowForm((current) => ({
+                        ...current,
+                        linkedRequestId: e.target.value,
+                        eventName: linkedRequest?.event_name || current.eventName,
+                        startDate: linkedRequest?.single_date || linkedRequest?.multi_start_date || linkedRequest?.recurring_start_date || current.startDate,
+                        endDate: linkedRequest?.multi_end_date || linkedRequest?.single_date || linkedRequest?.recurring_start_date || current.endDate,
+                        location: linkedRequest ? getEventLocationSummary(linkedRequest) : current.location,
+                        mainContact: linkedRequest?.contact_name || current.mainContact,
+                      }));
+                    }} style={{background:C.surface}}>
+                      <option value="">No linked request</option>
+                      {requests.map((request) => (
+                        <option key={request.id} value={request.id}>{request.event_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{display:"grid",gap:10}}>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>From Date</label>
+                      <input className="input-field" type="date" value={workflowForm.startDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, startDate: e.target.value }))} />
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>To Date</label>
+                      <input className="input-field" type="date" value={workflowForm.endDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, endDate: e.target.value }))} />
+                    </div>
+                    <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Start Time</label>
+                        <input className="input-field" type="time" value={workflowForm.startTime || ""} onChange={(e)=>setWorkflowForm((current) => ({ ...current, startTime: e.target.value }))} />
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>End Time</label>
+                        <input className="input-field" type="time" value={workflowForm.endTime || ""} onChange={(e)=>setWorkflowForm((current) => ({ ...current, endTime: e.target.value }))} />
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Location</label>
+                    <input className="input-field" placeholder="Example: Youth Room" value={workflowForm.location} onChange={(e)=>setWorkflowForm((current) => ({ ...current, location: e.target.value }))} />
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Main Contact Person</label>
+                    <input className="input-field" placeholder="Who is leading this event?" value={workflowForm.mainContact} onChange={(e)=>setWorkflowForm((current) => ({ ...current, mainContact: e.target.value }))} />
+                  </div>
+                  {workflowError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{workflowError}</div>}
+                  <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",paddingTop:8}}>
+                    <button className="btn-outline" onClick={() => setShowWorkflowModal(false)}>Cancel</button>
+                    <button className="btn-gold" onClick={saveWorkflow}>Save Event Plan</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {!showWorkflowModal && !selectedWorkflow && (
               <>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:14}}>
                   <div style={{textAlign:"left"}}>
@@ -3175,7 +3239,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                 </div>
               </>
             )}
-            {selectedWorkflow && (
+            {!showWorkflowModal && selectedWorkflow && (
               <div style={{display:"grid",gap:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
                   <div style={{textAlign:"left"}}>
@@ -3382,11 +3446,10 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                   </div>
                 </div>
                 {canEditWorkflow(selectedWorkflow) && showTimelineModal && (
-                  <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowTimelineModal(false)}>
-                    <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:680}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+                  <div className="card" style={{padding:18,textAlign:"left",display:"grid",gap:14}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                         <h3 style={sectionTitleStyle}>{timelineDraft.id ? "Edit Timeline Node" : "Add Timeline Node"}</h3>
-                        <button onClick={()=>setShowTimelineModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
+                        <button className="btn-outline" onClick={()=>setShowTimelineModal(false)} style={{padding:"6px 10px",fontSize:12}}>Back</button>
                       </div>
                       <div style={{display:"grid",gap:10}}>
                         <input className="input-field" placeholder="Timeline task title" value={timelineDraft.title} onChange={(e)=>setTimelineDraft((current) => ({ ...current, title: e.target.value }))} />
@@ -3481,7 +3544,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                           </button>
                         </div>
                       </div>
-                    </div>
                   </div>
                 )}
               </div>
@@ -3490,6 +3552,103 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         )}
         {eventsSection === "requests" && (
         <div className="card" style={{padding:18,borderTop:`3px solid ${C.gold}`,background:`linear-gradient(180deg, rgba(201,168,76,0.08) 0%, ${C.card} 24%)`}}>
+          {showEventForm ? (
+            <div style={{display:"grid",gap:18}}>
+              <div style={{textAlign:"left"}}>
+                <button className="btn-outline" onClick={()=>setShowEventForm(false)} style={{marginBottom:14}}>Back to Event Requests</button>
+                <h3 style={sectionTitleStyle}>New Event Request</h3>
+              </div>
+              <div className="card" style={{padding:20,textAlign:"left"}}>
+                <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
+                {formError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{formError}</div>}
+                <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                  <button className="btn-outline" onClick={()=>setShowEventForm(false)}>Cancel</button>
+                  <button className="btn-gold" onClick={saveEventRequest}>Submit Request</button>
+                </div>
+              </div>
+            </div>
+          ) : requestDetails ? (
+            <div style={{display:"grid",gap:18}}>
+              <div style={{textAlign:"left"}}>
+                <button className="btn-outline" onClick={()=>setSelectedRequest(null)} style={{marginBottom:14}}>Back to Event Requests</button>
+                <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{requestDetails.event_name}</h3>
+              </div>
+              <div style={{display:"grid",gap:14,textAlign:"left"}}>
+                <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <div>
+                    <div style={{fontSize:12,color:C.muted}}>Submitted by</div>
+                    <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.contact_name}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,color:C.muted}}>Submitted on</div>
+                    <div style={{fontSize:13,color:C.text,marginTop:4}}>{fmtDate(requestDetails.submitted_on || requestDetails.created_at)}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,color:C.muted}}>Event Type</div>
+                    <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.event_format}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,color:C.muted}}>Event Date</div>
+                    <div style={{fontSize:13,color:C.text,marginTop:4}}>{getEventDateSummary(requestDetails)}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,color:C.muted}}>Setup Date</div>
+                    <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.setup_datetime ? new Date(requestDetails.setup_datetime).toLocaleString("en-US") : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,color:C.muted}}>Location</div>
+                    <div style={{fontSize:13,color:C.text,marginTop:4}}>{getEventLocationSummary(requestDetails)}</div>
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Contact Details</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.phone} • {requestDetails.email}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Event Description & Purpose</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.description || "—"}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Graphics Direction</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.graphics_reference || "—"}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Additional Resources</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.7,whiteSpace:"pre-line"}}>
+                    {[
+                      requestDetails.av_request ? `Audio & Visual: ${requestDetails.av_request_details || "Requested"}` : null,
+                      requestDetails.kitchen_use ? "Kitchen: Requested" : null,
+                      requestDetails.drip_coffee_only ? "Coffee Shop: Drip Coffee Only" : null,
+                      requestDetails.espresso_drinks ? "Coffee Shop: Espresso Drinks" : null,
+                      requestDetails.tables_needed ? `Tables Needed: ${requestDetails.tables_needed}` : null,
+                      requestDetails.black_vinyl_tablecloths ? "Black Vinyl Tablecloths: Requested" : null,
+                      requestDetails.white_linen_tablecloths ? "White Linen Tablecloths: Requested" : null,
+                      requestDetails.pipe_and_drape ? `Pipe and Drape: ${requestDetails.pipe_and_drape}` : null,
+                      requestDetails.metal_folding_chairs_requested ? `Metal Folding Chairs: ${requestDetails.metal_folding_chairs || "Requested"}` : null,
+                    ].filter(Boolean).join("\n") || "No additional resources requested."}
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.muted}}>Additional Information</div>
+                  <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.additional_information || "—"}</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                {canApproveEventRequests(profile, church) && requestDetails.status !== "approved" && (
+                  <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "approved")}>Approve</button>
+                )}
+                {canApproveEventRequests(profile, church) && requestDetails.status !== "declined" && (
+                  <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "declined")}>Decline</button>
+                )}
+                {canApproveEventRequests(profile, church) && (
+                  <button className="btn-outline" onClick={() => deleteRequest(requestDetails)} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+          <div style={{display:"grid",gap:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:14}}>
             <div style={{textAlign:"left"}}>
               <div style={{...sectionTitleStyle,textAlign:"left"}}>Event Requests</div>
@@ -3557,176 +3716,10 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
               ))}
         </div>
         </div>
+          )}
+        </div>
         )}
       </div>
-      {showEventForm && (
-        <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowEventForm(false)}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:760}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={sectionTitleStyle}>New Event Request</h3>
-              <button onClick={()=>setShowEventForm(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
-            {formError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{formError}</div>}
-            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
-              <button className="btn-outline" onClick={()=>setShowEventForm(false)}>Cancel</button>
-              <button className="btn-gold" onClick={saveEventRequest}>Submit Request</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {requestDetails && (
-        <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setSelectedRequest(null)}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:760}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{requestDetails.event_name}</h3>
-              <button onClick={()=>setSelectedRequest(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div style={{display:"grid",gap:14,textAlign:"left"}}>
-              <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Submitted by</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.contact_name}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Submitted on</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{fmtDate(requestDetails.submitted_on || requestDetails.created_at)}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Event Type</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.event_format}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Event Date</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{getEventDateSummary(requestDetails)}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Setup Date</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.setup_datetime ? new Date(requestDetails.setup_datetime).toLocaleString("en-US") : "—"}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Location</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{getEventLocationSummary(requestDetails)}</div>
-                </div>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Contact Details</div>
-                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.phone} • {requestDetails.email}</div>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Event Description & Purpose</div>
-                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.description || "—"}</div>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Graphics Direction</div>
-                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.graphics_reference || "—"}</div>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Additional Resources</div>
-                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.7,whiteSpace:"pre-line"}}>
-                  {[
-                    requestDetails.av_request ? `Audio & Visual: ${requestDetails.av_request_details || "Requested"}` : null,
-                    requestDetails.kitchen_use ? "Kitchen: Requested" : null,
-                    requestDetails.drip_coffee_only ? "Coffee Shop: Drip Coffee Only" : null,
-                    requestDetails.espresso_drinks ? "Coffee Shop: Espresso Drinks" : null,
-                    requestDetails.tables_needed ? `Tables Needed: ${requestDetails.tables_needed}` : null,
-                    requestDetails.black_vinyl_tablecloths ? "Black Vinyl Tablecloths: Requested" : null,
-                    requestDetails.white_linen_tablecloths ? "White Linen Tablecloths: Requested" : null,
-                    requestDetails.pipe_and_drape ? `Pipe and Drape: ${requestDetails.pipe_and_drape}` : null,
-                    requestDetails.metal_folding_chairs_requested ? `Metal Folding Chairs: ${requestDetails.metal_folding_chairs || "Requested"}` : null,
-                  ].filter(Boolean).join("\n") || "No additional resources requested."}
-                </div>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Additional Information</div>
-                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.additional_information || "—"}</div>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
-              {canApproveEventRequests(profile, church) && requestDetails.status !== "approved" && (
-                <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "approved")}>Approve</button>
-              )}
-              {canApproveEventRequests(profile, church) && requestDetails.status !== "declined" && (
-                <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "declined")}>Decline</button>
-              )}
-              {canApproveEventRequests(profile, church) && (
-                <button className="btn-outline" onClick={() => deleteRequest(requestDetails)} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
-                  Delete
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      {showWorkflowModal && (
-        <div className="modal-overlay" onClick={(e)=>e.target===e.currentTarget&&setShowWorkflowModal(false)} style={{alignItems:"flex-start",paddingTop:24,paddingBottom:24}}>
-          <div className="modal fadeIn modal-shell" onClick={(e)=>e.stopPropagation()} style={{maxWidth:700,height:"min(780px, calc(100dvh - 48px))",maxHeight:"calc(100dvh - 48px)"}}>
-            <div className="modal-shell-header">
-              <h3 style={sectionTitleStyle}>{workflowForm.id ? "Edit Event Plan" : "New Event Plan"}</h3>
-              <button onClick={()=>setShowWorkflowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div className="modal-shell-body">
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Name Of The Event</label>
-                <input className="input-field" placeholder="Example: Women's Night" value={workflowForm.eventName} onChange={(e)=>setWorkflowForm((current) => ({ ...current, eventName: e.target.value }))} />
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Link To Event Request</label>
-                <select className="input-field" value={workflowForm.linkedRequestId} onChange={(e)=>{
-                  const linkedRequest = requests.find((request) => request.id === e.target.value);
-                  setWorkflowForm((current) => ({
-                    ...current,
-                    linkedRequestId: e.target.value,
-                    eventName: linkedRequest?.event_name || current.eventName,
-                    startDate: linkedRequest?.single_date || linkedRequest?.multi_start_date || linkedRequest?.recurring_start_date || current.startDate,
-                    endDate: linkedRequest?.multi_end_date || linkedRequest?.single_date || linkedRequest?.recurring_start_date || current.endDate,
-                    location: linkedRequest ? getEventLocationSummary(linkedRequest) : current.location,
-                    mainContact: linkedRequest?.contact_name || current.mainContact,
-                  }));
-                }} style={{background:C.surface}}>
-                  <option value="">No linked request</option>
-                  {requests.map((request) => (
-                    <option key={request.id} value={request.id}>{request.event_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div style={{display:"grid",gap:10}}>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>From Date</label>
-                  <input className="input-field" type="date" value={workflowForm.startDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, startDate: e.target.value }))} />
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>To Date</label>
-                  <input className="input-field" type="date" value={workflowForm.endDate} onChange={(e)=>setWorkflowForm((current) => ({ ...current, endDate: e.target.value }))} />
-                </div>
-                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                    <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Start Time</label>
-                    <input className="input-field" type="time" value={workflowForm.startTime || ""} onChange={(e)=>setWorkflowForm((current) => ({ ...current, startTime: e.target.value }))} />
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                    <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>End Time</label>
-                    <input className="input-field" type="time" value={workflowForm.endTime || ""} onChange={(e)=>setWorkflowForm((current) => ({ ...current, endTime: e.target.value }))} />
-                  </div>
-                </div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Location</label>
-                <input className="input-field" placeholder="Example: Youth Room" value={workflowForm.location} onChange={(e)=>setWorkflowForm((current) => ({ ...current, location: e.target.value }))} />
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Main Contact Person</label>
-                <input className="input-field" placeholder="Who is leading this event?" value={workflowForm.mainContact} onChange={(e)=>setWorkflowForm((current) => ({ ...current, mainContact: e.target.value }))} />
-              </div>
-              {workflowError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{workflowError}</div>}
-            </div>
-            <div className="modal-shell-footer">
-              <button className="btn-outline" onClick={()=>setShowWorkflowModal(false)}>Cancel</button>
-              <button className="btn-gold" onClick={saveWorkflow}>Save Event Plan</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -5047,6 +5040,299 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
           ))}
         </div>
       </div>
+      {showModal && (
+        <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:18,marginBottom:18}}>
+          <div>
+            <button className="btn-outline" onClick={()=>setShowModal(false)} style={{marginBottom:14}}>Back to Tasks</button>
+            <h3 style={sectionTitleStyle}>{editing?"Edit Task":"New Task"}</h3>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Task Title</label>
+              <input className="input-field" placeholder="Task title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+            </div>
+            <div className="task-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
+                <select className="input-field" value={form.ministry} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
+                  {orderedCategories.map(m=><option key={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Assigned To</label>
+                <select className="input-field" value={canAssignToAnyone ? form.assignee : (profile?.full_name || "")} onChange={e=>setForm({...form,assignee:e.target.value})} style={{background:C.surface}} disabled={!canAssignToAnyone}>
+                  {allowedAssignees.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left",width:"100%"}}>Due Date</label>
+                <input className="input-field" type="date" value={form.due_date} onChange={e=>setForm({...form,due_date:e.target.value})}/>
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Review Workflow</label>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
+                <input
+                  type="checkbox"
+                  checked={form.review_required}
+                  onChange={(e)=>setForm({...form,review_required:e.target.checked,reviewers:e.target.checked ? form.reviewers : [],review_approvals:[]})}
+                />
+                Requires Review Before Completion
+              </label>
+              {form.review_required && (
+                <>
+                  <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                    {teamNames.map((name) => {
+                      const assignedName = canAssignToAnyone ? form.assignee : profile?.full_name;
+                      const isAssignedPerson = samePerson(name, assignedName);
+                      return (
+                    <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:isAssignedPerson ? C.muted : C.text,opacity:isAssignedPerson ? 0.72 : 1}}>
+                      <input type="checkbox" checked={listIncludesPerson(form.reviewers || [], name)} onChange={()=>toggleReviewer(name)} disabled={isAssignedPerson} />
+                      {name}
+                      {isAssignedPerson && <span style={{fontSize:11,color:C.muted}}>(Assigned)</span>}
+                    </label>
+                      );
+                    })}
+                  </div>
+                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                    The assigned person cannot review their own task, but every staff member is shown here for visibility.
+                  </div>
+                </>
+              )}
+            </div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Notes</label>
+              <textarea className="input-field" placeholder="Notes (optional)" rows={3} value={form.notes||""} onChange={e=>setForm({...form,notes:e.target.value})} style={{resize:"vertical"}}/>
+            </div>
+          </div>
+          {taskFormError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{taskFormError}</div>}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
+            <button className="btn-gold" onClick={save}>Save Task</button>
+          </div>
+        </div>
+      )}
+      {selectedTask && !showModal && (
+        <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,marginBottom:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+            <div>
+              <button className="btn-outline" onClick={()=>setSelectedTask(null)} style={{marginBottom:14}}>Back to Tasks</button>
+              <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{selectedTask.title}</h3>
+            </div>
+          </div>
+          <div style={{display:"grid",gap:16,textAlign:"left"}}>
+            <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Assigned To</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4}}>{selectedTask.assignee}</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Status</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4}}>{STATUS_STYLES[selectedTask.status]?.label || "Not Started"}</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Ministry</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4}}>{selectedTask.ministry}</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Due Date</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4}}>{fmtDate(selectedTask.due_date)}</div>
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:C.muted}}>Task Details</div>
+              <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>
+                {eventPlanName ? (
+                  <div>
+                    Linked from event plan: <strong>{eventPlanName}</strong>
+                  </div>
+                ) : (
+                  taskNotesBody || "No additional notes yet."
+                )}
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:C.muted}}>Shared Link</div>
+              {selectedTask.share_link ? (
+                <div style={{marginTop:6}}>
+                  <a href={selectedTask.share_link} target="_blank" rel="noreferrer" style={{fontSize:13,color:C.gold,textDecoration:"none",wordBreak:"break-all"}}>
+                    {selectedTask.share_link}
+                  </a>
+                </div>
+              ) : (
+                <div style={{fontSize:13,color:C.muted,marginTop:4}}>No digital link attached yet.</div>
+              )}
+            </div>
+            <div>
+              <div style={{fontSize:12,color:C.muted}}>Review Workflow</div>
+              {selectedTask.review_required ? (
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+                  {selectedTask.reviewers.map((reviewer) => {
+                    const decision = getTaskReviewerDecision(selectedTask, reviewer);
+                    const isCurrentReviewer = samePerson(reviewer, profile?.full_name);
+                    const reviewerCanRespond = isCurrentReviewer && canApproveTaskReview(profile, selectedTask);
+                    const decisionLabel = decision?.action === "approved"
+                      ? "Approved"
+                      : decision?.action === "denied"
+                        ? "Denied"
+                        : "Pending";
+                    const decisionTone = decision?.action === "approved"
+                      ? C.success
+                      : decision?.action === "denied"
+                        ? C.danger
+                        : C.muted;
+                    return (
+                      <div key={reviewer} style={{display:"flex",flexDirection:"column",gap:8,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                          <div>
+                            <div style={{fontSize:13,color:C.text}}>{reviewer}</div>
+                            {decision?.created_at && (
+                              <div style={{fontSize:11,color:C.muted,marginTop:3}}>
+                                {new Date(decision.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                              </div>
+                            )}
+                            {isCurrentReviewer && !decision && (
+                              <div style={{fontSize:11,color:C.gold,marginTop:3}}>Awaiting your review</div>
+                            )}
+                          </div>
+                          <div style={{fontSize:12,color:decisionTone,fontWeight:600}}>{decisionLabel}</div>
+                        </div>
+                        {reviewerCanRespond && (
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                            <button className="btn-outline" onClick={()=>updateTaskReviewStatus(selectedTask, "approved")} style={{padding:"7px 10px",color:C.success,borderColor:"rgba(82,200,122,.35)"}}>
+                              Approve
+                            </button>
+                            <button className="btn-outline" onClick={()=>updateTaskReviewStatus(selectedTask, "denied")} style={{padding:"7px 10px",color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                              Deny
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{fontSize:13,color:C.muted,marginTop:6}}>This task does not require review.</div>
+              )}
+            </div>
+            <div style={{display:"grid",gap:10,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+              <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontSize:18,fontWeight:600,color:C.text,lineHeight:1.3}}>Team Discussion</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>Everyone who can view this task can read and join the conversation here.</div>
+                </div>
+                <button className="btn-outline" onClick={() => setTaskCommentsOpen((current) => !current)} style={{padding:"5px 10px",fontSize:12}}>
+                  {taskCommentsOpen ? "Collapse" : "Expand"}
+                </button>
+              </div>
+              {taskCommentsOpen ? (
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:2}}>
+                {(selectedTask.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).length > 0 ? (selectedTask.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).map((comment) => (
+                  <div
+                    key={comment.id}
+                    ref={(node) => {
+                      if (node) taskCommentRefs.current[comment.id] = node;
+                      else delete taskCommentRefs.current[comment.id];
+                    }}
+                    style={{
+                      padding:"10px 12px",
+                      border:`1px solid ${highlightedTaskCommentId === comment.id ? C.goldDim : C.border}`,
+                      borderRadius:10,
+                      background:highlightedTaskCommentId === comment.id ? C.goldGlow : C.surface,
+                      boxShadow: highlightedTaskCommentId === comment.id ? "0 0 0 1px rgba(201,168,76,.25)" : "none",
+                    }}
+                  >
+                    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                      <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
+                      <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+                        {new Date(comment.updated_at || comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                        {comment.updated_at && <div>Edited</div>}
+                      </div>
+                    </div>
+                    {editingCommentId === comment.id ? (
+                      <div style={{display:"grid",gap:10,marginTop:8}}>
+                        <textarea
+                          className="input-field"
+                          rows={3}
+                          value={editingCommentDraft}
+                          onChange={(e)=>setEditingCommentDraft(e.target.value)}
+                          style={{resize:"vertical"}}
+                        />
+                        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                          <button className="btn-outline" onClick={cancelEditComment} style={{padding:"6px 10px",fontSize:12}}>Cancel</button>
+                          <button className="btn-gold" onClick={() => saveEditedComment(comment)} style={{padding:"6px 12px",fontSize:12}}>Save</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, teamNames)}</div>
+                    )}
+                    {canManageComment(comment, profile) && editingCommentId !== comment.id && (
+                      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+                        <button className="btn-outline" onClick={() => beginEditComment(comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
+                        <button className="btn-outline" onClick={() => deleteTaskComment(comment)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>Delete</button>
+                      </div>
+                    )}
+                  </div>
+                )) : (
+                  <div style={{fontSize:13,color:C.muted}}>No comments yet.</div>
+                )}
+                <div style={{position:"relative"}}>
+                  <textarea
+                    ref={commentInputRef}
+                    className="input-field"
+                    rows={3}
+                    placeholder="Leave a comment or revision note..."
+                    value={commentDraft}
+                    onChange={(e)=>{setCommentDraft(e.target.value); setCommentCursor(e.target.selectionStart);}}
+                    onKeyUp={(e)=>setCommentCursor(e.currentTarget.selectionStart)}
+                    onClick={(e)=>setCommentCursor(e.currentTarget.selectionStart)}
+                    style={{resize:"vertical"}}
+                  />
+                  {mentionSuggestions.length > 0 && (
+                    <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 6px)",border:`1px solid ${C.border}`,borderRadius:12,background:C.card,boxShadow:"0 12px 28px rgba(0,0,0,.28)",zIndex:20,overflow:"hidden"}}>
+                      {mentionSuggestions.map((entry) => (
+                        <button
+                          key={entry.fullName}
+                          type="button"
+                          onClick={() => insertMention(entry.fullName)}
+                          style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"left",background:"transparent",border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",color:C.text,fontSize:13}}
+                        >
+                          @{entry.token}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstLast` to notify someone in this task.</div>
+                {taskCommentError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{taskCommentError}</div>}
+                <button className="btn-gold" onClick={addComment} style={{alignSelf:"flex-end"}}>Add Comment</button>
+              </div>
+              ) : (
+                <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Discussion collapsed. Expand it when you want to catch up or reply.</div>
+              )}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            {canEditTask(profile, church, selectedTask) && (
+              <button className="btn-outline" onClick={()=>openEdit(selectedTask)}>Edit Task</button>
+            )}
+            {canEditTask(profile, church, selectedTask) ? (
+              <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,background:C.card,padding:"8px 10px",fontSize:12}}>
+                <option value="todo">Not Started</option>
+                <option value="in-progress">In Progress</option>
+                <option value="in-review">In Review</option>
+                <option value="done" disabled={selectedTask.review_required && selectedTask.reviewers.some((name) => !listIncludesPerson(selectedTask.review_approvals, name))}>Done</option>
+              </select>
+            ) : null}
+            {canEditTask(profile, church, selectedTask) && (
+              <button className="btn-outline" onClick={()=>{del(selectedTask.id); setSelectedTask(null);}} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                Delete
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {!showModal && !selectedTask && (
       <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16,alignItems:"start"}}>
         {["todo","in-progress","in-review","done"].map((statusKey) => (
           <div key={statusKey} className="card" style={{padding:16,minHeight:collapsedColumns?.[statusKey] ? "auto" : 420,borderTop:`3px solid ${STATUS_STYLES[statusKey].accent}`,background:`linear-gradient(180deg, ${STATUS_STYLES[statusKey].surface} 0%, ${C.card} 24%)`}}>
@@ -5093,299 +5379,6 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
           </div>
         ))}
       </div>
-      {showModal&&(
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={sectionTitleStyle}>{editing?"Edit Task":"New Task"}</h3>
-              <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Task Title</label>
-                <input className="input-field" placeholder="Task title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
-              </div>
-              <div className="task-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
-                  <select className="input-field" value={form.ministry} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
-                    {orderedCategories.map(m=><option key={m}>{m}</option>)}
-                  </select>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Assigned To</label>
-                  <select className="input-field" value={canAssignToAnyone ? form.assignee : (profile?.full_name || "")} onChange={e=>setForm({...form,assignee:e.target.value})} style={{background:C.surface}} disabled={!canAssignToAnyone}>
-                    {allowedAssignees.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
-                  <label style={{fontSize:12,color:C.muted,textAlign:"left",width:"100%"}}>Due Date</label>
-                  <input className="input-field" type="date" value={form.due_date} onChange={e=>setForm({...form,due_date:e.target.value})}/>
-                </div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Review Workflow</label>
-                <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
-                  <input
-                    type="checkbox"
-                    checked={form.review_required}
-                    onChange={(e)=>setForm({...form,review_required:e.target.checked,reviewers:e.target.checked ? form.reviewers : [],review_approvals:[]})}
-                  />
-                  Requires Review Before Completion
-                </label>
-                {form.review_required && (
-                  <>
-                    <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-                      {teamNames.map((name) => {
-                        const assignedName = canAssignToAnyone ? form.assignee : profile?.full_name;
-                        const isAssignedPerson = samePerson(name, assignedName);
-                        return (
-                      <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:isAssignedPerson ? C.muted : C.text,opacity:isAssignedPerson ? 0.72 : 1}}>
-                        <input type="checkbox" checked={listIncludesPerson(form.reviewers || [], name)} onChange={()=>toggleReviewer(name)} disabled={isAssignedPerson} />
-                        {name}
-                        {isAssignedPerson && <span style={{fontSize:11,color:C.muted}}>(Assigned)</span>}
-                      </label>
-                        );
-                      })}
-                    </div>
-                    <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                      The assigned person cannot review their own task, but every staff member is shown here for visibility.
-                    </div>
-                  </>
-                )}
-              </div>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Notes</label>
-                <textarea className="input-field" placeholder="Notes (optional)" rows={3} value={form.notes||""} onChange={e=>setForm({...form,notes:e.target.value})} style={{resize:"vertical"}}/>
-              </div>
-            </div>
-            {taskFormError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{taskFormError}</div>}
-            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
-              <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
-              <button className="btn-gold" onClick={save}>Save Task</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {selectedTask && (
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelectedTask(null)} style={{alignItems:"flex-start",paddingTop:72,paddingBottom:24}}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()} style={{maxWidth:760}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{selectedTask.title}</h3>
-              <button onClick={()=>setSelectedTask(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div style={{display:"grid",gap:16,textAlign:"left"}}>
-              <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Assigned To</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{selectedTask.assignee}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Status</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{STATUS_STYLES[selectedTask.status]?.label || "Not Started"}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Ministry</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{selectedTask.ministry}</div>
-                </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Due Date</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4}}>{fmtDate(selectedTask.due_date)}</div>
-                </div>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Task Details</div>
-                <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>
-                  {eventPlanName ? (
-                    <div>
-                      Linked from event plan: <strong>{eventPlanName}</strong>
-                    </div>
-                  ) : (
-                    taskNotesBody || "No additional notes yet."
-                  )}
-                </div>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Shared Link</div>
-                {selectedTask.share_link ? (
-                  <div style={{marginTop:6}}>
-                    <a href={selectedTask.share_link} target="_blank" rel="noreferrer" style={{fontSize:13,color:C.gold,textDecoration:"none",wordBreak:"break-all"}}>
-                      {selectedTask.share_link}
-                    </a>
-                  </div>
-                ) : (
-                  <div style={{fontSize:13,color:C.muted,marginTop:4}}>No digital link attached yet.</div>
-                )}
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.muted}}>Review Workflow</div>
-                {selectedTask.review_required ? (
-                  <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
-                    {selectedTask.reviewers.map((reviewer) => {
-                      const decision = getTaskReviewerDecision(selectedTask, reviewer);
-                      const isCurrentReviewer = samePerson(reviewer, profile?.full_name);
-                      const reviewerCanRespond = isCurrentReviewer && canApproveTaskReview(profile, selectedTask);
-                      const decisionLabel = decision?.action === "approved"
-                        ? "Approved"
-                        : decision?.action === "denied"
-                          ? "Denied"
-                          : "Pending";
-                      const decisionTone = decision?.action === "approved"
-                        ? C.success
-                        : decision?.action === "denied"
-                          ? C.danger
-                          : C.muted;
-                      return (
-                        <div key={reviewer} style={{display:"flex",flexDirection:"column",gap:8,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
-                          <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
-                            <div>
-                              <div style={{fontSize:13,color:C.text}}>{reviewer}</div>
-                              {decision?.created_at && (
-                                <div style={{fontSize:11,color:C.muted,marginTop:3}}>
-                                  {new Date(decision.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
-                                </div>
-                              )}
-                              {isCurrentReviewer && !decision && (
-                                <div style={{fontSize:11,color:C.gold,marginTop:3}}>Awaiting your review</div>
-                              )}
-                            </div>
-                            <div style={{fontSize:12,color:decisionTone,fontWeight:600}}>{decisionLabel}</div>
-                          </div>
-                          {reviewerCanRespond && (
-                            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                              <button className="btn-outline" onClick={()=>updateTaskReviewStatus(selectedTask, "approved")} style={{padding:"7px 10px",color:C.success,borderColor:"rgba(82,200,122,.35)"}}>
-                                Approve
-                              </button>
-                              <button className="btn-outline" onClick={()=>updateTaskReviewStatus(selectedTask, "denied")} style={{padding:"7px 10px",color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
-                                Deny
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{fontSize:13,color:C.muted,marginTop:6}}>This task does not require review.</div>
-                )}
-              </div>
-              <div style={{display:"grid",gap:10,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
-                <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
-                  <div style={{textAlign:"left"}}>
-                    <div style={{fontSize:18,fontWeight:600,color:C.text,lineHeight:1.3}}>Team Discussion</div>
-                    <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>Everyone who can view this task can read and join the conversation here.</div>
-                  </div>
-                  <button className="btn-outline" onClick={() => setTaskCommentsOpen((current) => !current)} style={{padding:"5px 10px",fontSize:12}}>
-                    {taskCommentsOpen ? "Collapse" : "Expand"}
-                  </button>
-                </div>
-                {taskCommentsOpen ? (
-                <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:2}}>
-                  {(selectedTask.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).length > 0 ? (selectedTask.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).map((comment) => (
-                    <div
-                      key={comment.id}
-                      ref={(node) => {
-                        if (node) taskCommentRefs.current[comment.id] = node;
-                        else delete taskCommentRefs.current[comment.id];
-                      }}
-                      style={{
-                        padding:"10px 12px",
-                        border:`1px solid ${highlightedTaskCommentId === comment.id ? C.goldDim : C.border}`,
-                        borderRadius:10,
-                        background:highlightedTaskCommentId === comment.id ? C.goldGlow : C.surface,
-                        boxShadow: highlightedTaskCommentId === comment.id ? "0 0 0 1px rgba(201,168,76,.25)" : "none",
-                      }}
-                    >
-                      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
-                        <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
-                        <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
-                          {new Date(comment.updated_at || comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
-                          {comment.updated_at && <div>Edited</div>}
-                        </div>
-                      </div>
-                      {editingCommentId === comment.id ? (
-                        <div style={{display:"grid",gap:10,marginTop:8}}>
-                          <textarea
-                            className="input-field"
-                            rows={3}
-                            value={editingCommentDraft}
-                            onChange={(e)=>setEditingCommentDraft(e.target.value)}
-                            style={{resize:"vertical"}}
-                          />
-                          <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-                            <button className="btn-outline" onClick={cancelEditComment} style={{padding:"6px 10px",fontSize:12}}>Cancel</button>
-                            <button className="btn-gold" onClick={() => saveEditedComment(comment)} style={{padding:"6px 12px",fontSize:12}}>Save</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{fontSize:13,color:C.text,marginTop:6,lineHeight:1.8}}>{renderCommentBody(comment.body, teamNames)}</div>
-                      )}
-                      {canManageComment(comment, profile) && editingCommentId !== comment.id && (
-                        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
-                          <button className="btn-outline" onClick={() => beginEditComment(comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
-                          <button className="btn-outline" onClick={() => deleteTaskComment(comment)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>Delete</button>
-                        </div>
-                      )}
-                    </div>
-                  )) : (
-                    <div style={{fontSize:13,color:C.muted}}>No comments yet.</div>
-                  )}
-                  <div style={{position:"relative"}}>
-                    <textarea
-                      ref={commentInputRef}
-                      className="input-field"
-                      rows={3}
-                      placeholder="Leave a comment or revision note..."
-                      value={commentDraft}
-                      onChange={(e)=>{setCommentDraft(e.target.value); setCommentCursor(e.target.selectionStart);}}
-                      onKeyUp={(e)=>setCommentCursor(e.currentTarget.selectionStart)}
-                      onClick={(e)=>setCommentCursor(e.currentTarget.selectionStart)}
-                      style={{resize:"vertical"}}
-                    />
-                    {mentionSuggestions.length > 0 && (
-                      <div style={{position:"absolute",left:0,right:0,top:"calc(100% + 6px)",border:`1px solid ${C.border}`,borderRadius:12,background:C.card,boxShadow:"0 12px 28px rgba(0,0,0,.28)",zIndex:20,overflow:"hidden"}}>
-                        {mentionSuggestions.map((entry) => (
-                          <button
-                            key={entry.fullName}
-                            type="button"
-                            onClick={() => insertMention(entry.fullName)}
-                            style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"left",background:"transparent",border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",color:C.text,fontSize:13}}
-                          >
-                            @{entry.token}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstLast` to notify someone in this task.</div>
-                  {taskCommentError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{taskCommentError}</div>}
-                  <button className="btn-gold" onClick={addComment} style={{alignSelf:"flex-end"}}>Add Comment</button>
-                </div>
-                ) : (
-                  <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Discussion collapsed. Expand it when you want to catch up or reply.</div>
-                )}
-              </div>
-            </div>
-            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end",flexWrap:"wrap"}}>
-              {canEditTask(profile, church, selectedTask) && (
-                <button className="btn-outline" onClick={()=>openEdit(selectedTask)}>Edit Task</button>
-              )}
-              {canEditTask(profile, church, selectedTask) ? (
-                <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,background:C.card,padding:"8px 10px",fontSize:12}}>
-                  <option value="todo">Not Started</option>
-                  <option value="in-progress">In Progress</option>
-                  <option value="in-review">In Review</option>
-                  <option value="done" disabled={selectedTask.review_required && selectedTask.reviewers.some((name) => !listIncludesPerson(selectedTask.review_approvals, name))}>Done</option>
-                </select>
-              ) : null}
-              {canEditTask(profile, church, selectedTask) && (
-                <button className="btn-outline" onClick={()=>{del(selectedTask.id); setSelectedTask(null);}} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
-                  Delete
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -5446,6 +5439,38 @@ function Members({ people, setPeople, churchId, church, profile }) {
         {canEditPeople && <button className="btn-gold" onClick={openNew}><Icons.plus/>Add Person</button>}
       </div>
       <input className="input-field" placeholder="Search by name or ministry…" value={search} onChange={e=>setSearch(e.target.value)} style={{maxWidth:380,marginBottom:20}}/>
+      {showModal ? (
+        <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:16}}>
+          <div>
+            <button className="btn-outline" onClick={()=>setShowModal(false)} style={{marginBottom:14}}>Back to People Care</button>
+            <h3 style={sectionTitleStyle}>{selected?"Edit Person":"Add Person"}</h3>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <input className="input-field" placeholder="Full name" value={form.full_name||""} onChange={e=>setForm({...form,full_name:e.target.value})}/>
+            <div className="member-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <input className="input-field" placeholder="Role (e.g. Worship Leader)" value={form.role||""} onChange={e=>setForm({...form,role:e.target.value})}/>
+              <select className="input-field" value={form.ministry||"Admin"} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
+                {TASK_CATEGORIES.map(m=><option key={m}>{m}</option>)}
+              </select>
+              <input className="input-field" placeholder="Email" value={form.email||""} onChange={e=>setForm({...form,email:e.target.value})}/>
+              <input className="input-field" placeholder="Phone" value={form.phone||""} onChange={e=>setForm({...form,phone:e.target.value})}/>
+              <select className="input-field" value={form.tier||"volunteer"} onChange={e=>setForm({...form,tier:e.target.value})} style={{background:C.surface}}>
+                <option value="staff">Staff 👔</option>
+                <option value="elder">Elder 🕊️</option>
+                <option value="volunteer">Volunteer 🙋</option>
+                <option value="member">Member</option>
+              </select>
+              <input className="input-field" type="date" placeholder="Last contact" value={form.last_contact||""} onChange={e=>setForm({...form,last_contact:e.target.value})}/>
+            </div>
+            <textarea className="input-field" placeholder="Prayer request (optional)" rows={2} value={form.prayer_request||""} onChange={e=>setForm({...form,prayer_request:e.target.value})} style={{resize:"vertical"}}/>
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            {selected&&<button className="btn-outline" onClick={()=>{toggleFollowUp(selected);setShowModal(false);}} style={{borderColor:selected.status==="follow-up"?C.success:C.gold,color:selected.status==="follow-up"?C.success:C.gold}}>{selected.status==="follow-up"?"Mark Active":"Flag Follow-up"}</button>}
+            <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
+            <button className="btn-gold" onClick={save}>Save</button>
+          </div>
+        </div>
+      ) : (
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
         {filtered.map(p=>(
           <div key={p.id} className="card" style={{padding:20,cursor:canEditPeople?"pointer":"default",borderColor:p.status==="follow-up"?C.goldDim:C.border}} onClick={()=>canEditPeople && openEdit(p)}>
@@ -5469,39 +5494,6 @@ function Members({ people, setPeople, churchId, church, profile }) {
         ))}
         {filtered.length===0&&<div style={{color:C.muted,fontSize:13,gridColumn:"1/-1",padding:"40px 0",textAlign:"center"}}>No people found. Add someone!</div>}
       </div>
-      {showModal&&(
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <h3 style={sectionTitleStyle}>{selected?"Edit Person":"Add Person"}</h3>
-              <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <input className="input-field" placeholder="Full name" value={form.full_name||""} onChange={e=>setForm({...form,full_name:e.target.value})}/>
-              <div className="member-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <input className="input-field" placeholder="Role (e.g. Worship Leader)" value={form.role||""} onChange={e=>setForm({...form,role:e.target.value})}/>
-                <select className="input-field" value={form.ministry||"Admin"} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
-                  {TASK_CATEGORIES.map(m=><option key={m}>{m}</option>)}
-                </select>
-                <input className="input-field" placeholder="Email" value={form.email||""} onChange={e=>setForm({...form,email:e.target.value})}/>
-                <input className="input-field" placeholder="Phone" value={form.phone||""} onChange={e=>setForm({...form,phone:e.target.value})}/>
-                <select className="input-field" value={form.tier||"volunteer"} onChange={e=>setForm({...form,tier:e.target.value})} style={{background:C.surface}}>
-                  <option value="staff">Staff 👔</option>
-                  <option value="elder">Elder 🕊️</option>
-                  <option value="volunteer">Volunteer 🙋</option>
-                  <option value="member">Member</option>
-                </select>
-                <input className="input-field" type="date" placeholder="Last contact" value={form.last_contact||""} onChange={e=>setForm({...form,last_contact:e.target.value})}/>
-              </div>
-              <textarea className="input-field" placeholder="Prayer request (optional)" rows={2} value={form.prayer_request||""} onChange={e=>setForm({...form,prayer_request:e.target.value})} style={{resize:"vertical"}}/>
-            </div>
-            <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end"}}>
-              {selected&&<button className="btn-outline" onClick={()=>{toggleFollowUp(selected);setShowModal(false);}} style={{borderColor:selected.status==="follow-up"?C.success:C.gold,color:selected.status==="follow-up"?C.success:C.gold}}>{selected.status==="follow-up"?"Mark Active":"Flag Follow-up"}</button>}
-              <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
-              <button className="btn-gold" onClick={save}>Save</button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -6018,6 +6010,212 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
           <button className="btn-outline" onClick={() => openPurchaseOrderModal(defaultMinistry)}><Icons.plus/>New Purchase Order</button>
         </div>
       </div>
+      {showModal && canEditBudget && (
+        <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:16,marginBottom:22}}>
+          <div>
+            <button className="btn-outline" onClick={()=>setShowModal(false)} style={{marginBottom:14}}>Back to Finances</button>
+            <h3 style={sectionTitleStyle}>Add Transaction</h3>
+          </div>
+          <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
+            {["expense","income"].map(type=>(
+              <button key={type} onClick={()=>setForm({...form,type})} style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:500,background:form.type===type?C.card:"transparent",color:form.type===type?(type==="income"?C.success:C.danger):C.muted}}>
+                {type==="expense"?"↓ Expense":"↑ Income"}
+              </button>
+            ))}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Description</label>
+              <input className="input-field" placeholder="Description" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Amount</label>
+              <input className="input-field" placeholder="$0.00" type="number" inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date</label>
+              <input className="input-field" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
+              <input className="input-field" value={form.ministry} readOnly />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Item</label>
+              <input className="input-field" list="budget-category-options" placeholder={selectedMinistryBudgetItems.length > 0 ? "Choose a line item" : "Finance needs to create line items first"} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/>
+              <datalist id="budget-category-options">
+                {[...ministryLineItemSuggestions, ...categorySuggestions].filter((value, index, values) => value && values.indexOf(value) === index).map((category) => (
+                  <option key={category} value={category} />
+                ))}
+              </datalist>
+            </div>
+            {selectedMinistryBudgetItems.length > 0 && (
+              <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                Available line items: {selectedMinistryBudgetItems.map((item) => item.label).join(", ")}
+              </div>
+            )}
+            {selectedMinistryBudgetItems.length === 0 && (
+              <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                No line items have been created for this ministry yet. Finance can add them in the ministry budget editor.
+              </div>
+            )}
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
+            <button className="btn-gold" onClick={save}>Save</button>
+          </div>
+        </div>
+      )}
+      {showPurchaseOrderModal && (
+        <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:16,marginBottom:22}}>
+          <div>
+            <button className="btn-outline" onClick={()=>setShowPurchaseOrderModal(false)} style={{marginBottom:14}}>Back to Finances</button>
+            <h3 style={sectionTitleStyle}>New Purchase Order</h3>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Name</label>
+              <input className="input-field" value={profile?.full_name || ""} readOnly />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Email</label>
+              <input className="input-field" value={profile?.email || ""} readOnly />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
+              <input className="input-field" value={purchaseOrderForm.ministry} readOnly />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>What Is This For?</label>
+              <input className="input-field" placeholder="Example: Student camp t-shirts" value={purchaseOrderForm.title} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,title:e.target.value})}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Was This Included In Your Yearly Budget Proposal?</label>
+              <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
+                {[{ value: "yes", label: "Yes" },{ value: "no", label: "No" }].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPurchaseOrderForm({ ...purchaseOrderForm, includedInBudget: option.value })}
+                    style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:500,background: purchaseOrderForm.includedInBudget === option.value ? C.card : "transparent",color: purchaseOrderForm.includedInBudget === option.value ? C.text : C.muted}}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Price</label>
+              <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={purchaseOrderForm.amount} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,amount:e.target.value})}/>
+            </div>
+            {purchaseOrderForm.includedInBudget === "yes" && (
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Item</label>
+                <input className="input-field" list="purchase-order-line-items" placeholder={selectedMinistryBudgetItems.length > 0 ? "Choose a line item" : "Add line items to this budget first"} value={purchaseOrderForm.budgetLineItem} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,budgetLineItem:e.target.value})}/>
+                <datalist id="purchase-order-line-items">
+                  {ministryLineItemSuggestions.map((item) => <option key={item} value={item} />)}
+                </datalist>
+              </div>
+            )}
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date Needed By</label>
+              <input className="input-field" type="date" value={purchaseOrderForm.neededBy} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,neededBy:e.target.value})}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Purchase Link</label>
+              <input className="input-field" placeholder="Paste the product or cart link" value={purchaseOrderForm.purchaseLink} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,purchaseLink:e.target.value})}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Notes</label>
+              <textarea className="input-field" rows={3} placeholder="Any additional info" value={purchaseOrderForm.notes} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,notes:e.target.value})} style={{resize:"vertical"}}/>
+            </div>
+          </div>
+          <div style={{fontSize:12,color:C.muted,lineHeight:1.6,textAlign:"left"}}>
+            Purchase orders help your team request spending against a real ministry budget before the transaction happens.
+          </div>
+          {purchaseOrderError && (
+            <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>
+              {purchaseOrderError}
+            </div>
+          )}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button className="btn-outline" onClick={()=>setShowPurchaseOrderModal(false)}>Cancel</button>
+            <button className="btn-gold" onClick={savePurchaseOrder} disabled={purchaseOrderSubmitting} style={{opacity:purchaseOrderSubmitting ? 0.8 : 1}}>
+              {purchaseOrderSubmitting ? "Submitting..." : "Submit Request"}
+            </button>
+          </div>
+        </div>
+      )}
+      {showBudgetModal && canManageBudgetLinesForMinistry(budgetForm.ministry || defaultMinistry) && (
+        <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:16,marginBottom:22}}>
+          <div>
+            <button className="btn-outline" onClick={()=>setShowBudgetModal(false)} style={{marginBottom:14}}>Back to Finances</button>
+            <h3 style={sectionTitleStyle}>{financeView ? "Set Ministry Budget" : "Edit Budget Line Items"}</h3>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
+              <input className="input-field" value={budgetForm.ministry} onChange={(e)=>setBudgetForm({...budgetForm,ministry:e.target.value})} placeholder="Ministry name" readOnly={!financeView} />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Starting Budget</label>
+              <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={budgetForm.budget} onChange={(e)=>setBudgetForm({...budgetForm,budget:e.target.value})} readOnly={!financeView}/>
+            </div>
+            {financeView && (
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Attach Ministry Lead</label>
+              <select className="input-field" value={budgetForm.assignedStaffId} onChange={(e)=>setBudgetForm({...budgetForm,assignedStaffId:e.target.value})} style={{background:C.surface}}>
+                <option value="">No one attached</option>
+                {(previewUsers || []).map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}
+              </select>
+            </div>
+            )}
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Items</label>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {(budgetForm.items || []).map((item, index) => (
+                  <div key={`budget-item-${index}`} className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:10,alignItems:"end"}}>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <label style={{fontSize:11,color:C.muted,textAlign:"left"}}>Label</label>
+                      <input className="input-field" placeholder="Example: Student Retreat" value={item.label} onChange={(e)=>updateBudgetItem(index, "label", e.target.value)} />
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <label style={{fontSize:11,color:C.muted,textAlign:"left"}}>Amount</label>
+                      <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={item.amount} onChange={(e)=>updateBudgetItem(index, "amount", e.target.value)} />
+                    </div>
+                    <button className="btn-outline" type="button" onClick={() => removeBudgetItemRow(index)} style={{padding:"10px 12px",justifyContent:"center"}}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button className="btn-outline" type="button" onClick={addBudgetItemRow} style={{justifyContent:"center"}}>
+                <Icons.plus/>Add Line Item
+              </button>
+              <div style={{fontSize:12,color:C.muted,textAlign:"left"}}>
+                These line items become budget buckets you can attach transactions to later.
+              </div>
+            </div>
+          </div>
+          <div style={{fontSize:12,color:C.muted,lineHeight:1.6,textAlign:"left"}}>
+            {financeView
+              ? "This sets the ministry’s working budget inside Shepherd. If you add line items, the total budget is calculated from them automatically."
+              : "You can add and adjust line items for this ministry budget here. Finance still controls the main ministry budget and staff assignment."}
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"space-between",flexWrap:"wrap"}}>
+            {financeView && budgetForm.id ? (
+              <button className="btn-outline" onClick={removeBudgetMinistry} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                Remove Ministry
+              </button>
+            ) : <div />}
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <button className="btn-outline" onClick={()=>setShowBudgetModal(false)}>Cancel</button>
+            <button className="btn-gold" onClick={saveBudget}>Save Budget</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!showModal && !showPurchaseOrderModal && !showBudgetModal && (
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16,marginBottom:28}}>
         {ministrySummaries.length === 0 && (
           <div className="card" style={{padding:24,textAlign:"left",gridColumn:"1 / -1"}}>
@@ -6082,6 +6280,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
           </div>
         ))}
       </div>
+      )}
       <div className="card" style={{overflow:"hidden"}}>
         <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
           <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{financeView ? "Purchase Orders" : "Your Purchase Orders"}</h3>
@@ -6273,230 +6472,6 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
           </div>
         ))}
       </div>
-      {showModal&& canEditBudget &&(
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <h3 style={sectionTitleStyle}>Add Transaction</h3>
-              <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,marginBottom:14,border:`1px solid ${C.border}`}}>
-              {["expense","income"].map(type=>(
-                <button key={type} onClick={()=>setForm({...form,type})} style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:500,background:form.type===type?C.card:"transparent",color:form.type===type?(type==="income"?C.success:C.danger):C.muted}}>
-                  {type==="expense"?"↓ Expense":"↑ Income"}
-                </button>
-              ))}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Description</label>
-                <input className="input-field" placeholder="Description" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Amount</label>
-                <input className="input-field" placeholder="$0.00" type="number" inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date</label>
-                <input className="input-field" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
-                <input className="input-field" value={form.ministry} readOnly />
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Item</label>
-                <input className="input-field" list="budget-category-options" placeholder={selectedMinistryBudgetItems.length > 0 ? "Choose a line item" : "Finance needs to create line items first"} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/>
-                <datalist id="budget-category-options">
-                  {[...ministryLineItemSuggestions, ...categorySuggestions].filter((value, index, values) => value && values.indexOf(value) === index).map((category) => (
-                    <option key={category} value={category} />
-                  ))}
-                </datalist>
-              </div>
-              {selectedMinistryBudgetItems.length > 0 && (
-                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                  Available line items: {selectedMinistryBudgetItems.map((item) => item.label).join(", ")}
-                </div>
-              )}
-              {selectedMinistryBudgetItems.length === 0 && (
-                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                  No line items have been created for this ministry yet. Finance can add them in the ministry budget editor.
-                </div>
-              )}
-            </div>
-            <div style={{display:"flex",gap:10,marginTop:20,justifyContent:"flex-end"}}>
-              <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
-              <button className="btn-gold" onClick={save}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showPurchaseOrderModal && (
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowPurchaseOrderModal(false)} style={{alignItems:"flex-start",paddingTop:24}}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <h3 style={sectionTitleStyle}>New Purchase Order</h3>
-              <button onClick={()=>setShowPurchaseOrderModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Name</label>
-                <input className="input-field" value={profile?.full_name || ""} readOnly />
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Email</label>
-                <input className="input-field" value={profile?.email || ""} readOnly />
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
-                <input className="input-field" value={purchaseOrderForm.ministry} readOnly />
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>What Is This For?</label>
-                <input className="input-field" placeholder="Example: Student camp t-shirts" value={purchaseOrderForm.title} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,title:e.target.value})}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Was This Included In Your Yearly Budget Proposal?</label>
-                <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
-                  {[
-                    { value: "yes", label: "Yes" },
-                    { value: "no", label: "No" },
-                  ].map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setPurchaseOrderForm({ ...purchaseOrderForm, includedInBudget: option.value })}
-                      style={{
-                        flex: 1,
-                        padding: "8px 0",
-                        borderRadius: 8,
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: 13,
-                        fontWeight: 500,
-                        background: purchaseOrderForm.includedInBudget === option.value ? C.card : "transparent",
-                        color: purchaseOrderForm.includedInBudget === option.value ? C.text : C.muted,
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Price</label>
-                <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={purchaseOrderForm.amount} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,amount:e.target.value})}/>
-              </div>
-              {purchaseOrderForm.includedInBudget === "yes" && (
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Item</label>
-                  <input className="input-field" list="purchase-order-line-items" placeholder={selectedMinistryBudgetItems.length > 0 ? "Choose a line item" : "Add line items to this budget first"} value={purchaseOrderForm.budgetLineItem} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,budgetLineItem:e.target.value})}/>
-                  <datalist id="purchase-order-line-items">
-                    {ministryLineItemSuggestions.map((item) => <option key={item} value={item} />)}
-                  </datalist>
-                </div>
-              )}
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date Needed By</label>
-                <input className="input-field" type="date" value={purchaseOrderForm.neededBy} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,neededBy:e.target.value})}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Purchase Link</label>
-                <input className="input-field" placeholder="Paste the product or cart link" value={purchaseOrderForm.purchaseLink} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,purchaseLink:e.target.value})}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Notes</label>
-                <textarea className="input-field" rows={3} placeholder="Any additional info" value={purchaseOrderForm.notes} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,notes:e.target.value})} style={{resize:"vertical"}}/>
-              </div>
-            </div>
-            <div style={{fontSize:12,color:C.muted,marginTop:12,lineHeight:1.6,textAlign:"left"}}>
-              Purchase orders help your team request spending against a real ministry budget before the transaction happens.
-            </div>
-            {purchaseOrderError && (
-              <div style={{marginTop:12,fontSize:12,color:C.danger,textAlign:"left"}}>
-                {purchaseOrderError}
-              </div>
-            )}
-            <div style={{display:"flex",gap:10,marginTop:20,justifyContent:"flex-end"}}>
-              <button className="btn-outline" onClick={()=>setShowPurchaseOrderModal(false)}>Cancel</button>
-              <button className="btn-gold" onClick={savePurchaseOrder} disabled={purchaseOrderSubmitting} style={{opacity:purchaseOrderSubmitting ? 0.8 : 1}}>
-                {purchaseOrderSubmitting ? "Submitting..." : "Submit Request"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showBudgetModal && canManageBudgetLinesForMinistry(budgetForm.ministry || defaultMinistry) && (
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowBudgetModal(false)} style={{alignItems:"flex-start",paddingTop:24}}>
-          <div className="modal fadeIn" onClick={(e)=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <h3 style={sectionTitleStyle}>{financeView ? "Set Ministry Budget" : "Edit Budget Line Items"}</h3>
-              <button onClick={()=>setShowBudgetModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.x/></button>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
-                <input className="input-field" value={budgetForm.ministry} onChange={(e)=>setBudgetForm({...budgetForm,ministry:e.target.value})} placeholder="Ministry name" readOnly={!financeView} />
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Starting Budget</label>
-                <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={budgetForm.budget} onChange={(e)=>setBudgetForm({...budgetForm,budget:e.target.value})} readOnly={!financeView}/>
-              </div>
-              {financeView && (
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Attach Ministry Lead</label>
-                <select className="input-field" value={budgetForm.assignedStaffId} onChange={(e)=>setBudgetForm({...budgetForm,assignedStaffId:e.target.value})} style={{background:C.surface}}>
-                  <option value="">No one attached</option>
-                  {(previewUsers || []).map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}
-                </select>
-              </div>
-              )}
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Items</label>
-                <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                  {(budgetForm.items || []).map((item, index) => (
-                    <div key={`budget-item-${index}`} className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 140px auto",gap:10,alignItems:"end"}}>
-                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                        <label style={{fontSize:11,color:C.muted,textAlign:"left"}}>Label</label>
-                        <input className="input-field" placeholder="Example: Student Retreat" value={item.label} onChange={(e)=>updateBudgetItem(index, "label", e.target.value)} />
-                      </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                        <label style={{fontSize:11,color:C.muted,textAlign:"left"}}>Amount</label>
-                        <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={item.amount} onChange={(e)=>updateBudgetItem(index, "amount", e.target.value)} />
-                      </div>
-                      <button className="btn-outline" type="button" onClick={() => removeBudgetItemRow(index)} style={{padding:"10px 12px",justifyContent:"center"}}>
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button className="btn-outline" type="button" onClick={addBudgetItemRow} style={{justifyContent:"center"}}>
-                  <Icons.plus/>Add Line Item
-                </button>
-                <div style={{fontSize:12,color:C.muted,textAlign:"left"}}>
-                  These line items become budget buckets you can attach transactions to later.
-                </div>
-              </div>
-            </div>
-            <div style={{fontSize:12,color:C.muted,marginTop:12,lineHeight:1.6,textAlign:"left"}}>
-              {financeView
-                ? "This sets the ministry’s working budget inside Shepherd. If you add line items, the total budget is calculated from them automatically."
-                : "You can add and adjust line items for this ministry budget here. Finance still controls the main ministry budget and staff assignment."}
-            </div>
-            <div style={{display:"flex",gap:10,marginTop:20,justifyContent:"space-between",flexWrap:"wrap"}}>
-              {financeView && budgetForm.id ? (
-                <button className="btn-outline" onClick={removeBudgetMinistry} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
-                  Remove Ministry
-                </button>
-              ) : <div />}
-              <div style={{display:"flex",gap:10}}>
-              <button className="btn-outline" onClick={()=>setShowBudgetModal(false)}>Cancel</button>
-              <button className="btn-gold" onClick={saveBudget}>Save Budget</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -6615,21 +6590,6 @@ export default function App() {
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
   const shownNotificationIdsRef = useRef(new Set());
-
-  useEffect(() => {
-    if (typeof document === "undefined") return undefined;
-    const syncModalState = () => {
-      const hasModal = !!document.querySelector(".modal-overlay");
-      document.body.style.overflow = hasModal ? "hidden" : "";
-    };
-    syncModalState();
-    const observer = new MutationObserver(syncModalState);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => {
-      observer.disconnect();
-      document.body.style.overflow = "";
-    };
-  }, []);
 
   const allowedPages = new Set([
     "dashboard",

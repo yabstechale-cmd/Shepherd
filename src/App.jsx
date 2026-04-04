@@ -132,10 +132,10 @@ const GS = () => (
     .nav-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;cursor:pointer;color:${C.muted};font-size:14px;font-weight:500;border:1px solid transparent;margin-bottom:2px}
     .nav-item:hover{background:${C.card};color:${C.text}}
     .nav-item.active{background:${C.goldGlow};color:${C.gold};border-color:${C.goldDim}}
-    .btn-gold{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:#0f1117;font-weight:600;border:none;border-radius:10px;padding:10px 20px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;display:inline-flex;align-items:center;gap:8px}
-    .btn-gold:hover{filter:brightness(1.1)}
-    .btn-outline{background:transparent;color:${C.text};border:1px solid ${C.border};border-radius:10px;padding:9px 18px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;display:inline-flex;align-items:center;gap:8px}
-    .btn-outline:hover{border-color:${C.gold};color:${C.gold}}
+    .btn-gold,.btn-outline{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:#0f1117;font-weight:600;border:none;border-radius:10px;padding:10px 20px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 24px rgba(201,168,76,.18)}
+    .btn-gold:hover,.btn-outline:hover{filter:brightness(1.08)}
+    .btn-gold-compact{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:#0f1117;font-weight:600;border:none;border-radius:10px;padding:6px 12px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 20px rgba(201,168,76,.18)}
+    .btn-gold-compact:hover{filter:brightness(1.08)}
     .card{background:${C.card};border:1px solid ${C.border};border-radius:14px}
     .input-field{background:${C.surface};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;width:100%;outline:none}
     .input-field:focus{border-color:${C.gold};box-shadow:0 0 0 3px ${C.goldGlow}}
@@ -4362,10 +4362,19 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
               </div>
             </div>
             <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end",marginLeft:"auto"}}>
-              <button className="btn-outline" onClick={() => setTeamSnapshotOpen((current) => !current)} style={{padding:"5px 12px",fontSize:12}}>
+              <button type="button" className="btn-gold-compact" onClick={() => setTeamSnapshotOpen((current) => !current)}>
                 {teamSnapshotOpen ? "Collapse" : "Expand"}
               </button>
-              <button className="btn-outline" onClick={()=>setActive("tasks")} style={{padding:"5px 12px",fontSize:12}}>Open task board</button>
+              <button
+                type="button"
+                className="btn-gold-compact"
+                onClick={() => {
+                  setActive("tasks");
+                  if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              >
+                Open task board
+              </button>
             </div>
           </div>
           {teamSnapshotOpen ? (
@@ -4444,7 +4453,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
             </div>
           </div>
           <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end",marginLeft:"auto"}}>
-            <button className="btn-outline" onClick={() => setNotificationsOpen((current) => !current)} style={{padding:"5px 12px",fontSize:12}}>
+            <button type="button" className="btn-gold-compact" onClick={() => setNotificationsOpen((current) => !current)}>
               {notificationsOpen ? "Collapse" : "Expand"}
             </button>
           </div>
@@ -4459,7 +4468,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
                   <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
                   <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
                 </div>
-                <button className="btn-outline" onClick={()=>openNotificationTarget?.(item)} style={{padding:"5px 10px",fontSize:12,marginLeft:"auto"}}>
+                <button type="button" className="btn-gold-compact" onClick={()=>openNotificationTarget?.(item)} style={{marginLeft:"auto"}}>
                   Open
                 </button>
               </div>

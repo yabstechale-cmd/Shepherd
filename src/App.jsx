@@ -140,7 +140,8 @@ const GS = () => (
     .btn-gold-compact{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:#0f1117;font-weight:600;border:none;border-radius:10px;padding:6px 12px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 20px rgba(201,168,76,.18)}
     .btn-gold-compact:hover{filter:brightness(1.08)}
     .card{background:${C.card};border:1px solid ${C.border};border-radius:14px}
-    .input-field{background:${C.surface};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;width:100%;outline:none}
+    .input-field{background:${C.surface};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;width:100%;max-width:100%;min-width:0;outline:none}
+    input.input-field[type="date"],input.input-field[type="time"]{-webkit-appearance:none;appearance:none;display:block}
     .input-field:focus{border-color:${C.gold};box-shadow:0 0 0 3px ${C.goldGlow}}
     .input-field::placeholder{color:${C.muted}}
     .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}

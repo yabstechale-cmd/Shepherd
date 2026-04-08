@@ -865,6 +865,20 @@ const getRelativeDueLabel = (date) => {
   if (diff < 0) return `Overdue since ${fmtDate(date)}`;
   return `Due ${fmtDate(date)}`;
 };
+const isAfterDueDate = (date, reference = new Date()) => {
+  if (!date) return false;
+  const due = new Date(date);
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const referenceDay = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
+  return referenceDay.getTime() > dueDay.getTime();
+};
+const buildEventPlanTaskNotes = (workflow, details, nodeId) => [
+  `Linked from event plan: ${workflow?.event_name || workflow?.title || "Event Plan"}`,
+  nodeId ? `Event plan node ID: ${nodeId}` : null,
+  details?.trim() || null,
+].filter(Boolean).join("\n\n");
+const findLinkedEventPlanTask = (tasks, nodeId) =>
+  (tasks || []).find((task) => typeof task?.notes === "string" && task.notes.includes(`Event plan node ID: ${nodeId}`)) || null;
 const commentMentionsProfile = (comment, profile) => {
   if (!comment?.body || !profile?.full_name) return false;
   const body = String(comment.body || "");
@@ -968,6 +982,10 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
   if (!profile?.full_name) return [];
   const fullName = profile.full_name;
   const isAdminViewer = hasAdministrativeOversight(profile, null);
+  const seniorPastorViewer =
+    profile?.role === "senior_pastor"
+    || (profile?.staff_roles || []).includes("senior_pastor")
+    || samePerson(profile?.title, "Senior Pastor");
   const financeDirectorViewer = isFinanceDirector(profile);
   const purchaseOrderReviewer = canReviewPurchaseOrders(profile);
   const now = new Date();
@@ -996,7 +1014,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
       });
     }
 
-    if (assignedToMe && task.status !== "done" && dueDay && dueDay.getTime() < startOfToday.getTime()) {
+    if (assignedToMe && task.status !== "done" && isAfterDueDate(task.due_date, now)) {
       items.push({
         id: `overdue-${task.id}`,
         tone: C.danger,
@@ -1018,17 +1036,17 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
       });
     }
 
-    if (isAdminViewer && task.status !== "done" && dueDay && dueDay.getTime() < startOfToday.getTime() && !assignedToMe) {
+    if (seniorPastorViewer && task.status !== "done" && isAfterDueDate(task.due_date, now) && !assignedToMe) {
       items.push({
         id: `admin-overdue-${task.id}`,
         tone: C.danger,
-        title: "Team task overdue",
+        title: "Team Task Needs Attention",
         detail: `${task.title} assigned to ${task.assignee || "a team member"} is overdue.`,
         target: "tasks",
         taskId: task.id,
         createdAt: dueDay.getTime(),
       });
-    } else if (isAdminViewer && task.status !== "done" && dueDay && dueDay.getTime() >= startOfToday.getTime() && dueDay.getTime() < endOfTomorrow.getTime() && !assignedToMe) {
+    } else if (seniorPastorViewer && task.status !== "done" && dueDay && dueDay.getTime() >= startOfToday.getTime() && dueDay.getTime() < endOfTomorrow.getTime() && !assignedToMe) {
       items.push({
         id: `admin-due-${task.id}`,
         tone: C.gold,
@@ -1890,7 +1908,7 @@ function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, 
   );
 }
 
-function TrashPage({ trashItems, clearTrash }) {
+function TrashPage({ trashItems, clearTrash, restoreTrashItem }) {
   const sortedItems = [...(trashItems || [])].sort((a, b) => new Date(b.deleted_at || 0) - new Date(a.deleted_at || 0));
 
   return (
@@ -1919,8 +1937,13 @@ function TrashPage({ trashItems, clearTrash }) {
                 {item.deleted_by ? ` • deleted by ${item.deleted_by}` : ""}
               </div>
             </div>
-            <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
-              {item.deleted_at ? new Date(item.deleted_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "—"}
+            <div style={{display:"grid",justifyItems:"end",gap:10}}>
+              <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+                {item.deleted_at ? new Date(item.deleted_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "—"}
+              </div>
+              <button className="btn-gold-compact" onClick={() => restoreTrashItem?.(item)}>
+                Restore
+              </button>
             </div>
           </div>
         ))}
@@ -2558,7 +2581,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
   );
 }
 
-function EventsBoard({ profile, church, eventRequests, setEventRequests, setTasks, moveItemToTrash, previewUsers }) {
+function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, setTasks, moveItemToTrash, previewUsers }) {
   const [eventsSection, setEventsSection] = useState("home");
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
@@ -2812,11 +2835,34 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
     if (timelineDraft.id) {
       const currentItem = (workflow.timeline_items || []).find((item) => item.id === timelineDraft.id);
       const assigneeName = currentItem?.linked_task_assignee || profile?.full_name || workflow.main_contact || "Staff";
-      let linkedTaskId = currentItem?.linked_task_id || null;
+      const existingLinkedTask = currentItem?.linked_task_id
+        ? (tasks || []).find((task) => task.id === currentItem.linked_task_id) || findLinkedEventPlanTask(tasks, currentItem?.id)
+        : findLinkedEventPlanTask(tasks, currentItem?.id);
+      let linkedTaskId = existingLinkedTask?.id || currentItem?.linked_task_id || null;
       const taskReviewers = timelineDraft.reviewRequired
         ? (timelineDraft.reviewers || []).filter((name) => !samePerson(name, assigneeName))
         : [];
-      if (timelineDraft.includeInTasks && !linkedTaskId) {
+      if (!timelineDraft.includeInTasks && linkedTaskId) {
+        const linkedTask = (tasks || []).find((task) => task.id === linkedTaskId);
+        if (linkedTask) {
+          moveItemToTrash?.({
+            entity_type: "task",
+            entity_label: "Task",
+            source: "event-planning",
+            source_label: "Event Planning",
+            title: linkedTask.title,
+            deleted_by: profile?.full_name || "Staff",
+            payload: linkedTask,
+          });
+        }
+        const { error: taskError } = await supabase.from("tasks").delete().eq("id", linkedTaskId);
+        if (taskError) {
+          setWorkflowError(taskError.message || "We couldn't remove the linked task.");
+          return;
+        }
+        setTasks((current) => (current || []).filter((task) => task.id !== linkedTaskId));
+        linkedTaskId = null;
+      } else if (timelineDraft.includeInTasks && !linkedTaskId) {
         const taskPayload = {
           church_id: church?.id,
           title: timelineDraft.title.trim(),
@@ -2824,10 +2870,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
           assignee: assigneeName,
           due_date: timelineDraft.date || workflow.start_date || null,
           status: "todo",
-          notes: [
-            `Linked from event plan: ${workflow.event_name || workflow.title}`,
-            timelineDraft.details.trim() || null,
-          ].filter(Boolean).join("\n\n"),
+          notes: buildEventPlanTaskNotes(workflow, timelineDraft.details, currentItem?.id),
           review_required: timelineDraft.reviewRequired,
           reviewers: taskReviewers,
           review_approvals: [],
@@ -2846,10 +2889,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         const taskPayload = {
           title: timelineDraft.title.trim(),
           due_date: timelineDraft.date || workflow.start_date || null,
-          notes: [
-            `Linked from event plan: ${workflow.event_name || workflow.title}`,
-            timelineDraft.details.trim() || null,
-          ].filter(Boolean).join("\n\n"),
+          notes: buildEventPlanTaskNotes(workflow, timelineDraft.details, currentItem?.id),
           review_required: timelineDraft.includeInTasks ? timelineDraft.reviewRequired : false,
           reviewers: timelineDraft.includeInTasks ? taskReviewers : [],
           review_approvals: [],
@@ -2869,8 +2909,8 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         title: timelineDraft.title.trim(),
         date: timelineDraft.date || null,
         details: timelineDraft.details.trim(),
-        linked_task_id: timelineDraft.includeInTasks ? linkedTaskId : item.linked_task_id,
-        linked_task_assignee: timelineDraft.includeInTasks ? assigneeName : item.linked_task_assignee,
+        linked_task_id: timelineDraft.includeInTasks ? linkedTaskId : null,
+        linked_task_assignee: timelineDraft.includeInTasks ? assigneeName : null,
         linked_task_review_required: timelineDraft.includeInTasks ? timelineDraft.reviewRequired : false,
         linked_task_reviewers: timelineDraft.includeInTasks ? taskReviewers : [],
       } : item);
@@ -2884,6 +2924,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
     const taskReviewers = timelineDraft.reviewRequired
       ? (timelineDraft.reviewers || []).filter((name) => !samePerson(name, assigneeName))
       : [];
+    const nodeId = crypto.randomUUID();
     let linkedTaskId = null;
     if (timelineDraft.includeInTasks) {
       const taskPayload = {
@@ -2893,10 +2934,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
         assignee: assigneeName,
         due_date: timelineDraft.date || workflow.start_date || null,
         status: "todo",
-        notes: [
-          `Linked from event plan: ${workflow.event_name || workflow.title}`,
-          timelineDraft.details.trim() || null,
-        ].filter(Boolean).join("\n\n"),
+        notes: buildEventPlanTaskNotes(workflow, timelineDraft.details, nodeId),
         review_required: timelineDraft.reviewRequired,
         reviewers: taskReviewers,
         review_approvals: [],
@@ -2915,7 +2953,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
     const nextItems = [
       ...(workflow.timeline_items || []),
       {
-        id: crypto.randomUUID(),
+        id: nodeId,
         title: timelineDraft.title.trim(),
         date: timelineDraft.date || null,
         details: timelineDraft.details.trim(),
@@ -2933,15 +2971,16 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
     setShowTimelineModal(false);
   };
   const beginEditWorkflowTimelineItem = (item) => {
+    const linkedTaskExists = !!item.linked_task_id && (tasks || []).some((task) => task.id === item.linked_task_id);
     setWorkflowError("");
     setTimelineDraft({
       id: item.id,
       title: item.title || "",
       date: item.date || "",
       details: item.details || "",
-      includeInTasks: !!item.linked_task_id,
-      reviewRequired: !!item.linked_task_review_required,
-      reviewers: item.linked_task_review_required && Array.isArray(item.linked_task_reviewers) ? item.linked_task_reviewers : [],
+      includeInTasks: linkedTaskExists,
+      reviewRequired: linkedTaskExists ? !!item.linked_task_review_required : false,
+      reviewers: linkedTaskExists && item.linked_task_review_required && Array.isArray(item.linked_task_reviewers) ? item.linked_task_reviewers : [],
     });
     setShowTimelineModal(true);
   };
@@ -3071,19 +3110,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
             <button
               className="card"
-              onClick={() => setEventsSection("requests")}
-              style={{padding:22,textAlign:"left",background:C.surface,cursor:"pointer",display:"grid",gap:10,minHeight:180}}
-            >
-              <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Requests</div>
-              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-                Intake, review, approve, and archive incoming event requests for the church.
-              </div>
-              <div style={{marginTop:"auto",justifySelf:"end"}}>
-                <span className="btn-gold-compact">Open requests</span>
-              </div>
-            </button>
-            <button
-              className="card"
               onClick={() => setEventsSection("planning")}
               style={{padding:22,textAlign:"left",background:C.surface,cursor:"pointer",display:"grid",gap:10,minHeight:180}}
             >
@@ -3093,6 +3119,19 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
               </div>
               <div style={{marginTop:"auto",justifySelf:"end"}}>
                 <span className="btn-gold-compact">Open planning</span>
+              </div>
+            </button>
+            <button
+              className="card"
+              onClick={() => setEventsSection("requests")}
+              style={{padding:22,textAlign:"left",background:C.surface,cursor:"pointer",display:"grid",gap:10,minHeight:180}}
+            >
+              <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Requests</div>
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                Intake, review, approve, and archive incoming event requests for the church.
+              </div>
+              <div style={{marginTop:"auto",justifySelf:"end"}}>
+                <span className="btn-gold-compact">Open requests</span>
               </div>
             </button>
           </div>
@@ -3340,7 +3379,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                             <input
                               type="checkbox"
                               checked={!!timelineDraft.includeInTasks}
-                              disabled={!!timelineDraft.id && !!timelineDraft.includeInTasks}
                               onChange={(e)=>setTimelineDraft((current) => ({
                                 ...current,
                                 includeInTasks: e.target.checked,
@@ -3350,11 +3388,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                             />
                             Also add this step to my Tasks list
                           </label>
-                          {timelineDraft.id && timelineDraft.includeInTasks && (
-                            <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                              This node is already linked to Tasks. You can still update its review workflow below.
-                            </div>
-                          )}
                           {timelineDraft.includeInTasks && (
                             <div style={{display:"grid",gap:10}}>
                               <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
@@ -3406,9 +3439,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                             <button
                               className="btn-outline"
                               onClick={() => deleteWorkflowTimelineItem(selectedWorkflow, timelineDraft.id)}
-                              style={{borderColor:"rgba(224,82,82,.35)",color:C.danger}}
+                              style={{display:"flex",alignItems:"center",justifyContent:"center",padding:10,borderColor:"rgba(224,82,82,.35)",color:C.danger}}
+                              aria-label="Delete timeline node"
+                              title="Delete timeline node"
                             >
-                              <Icons.trash /> Delete Node
+                              <Icons.trash />
                             </button>
                           )}
                         </div>
@@ -3420,7 +3455,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                             Cancel
                           </button>
                           <button className="btn-gold" onClick={() => addWorkflowTimelineItem(selectedWorkflow)}>
-                            {timelineDraft.id ? "Save Changes" : "Add To Timeline"}
+                            {timelineDraft.id ? "Save Changes" : "Add Timeline Node"}
                           </button>
                         </div>
                       </div>
@@ -3495,7 +3530,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                           Add another step when you need to expand the event plan with a new deadline or objective.
                         </div>
                         <button className="btn-outline" onClick={openNewTimelineItemModal}>
-                          <Icons.plus /> Add To Timeline
+                          <Icons.plus /> Add Timeline Node
                         </button>
                       </div>
                     </div>
@@ -4268,14 +4303,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
   const myAssignedTasks = tasks.filter((task) => samePerson(task.assignee, profile?.full_name));
   const myOpenTasks = myAssignedTasks.filter((task) => task.status !== "done");
   const myInReviewTasks = myOpenTasks.filter((task) => task.status === "in-review");
-  const myOverdueTasks = myOpenTasks.filter((task) => {
-    if (!task.due_date) return false;
-    const dueDate = new Date(task.due_date);
-    const today = new Date();
-    const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-    const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    return dueDay.getTime() < todayDay.getTime();
-  });
+  const myOverdueTasks = myOpenTasks.filter((task) => isAfterDueDate(task.due_date));
   const derivedCurrentTask =
     myAssignedTasks.find((task) => task.status === "in-progress")
     || myAssignedTasks
@@ -4294,14 +4322,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
     const assigned = tasks.filter((task) => samePerson(task.assignee, user.full_name));
     const openAssigned = assigned.filter((task) => task.status !== "done");
     const inReviewTasks = openAssigned.filter((task) => task.status === "in-review");
-    const overdueTasks = openAssigned.filter((task) => {
-      if (!task.due_date) return false;
-      const dueDate = new Date(task.due_date);
-      const today = new Date();
-      const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-      const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      return dueDay.getTime() < todayDay.getTime();
-    });
+    const overdueTasks = openAssigned.filter((task) => isAfterDueDate(task.due_date));
     const currentTask =
       assigned.find((task) => task.status === "in-progress")
       || assigned
@@ -4462,17 +4483,20 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
           {myTaskPreview.length > 0 ? (
             <div style={{display:"grid",gap:10}}>
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6,textAlign:"left"}}>
-                Choose the task that has your attention right now so your dashboard reflects your present focus clearly.
+                <span style={{color:!currentWorkTaskId ? C.gold : C.muted}}>
+                  {!currentWorkTaskId
+                    ? "Choose the task that has your attention right now so your dashboard reflects your present focus clearly."
+                    : "Your selected task will stay marked here until you change it."}
+                </span>
               </div>
               <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(4, minmax(0,1fr))",gap:10}}>
                 {myTaskPreview.map((task) => {
                   const isSelected = myCurrentTask?.id === task.id;
-                  const isManual = currentWorkTaskId === task.id;
                   return (
                     <button
                       key={task.id}
                       type="button"
-                      onClick={() => setCurrentWorkTaskId(isManual ? "" : task.id)}
+                      onClick={() => setCurrentWorkTaskId(isSelected ? "" : task.id)}
                       className="card"
                       style={{
                         padding:"14px 16px",
@@ -4495,13 +4519,13 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
                           {task.status !== "todo" && (
-                            <span className="badge" style={{background:"rgba(255,255,255,.04)",color:task.status === "in-progress" ? C.blue : C.gold,border:`1px solid ${C.border}`}}>
+                            <span style={{fontSize:12,color:task.status === "in-progress" ? C.blue : C.gold,lineHeight:1.6}}>
                               {task.status === "in-progress" ? "In Progress" : "In Review"}
                             </span>
                           )}
                           {isSelected && (
                             <span className="badge" style={{background:`${C.gold}22`,color:C.gold,border:`1px solid ${C.goldDim}`}}>
-                              {isManual ? "Working on this now" : "Suggested Focus"}
+                              Working on this now
                             </span>
                           )}
                         </div>
@@ -5512,7 +5536,15 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                     {canManageComment(comment, profile) && editingCommentId !== comment.id && (
                       <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
                         <button className="btn-outline" onClick={() => beginEditComment(comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
-                        <button className="btn-outline" onClick={() => deleteTaskComment(comment)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>Delete</button>
+                        <button
+                          className="btn-outline"
+                          onClick={() => deleteTaskComment(comment)}
+                          style={{display:"flex",alignItems:"center",justifyContent:"center",padding:8,fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}
+                          aria-label="Delete comment"
+                          title="Delete comment"
+                        >
+                          <Icons.trash />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -6447,8 +6479,14 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
           </div>
           <div style={{display:"flex",gap:10,justifyContent:"space-between",flexWrap:"wrap"}}>
             {financeView && budgetForm.id ? (
-              <button className="btn-outline" onClick={removeBudgetMinistry} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
-                Remove Ministry
+              <button
+                className="btn-outline"
+                onClick={removeBudgetMinistry}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",padding:10,color:C.danger,borderColor:"rgba(224,82,82,.35)"}}
+                aria-label="Remove ministry"
+                title="Remove ministry"
+              >
+                <Icons.trash />
               </button>
             ) : <div />}
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -6550,7 +6588,15 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
                     <span style={{fontSize:11,color:order.status === "approved" ? C.success : order.status === "denied" ? C.danger : C.gold,textTransform:"capitalize"}}>{order.status}</span>
                     {canDeletePurchaseOrder(profile, order) && (
-                      <button className="btn-outline" onClick={() => deletePurchaseOrder(order)} style={{padding:"7px 10px",color:C.muted,borderColor:C.border}}>Delete</button>
+                      <button
+                        className="btn-outline"
+                        onClick={() => deletePurchaseOrder(order)}
+                        style={{display:"flex",alignItems:"center",justifyContent:"center",padding:8,color:C.muted,borderColor:C.border}}
+                        aria-label="Delete purchase order"
+                        title="Delete purchase order"
+                      >
+                        <Icons.trash />
+                      </button>
                     )}
                   </div>
                 </div>
@@ -6665,7 +6711,15 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                         {canManageComment(comment, profile) && editingPurchaseOrderComments[order.id]?.id !== comment.id && (
                           <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
                             <button className="btn-outline" onClick={() => beginEditPurchaseOrderComment(order.id, comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
-                            <button className="btn-outline" onClick={() => deletePurchaseOrderComment(order, comment)} style={{padding:"6px 10px",fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}>Delete</button>
+                            <button
+                              className="btn-outline"
+                              onClick={() => deletePurchaseOrderComment(order, comment)}
+                              style={{display:"flex",alignItems:"center",justifyContent:"center",padding:8,fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}
+                              aria-label="Delete purchase order comment"
+                              title="Delete purchase order comment"
+                            >
+                              <Icons.trash />
+                            </button>
                           </div>
                         )}
                       </div>
@@ -7149,6 +7203,60 @@ export default function App() {
   const clearTrash = () => {
     setTrashItems([]);
   };
+  const restoreTrashItem = async (item) => {
+    if (!item?.entity_type || !item?.payload) return;
+
+    if (item.entity_type === "task") {
+      const { data, error } = await supabase.from("tasks").upsert(item.payload).select().single();
+      if (error) return;
+      if (data) {
+        const normalized = normalizeTask(data);
+        setTasks((current) => {
+          const others = (current || []).filter((entry) => entry.id !== normalized.id);
+          return [normalized, ...others];
+        });
+      }
+    } else if (item.entity_type === "event_request") {
+      const { data, error } = await supabase.from("event_requests").upsert(item.payload).select().single();
+      if (error) return;
+      if (data) {
+        setEventRequests((current) => {
+          const existing = current || [];
+          const others = existing.filter((entry) => entry.id !== data.id);
+          return [data, ...others];
+        });
+      }
+    } else if (item.entity_type === "event_plan") {
+      const payload = {
+        id: item.payload.id,
+        church_id: item.payload.church_id,
+        linked_event_request_id: item.payload.linked_event_request_id || null,
+        title: item.payload.title,
+        event_name: item.payload.event_name || item.payload.title || "",
+        owner_name: item.payload.owner_name,
+        visibility: item.payload.visibility || "shared",
+        start_date: item.payload.start_date || null,
+        end_date: item.payload.end_date || null,
+        start_time: item.payload.start_time || null,
+        end_time: item.payload.end_time || null,
+        location: item.payload.location || "",
+        main_contact: item.payload.main_contact || "",
+        timeline_items: Array.isArray(item.payload.timeline_items) ? item.payload.timeline_items : [],
+        checklist_items: Array.isArray(item.payload.checklist_items) ? item.payload.checklist_items : [],
+        notes_entries: Array.isArray(item.payload.notes_entries) ? item.payload.notes_entries : [],
+        summary: item.payload.summary || null,
+        target_date: item.payload.target_date || null,
+        steps: Array.isArray(item.payload.steps) ? item.payload.steps : [],
+        created_at: item.payload.created_at || new Date().toISOString(),
+      };
+      const { error } = await supabase.from("event_workflows").upsert(payload);
+      if (error) return;
+    } else {
+      return;
+    }
+
+    setTrashItems((current) => (current || []).filter((entry) => entry.id !== item.id));
+  };
 
   const loadData = async (uid) => {
     setLoading(true);
@@ -7352,7 +7460,7 @@ export default function App() {
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
     "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest}/>,
-    trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} />,
+    trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
     ministries: <Ministries ministries={ministries}/>,

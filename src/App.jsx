@@ -4692,27 +4692,11 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
                   </div>
                   {member.additionalTasks?.length ? (
                     <div style={{display:"grid",gridTemplateColumns:"repeat(2, minmax(0,1fr))",gap:8}}>
-                      {member.additionalTasks.map((task) => {
-                        const taskEventName = task.ministry === "Events" ? getLinkedEventPlanName(task) : "";
-                        return (
-                          <div key={task.id} className="card" style={{padding:"10px 12px",display:"grid",gap:4,textAlign:"left",background:"rgba(255,255,255,.03)"}}>
-                            <div style={{fontSize:12,fontWeight:600,color:C.text,lineHeight:1.45}}>{task.title}</div>
-                            <div style={{fontSize:11,color:C.muted,lineHeight:1.6}}>
-                              {task.due_date ? `Due ${fmtDate(task.due_date)}` : "No due date"}
-                            </div>
-                            {(taskEventName || task.ministry) && (
-                              <div style={{fontSize:11,color:C.muted,lineHeight:1.6}}>
-                                {taskEventName || task.ministry}
-                              </div>
-                            )}
-                            {task.status !== "todo" && (
-                              <div style={{fontSize:11,color:task.status === "in-progress" ? C.blue : C.gold,lineHeight:1.6}}>
-                                {task.status === "in-progress" ? "In Progress" : "In Review"}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {member.additionalTasks.map((task) => (
+                        <div key={task.id} className="card" style={{padding:"10px 12px",display:"grid",gap:4,textAlign:"left",background:"rgba(255,255,255,.03)"}}>
+                          <div style={{fontSize:12,fontWeight:600,color:C.text,lineHeight:1.45}}>{task.title}</div>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>

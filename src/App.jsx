@@ -28,9 +28,28 @@ const CATEGORY_STYLES = {
 };
 
 const getTag = (name) => CATEGORY_STYLES[name]?.tag || "tag-admin";
+const parseAppDate = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const raw = String(value).trim();
+  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+const getDateSortValue = (value) => parseAppDate(value)?.getTime() || 0;
 const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.abs(n || 0));
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
-const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) : "—";
+const fmtDate = (d) => {
+  const parsed = parseAppDate(d);
+  return parsed ? parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
+};
+const fmtShortDate = (d) => {
+  const parsed = parseAppDate(d);
+  return parsed ? parsed.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) : "—";
+};
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
@@ -862,7 +881,8 @@ const getRelativeDueLabel = (date) => {
   if (!date) return "No due date";
   const today = new Date();
   const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const due = new Date(date);
+  const due = parseAppDate(date);
+  if (!due) return "No due date";
   const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
   const diff = Math.round((dueDay - base) / 86400000);
   if (diff === 0) return "Due today";
@@ -872,7 +892,8 @@ const getRelativeDueLabel = (date) => {
 };
 const isAfterDueDate = (date, reference = new Date()) => {
   if (!date) return false;
-  const due = new Date(date);
+  const due = parseAppDate(date);
+  if (!due) return false;
   const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
   const referenceDay = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
   return referenceDay.getTime() > dueDay.getTime();
@@ -1008,7 +1029,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
     const assignedToMe = samePerson(task.assignee, fullName);
     const reviewerForMe = listIncludesPerson(task.reviewers, fullName) && !listIncludesPerson(task.review_approvals, fullName);
     const createdAt = task.created_at ? new Date(task.created_at) : null;
-    const dueDate = task.due_date ? new Date(task.due_date) : null;
+    const dueDate = parseAppDate(task.due_date);
     const dueDay = dueDate ? new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate()) : null;
 
     if (assignedToMe && task.status !== "done" && createdAt && now.getTime() - createdAt.getTime() < 3 * 86400000) {
@@ -4350,7 +4371,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
   const selectedCurrentTask = myOpenTasks.find((task) => task.id === currentWorkTaskId) || null;
   const myTaskPreview = myOpenTasks
     .slice()
-    .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))
+    .sort((a, b) => getDateSortValue(a.due_date) - getDateSortValue(b.due_date))
     .slice(0, 16);
   const teamSummary = previewUsers
     .filter((user) => !samePerson(user.full_name, profile?.full_name))
@@ -4365,11 +4386,11 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
       || assigned.find((task) => task.status === "in-progress")
       || assigned
         .filter((task) => task.status !== "done")
-        .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0]
+        .sort((a, b) => getDateSortValue(a.due_date) - getDateSortValue(b.due_date))[0]
       || null;
     const additionalTasks = openAssigned
       .filter((task) => task.id !== currentTask?.id)
-      .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0));
+      .sort((a, b) => getDateSortValue(a.due_date) - getDateSortValue(b.due_date));
     const workloadSummary = focusedTask
       ? "Current focus"
       : currentTask
@@ -6978,7 +6999,7 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
     ...(calendarFilters.staffTimeOff ? timeOffEntries : []),
   ]
     .filter((item) => item.date)
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
+    .sort((a, b) => getDateSortValue(a.date) - getDateSortValue(b.date));
   const groupedCalendarItems = calendarItems.reduce((accumulator, item) => {
     const key = item.date;
     if (!accumulator[key]) accumulator[key] = [];

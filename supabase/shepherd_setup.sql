@@ -280,6 +280,32 @@ alter table public.event_requests add column if not exists created_at timestampt
 alter table public.event_requests
   enable row level security;
 
+create table if not exists public.calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  created_by uuid references public.profiles(id) on delete set null,
+  title text not null,
+  event_date date not null,
+  start_time text,
+  end_time text,
+  location text,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.calendar_events add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.calendar_events add column if not exists created_by uuid references public.profiles(id) on delete set null;
+alter table public.calendar_events add column if not exists title text;
+alter table public.calendar_events add column if not exists event_date date;
+alter table public.calendar_events add column if not exists start_time text;
+alter table public.calendar_events add column if not exists end_time text;
+alter table public.calendar_events add column if not exists location text;
+alter table public.calendar_events add column if not exists notes text;
+alter table public.calendar_events add column if not exists created_at timestamptz not null default now();
+
+alter table public.calendar_events
+  enable row level security;
+
 create table if not exists public.event_workflows (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -1170,6 +1196,79 @@ using (
     where p.id = auth.uid()
       and p.church_id = event_workflows.church_id
       and event_workflows.owner_name = p.full_name
+  )
+);
+
+drop policy if exists "calendar events same church read" on public.calendar_events;
+create policy "calendar events same church read"
+on public.calendar_events
+for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = calendar_events.church_id
+  )
+);
+
+drop policy if exists "calendar events same church insert" on public.calendar_events;
+create policy "calendar events same church insert"
+on public.calendar_events
+for insert
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = calendar_events.church_id
+      and p.id = calendar_events.created_by
+  )
+);
+
+drop policy if exists "calendar events creator update" on public.calendar_events;
+create policy "calendar events creator update"
+on public.calendar_events
+for update
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = calendar_events.church_id
+      and (
+        p.id = calendar_events.created_by
+        or public.user_can_manage_church(calendar_events.church_id)
+      )
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = calendar_events.church_id
+      and (
+        p.id = calendar_events.created_by
+        or public.user_can_manage_church(calendar_events.church_id)
+      )
+  )
+);
+
+drop policy if exists "calendar events creator delete" on public.calendar_events;
+create policy "calendar events creator delete"
+on public.calendar_events
+for delete
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = calendar_events.church_id
+      and (
+        p.id = calendar_events.created_by
+        or public.user_can_manage_church(calendar_events.church_id)
+      )
   )
 );
 

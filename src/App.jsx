@@ -34,6 +34,7 @@ const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { month:
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
+const ARCHIVED_NOTIFICATION_STORAGE_PREFIX = "shepherd-archived-notifications";
 const TRASH_STORAGE_PREFIX = "shepherd-trash";
 const ACTIVE_PAGE_STORAGE_KEY = "shepherd-active-page";
 const STAFF_NOTEPAD_STORAGE_PREFIX = "shepherd-staff-notepad";
@@ -41,6 +42,8 @@ const TASK_COLUMN_STATE_STORAGE_PREFIX = "shepherd-task-columns";
 const DASHBOARD_SECTION_STATE_STORAGE_PREFIX = "shepherd-dashboard-sections";
 const TASK_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-task-discussion-sections";
 const PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-po-discussion-sections";
+const CURRENT_WORK_FOCUS_STORAGE_PREFIX = "shepherd-current-work-focus";
+const NOTIFICATION_RETENTION_MS = 40 * 24 * 60 * 60 * 1000;
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const Icon = ({ d, size = 20 }) => (
@@ -475,12 +478,14 @@ const STATUS_STYLES = {
   done: { label: "Done", accent: C.success, surface: "rgba(82,200,122,0.08)" },
 };
 const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
+const getArchivedNotificationStorageKey = (profileId) => `${ARCHIVED_NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
 const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
 const getStaffNotepadStorageKey = (profileId) => `${STAFF_NOTEPAD_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getTaskColumnStateStorageKey = (profileId) => `${TASK_COLUMN_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getDashboardSectionStateStorageKey = (profileId) => `${DASHBOARD_SECTION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getTaskDiscussionStateStorageKey = (profileId) => `${TASK_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getPurchaseOrderDiscussionStateStorageKey = (profileId) => `${PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
+const getCurrentWorkFocusStorageKey = (profileId) => `${CURRENT_WORK_FOCUS_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getStoredActivePage = () => {
   if (typeof window === "undefined") return "dashboard";
   return window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
@@ -1183,7 +1188,9 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
     });
   });
 
-  return items.sort((a, b) => b.createdAt - a.createdAt);
+  return items
+    .filter((item) => (now.getTime() - Number(item.createdAt || 0)) <= NOTIFICATION_RETENTION_MS)
+    .sort((a, b) => b.createdAt - a.createdAt);
 };
 
 // ── Auth ───────────────────────────────────────────────────────────────────
@@ -1505,8 +1512,8 @@ function AuthScreen() {
 function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
+    {id:"workspaces",label:"Planning Center",I:Icons.workspace},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
-    {id:"workspaces",label:"Workspaces",I:Icons.workspace},
     ...(canViewBudget(profile) ? [{id:"budget",label:"Finances",I:Icons.budget}] : []),
     {id:"calendar",label:"Calendar",I:Icons.calendar},
     ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.people}] : []),
@@ -2569,6 +2576,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
   const [planningFilter, setPlanningFilter] = useState("mine");
   const [checklistDraft, setChecklistDraft] = useState("");
   const [planningNoteDraft, setPlanningNoteDraft] = useState("");
+  const timelineEditorRef = useRef(null);
   const eventColumns = [
     { id: "new", title: "New Event Requests", detail: "Incoming ministry requests waiting for admin review and scheduling.", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
     { id: "approved", title: "Approved Events", detail: "Confirmed events ready to be coordinated, staffed, and communicated.", accent: C.success, surface: "rgba(82,200,122,0.08)" },
@@ -3035,6 +3043,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
     setSelectedRequest(null);
   };
 
+  useEffect(() => {
+    if (!showTimelineModal || !timelineEditorRef.current) return;
+    timelineEditorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showTimelineModal]);
+
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
       <div className="card" style={{padding:22}}>
@@ -3065,7 +3078,9 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
                 Intake, review, approve, and archive incoming event requests for the church.
               </div>
-              <div style={{fontSize:12,color:C.gold,marginTop:"auto",justifySelf:"end"}}>Open requests</div>
+              <div style={{marginTop:"auto",justifySelf:"end"}}>
+                <span className="btn-gold-compact">Open requests</span>
+              </div>
             </button>
             <button
               className="card"
@@ -3076,7 +3091,9 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
                 Build planning workflows for upcoming events and organize them between your own plans and the rest of the team.
               </div>
-              <div style={{fontSize:12,color:C.gold,marginTop:"auto",justifySelf:"end"}}>Open planning</div>
+              <div style={{marginTop:"auto",justifySelf:"end"}}>
+                <span className="btn-gold-compact">Open planning</span>
+              </div>
             </button>
           </div>
         )}
@@ -3308,6 +3325,107 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                       <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Build the event out in chronological order. Open a node when you want to focus on one step without letting the timeline take over the whole page.</div>
                     </div>
                   </div>
+                  {canEditWorkflow(selectedWorkflow) && showTimelineModal && (
+                    <div ref={timelineEditorRef} className="card" style={{padding:18,textAlign:"left",display:"grid",gap:14,marginTop:16,marginBottom:16,border:`1px solid ${C.goldDim}`,background:C.surface}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <h3 style={sectionTitleStyle}>{timelineDraft.id ? "Edit Timeline Node" : "Add Timeline Node"}</h3>
+                        <button className="btn-outline" onClick={()=>setShowTimelineModal(false)} style={{padding:"6px 10px",fontSize:12}}>Close Editor</button>
+                      </div>
+                      <div style={{display:"grid",gap:10}}>
+                        <input className="input-field" placeholder="Timeline task title" value={timelineDraft.title} onChange={(e)=>setTimelineDraft((current) => ({ ...current, title: e.target.value }))} />
+                        <input className="input-field" type="date" value={timelineDraft.date} onChange={(e)=>setTimelineDraft((current) => ({ ...current, date: e.target.value }))} />
+                        <textarea className="input-field" rows={4} placeholder="What needs to happen for this step?" value={timelineDraft.details} onChange={(e)=>setTimelineDraft((current) => ({ ...current, details: e.target.value }))} style={{resize:"vertical"}} />
+                        <>
+                          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,textAlign:"left"}}>
+                            <input
+                              type="checkbox"
+                              checked={!!timelineDraft.includeInTasks}
+                              disabled={!!timelineDraft.id && !!timelineDraft.includeInTasks}
+                              onChange={(e)=>setTimelineDraft((current) => ({
+                                ...current,
+                                includeInTasks: e.target.checked,
+                                reviewRequired: e.target.checked ? current.reviewRequired : false,
+                                reviewers: e.target.checked ? current.reviewers : [],
+                              }))}
+                            />
+                            Also add this step to my Tasks list
+                          </label>
+                          {timelineDraft.id && timelineDraft.includeInTasks && (
+                            <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                              This node is already linked to Tasks. You can still update its review workflow below.
+                            </div>
+                          )}
+                          {timelineDraft.includeInTasks && (
+                            <div style={{display:"grid",gap:10}}>
+                              <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                                Shepherd will create or update the linked task assigned to you, and checking it off here will also move that linked task forward.
+                              </div>
+                              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,textAlign:"left"}}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!timelineDraft.reviewRequired}
+                                  onChange={(e)=>setTimelineDraft((current) => ({
+                                    ...current,
+                                    reviewRequired: e.target.checked,
+                                    reviewers: e.target.checked ? current.reviewers : [],
+                                  }))}
+                                />
+                                This task needs the review workflow
+                              </label>
+                              {timelineDraft.reviewRequired && (
+                                <>
+                                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                                    Pick the reviewers who need to sign off once this linked task reaches review.
+                                  </div>
+                                  <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                                    {eventPlanningTeamNames.map((name) => {
+                                      const isAssignedPerson = samePerson(name, profile?.full_name || selectedWorkflow.main_contact || "Staff");
+                                      return (
+                                        <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:isAssignedPerson ? C.muted : C.text,opacity:isAssignedPerson ? 0.72 : 1}}>
+                                          <input
+                                            type="checkbox"
+                                            checked={listIncludesPerson(timelineDraft.reviewers || [], name)}
+                                            onChange={()=>toggleTimelineReviewer(name)}
+                                            disabled={isAssignedPerson}
+                                          />
+                                          {name}
+                                          {isAssignedPerson && <span style={{fontSize:11,color:C.muted}}>(Assigned)</span>}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:22}}>
+                        <div>
+                          {timelineDraft.id && (
+                            <button
+                              className="btn-outline"
+                              onClick={() => deleteWorkflowTimelineItem(selectedWorkflow, timelineDraft.id)}
+                              style={{borderColor:"rgba(224,82,82,.35)",color:C.danger}}
+                            >
+                              <Icons.trash /> Delete Node
+                            </button>
+                          )}
+                        </div>
+                        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                          <button className="btn-outline" onClick={() => {
+                            setShowTimelineModal(false);
+                            setTimelineDraft({ id: null, title: "", date: "", details: "", includeInTasks: false, reviewRequired: false, reviewers: [] });
+                          }}>
+                            Cancel
+                          </button>
+                          <button className="btn-gold" onClick={() => addWorkflowTimelineItem(selectedWorkflow)}>
+                            {timelineDraft.id ? "Save Changes" : "Add To Timeline"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div style={{position:"relative",marginTop:16,padding:"4px 0 6px 0"}}>
                     {(selectedWorkflow.timeline_items || []).length > 0 && (
                       <div style={{position:"absolute",left:10,top:10,bottom:10,width:3,background:"linear-gradient(180deg, rgba(91,143,232,0.45) 0%, rgba(91,143,232,0.9) 100%)",borderRadius:999}} />
@@ -3445,107 +3563,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, setTask
                     )}
                   </div>
                 </div>
-                {canEditWorkflow(selectedWorkflow) && showTimelineModal && (
-                  <div className="card" style={{padding:18,textAlign:"left",display:"grid",gap:14}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                        <h3 style={sectionTitleStyle}>{timelineDraft.id ? "Edit Timeline Node" : "Add Timeline Node"}</h3>
-                        <button className="btn-outline" onClick={()=>setShowTimelineModal(false)} style={{padding:"6px 10px",fontSize:12}}>Back</button>
-                      </div>
-                      <div style={{display:"grid",gap:10}}>
-                        <input className="input-field" placeholder="Timeline task title" value={timelineDraft.title} onChange={(e)=>setTimelineDraft((current) => ({ ...current, title: e.target.value }))} />
-                        <input className="input-field" type="date" value={timelineDraft.date} onChange={(e)=>setTimelineDraft((current) => ({ ...current, date: e.target.value }))} />
-                        <textarea className="input-field" rows={4} placeholder="What needs to happen for this step?" value={timelineDraft.details} onChange={(e)=>setTimelineDraft((current) => ({ ...current, details: e.target.value }))} style={{resize:"vertical"}} />
-                        <>
-                          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,textAlign:"left"}}>
-                            <input
-                              type="checkbox"
-                              checked={!!timelineDraft.includeInTasks}
-                              disabled={!!timelineDraft.id && !!timelineDraft.includeInTasks}
-                              onChange={(e)=>setTimelineDraft((current) => ({
-                                ...current,
-                                includeInTasks: e.target.checked,
-                                reviewRequired: e.target.checked ? current.reviewRequired : false,
-                                reviewers: e.target.checked ? current.reviewers : [],
-                              }))}
-                            />
-                            Also add this step to my Tasks list
-                          </label>
-                          {timelineDraft.id && timelineDraft.includeInTasks && (
-                            <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                              This node is already linked to Tasks. You can still update its review workflow below.
-                            </div>
-                          )}
-                          {timelineDraft.includeInTasks && (
-                            <div style={{display:"grid",gap:10}}>
-                              <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                                Shepherd will create or update the linked task assigned to you, and checking it off here will also move that linked task forward.
-                              </div>
-                              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,textAlign:"left"}}>
-                                <input
-                                  type="checkbox"
-                                  checked={!!timelineDraft.reviewRequired}
-                                  onChange={(e)=>setTimelineDraft((current) => ({
-                                    ...current,
-                                    reviewRequired: e.target.checked,
-                                    reviewers: e.target.checked ? current.reviewers : [],
-                                  }))}
-                                />
-                                This task needs the review workflow
-                              </label>
-                              {timelineDraft.reviewRequired && (
-                                <>
-                                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                                    Pick the reviewers who need to sign off once this linked task reaches review.
-                                  </div>
-                                  <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:14,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-                                    {eventPlanningTeamNames.map((name) => {
-                                      const isAssignedPerson = samePerson(name, profile?.full_name || selectedWorkflow.main_contact || "Staff");
-                                      return (
-                                        <label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:isAssignedPerson ? C.muted : C.text,opacity:isAssignedPerson ? 0.72 : 1}}>
-                                          <input
-                                            type="checkbox"
-                                            checked={listIncludesPerson(timelineDraft.reviewers || [], name)}
-                                            onChange={()=>toggleTimelineReviewer(name)}
-                                            disabled={isAssignedPerson}
-                                          />
-                                          {name}
-                                          {isAssignedPerson && <span style={{fontSize:11,color:C.muted}}>(Assigned)</span>}
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      </div>
-                      <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:22}}>
-                        <div>
-                          {timelineDraft.id && (
-                            <button
-                              className="btn-outline"
-                              onClick={() => deleteWorkflowTimelineItem(selectedWorkflow, timelineDraft.id)}
-                              style={{borderColor:"rgba(224,82,82,.35)",color:C.danger}}
-                            >
-                              <Icons.trash /> Delete Node
-                            </button>
-                          )}
-                        </div>
-                        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                          <button className="btn-outline" onClick={() => {
-                            setShowTimelineModal(false);
-                            setTimelineDraft({ id: null, title: "", date: "", details: "", includeInTasks: false, reviewRequired: false, reviewers: [] });
-                          }}>
-                            Cancel
-                          </button>
-                          <button className="btn-gold" onClick={() => addWorkflowTimelineItem(selectedWorkflow)}>
-                            {timelineDraft.id ? "Save Changes" : "Add To Timeline"}
-                          </button>
-                        </div>
-                      </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -3749,7 +3766,7 @@ function Workspaces({ setActive }) {
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:28}}>
-        <h2 style={pageTitleStyle}>Workspaces</h2>
+        <h2 style={pageTitleStyle}>Planning Center</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>
       Open a board to work inside a dedicated ministry framework.
         </p>
@@ -3764,7 +3781,9 @@ function Workspaces({ setActive }) {
           >
             <div style={sectionTitleStyle}>{board.name}</div>
             <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>{board.summary}</div>
-            <div style={{fontSize:12,color:C.gold,marginTop:"auto",alignSelf:"flex-end",textAlign:"right"}}>Open board</div>
+            <div style={{marginTop:"auto",alignSelf:"flex-end"}}>
+              <span className="btn-gold-compact">Open board</span>
+            </div>
           </button>
         ))}
       </div>
@@ -4175,8 +4194,16 @@ function PublicEventRequestPage() {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, setActive, profile, church, previewUsers, notifications, unreadCount, openNotificationTarget }) {
+function Dashboard({ tasks, setActive, profile, church, previewUsers, notifications, archivedNotifications, unreadCount, readNotificationIds, archiveNotification, restoreNotification, openNotificationTarget }) {
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
+  const canSeeTeamSnapshot = !!profile && (
+    profile?.role === "senior_pastor"
+    || profile?.role === "church_administrator"
+    || (profile?.staff_roles || []).includes("senior_pastor")
+    || (profile?.staff_roles || []).includes("church_administrator")
+    || samePerson(profile?.title, "Senior Pastor")
+    || samePerson(profile?.title, "Church Administrator")
+  );
   const greeting = getTimeOfDayGreeting();
   const dailyVerse = getDailyVerse();
   const [teamSnapshotOpen, setTeamSnapshotOpen] = useState(() => {
@@ -4195,6 +4222,15 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
       return stored.notificationsOpen ?? true;
     } catch {
       return true;
+    }
+  });
+  const [archivedNotificationsOpen, setArchivedNotificationsOpen] = useState(() => {
+    if (typeof window === "undefined" || !profile?.id) return false;
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
+      return stored.archivedNotificationsOpen ?? false;
+    } catch {
+      return false;
     }
   });
   const [personalNotepadEntries, setPersonalNotepadEntries] = useState(() => {
@@ -4225,6 +4261,33 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
   const [editingNotepadId, setEditingNotepadId] = useState(null);
   const [editingNotepadDraft, setEditingNotepadDraft] = useState("");
   const [draggedNotepadId, setDraggedNotepadId] = useState(null);
+  const [currentWorkTaskId, setCurrentWorkTaskId] = useState(() => {
+    if (typeof window === "undefined" || !profile?.id) return "";
+    return window.localStorage.getItem(getCurrentWorkFocusStorageKey(profile.id)) || "";
+  });
+  const myAssignedTasks = tasks.filter((task) => samePerson(task.assignee, profile?.full_name));
+  const myOpenTasks = myAssignedTasks.filter((task) => task.status !== "done");
+  const myInReviewTasks = myOpenTasks.filter((task) => task.status === "in-review");
+  const myOverdueTasks = myOpenTasks.filter((task) => {
+    if (!task.due_date) return false;
+    const dueDate = new Date(task.due_date);
+    const today = new Date();
+    const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+    const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return dueDay.getTime() < todayDay.getTime();
+  });
+  const derivedCurrentTask =
+    myAssignedTasks.find((task) => task.status === "in-progress")
+    || myAssignedTasks
+      .filter((task) => task.status !== "done")
+      .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0]
+    || null;
+  const selectedCurrentTask = myOpenTasks.find((task) => task.id === currentWorkTaskId) || null;
+  const myCurrentTask = selectedCurrentTask || derivedCurrentTask;
+  const myTaskPreview = myOpenTasks
+    .slice()
+    .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))
+    .slice(0, 16);
   const teamSummary = previewUsers
     .filter((user) => !samePerson(user.full_name, profile?.full_name))
     .map((user) => {
@@ -4286,11 +4349,21 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
 
   useEffect(() => {
     if (typeof window === "undefined" || !profile?.id) return;
+    if (!currentWorkTaskId) {
+      window.localStorage.removeItem(getCurrentWorkFocusStorageKey(profile.id));
+      return;
+    }
+    window.localStorage.setItem(getCurrentWorkFocusStorageKey(profile.id), currentWorkTaskId);
+  }, [profile?.id, currentWorkTaskId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !profile?.id) return;
     window.localStorage.setItem(getDashboardSectionStateStorageKey(profile.id), JSON.stringify({
       teamSnapshotOpen,
       notificationsOpen,
+      archivedNotificationsOpen,
     }));
-  }, [profile?.id, teamSnapshotOpen, notificationsOpen]);
+  }, [profile?.id, teamSnapshotOpen, notificationsOpen, archivedNotificationsOpen]);
 
   const postPersonalNote = () => {
     if (!notepadDraft.trim()) return;
@@ -4352,7 +4425,103 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
               : `Here is your ministry workload and the shared church picture for ${roleLabel(profile)}.`}
         </p>
       </div>
-      {previewUsers.length > 0 && (
+      <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
+        <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{textAlign:"left"}}>
+            <h3 style={sectionTitleStyle}>Focus Bar</h3>
+            <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.5}}>
+              {myOpenTasks.length} open task{myOpenTasks.length === 1 ? "" : "s"} assigned to you
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end",marginLeft:"auto"}}>
+            <button
+              type="button"
+              className="btn-gold-compact"
+              onClick={() => {
+                setActive("tasks");
+                if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            >
+              Open task board
+            </button>
+          </div>
+        </div>
+        <div style={{display:"grid",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3, minmax(0,1fr))",gap:10}}>
+            {[
+              { label: "Open", value: String(myOpenTasks.length), tone: C.text },
+              { label: "In Review", value: String(myInReviewTasks.length), tone: myInReviewTasks.length > 0 ? C.blue : C.muted },
+              { label: "Overdue", value: String(myOverdueTasks.length), tone: myOverdueTasks.length > 0 ? C.danger : C.muted },
+            ].map((metric) => (
+              <div key={metric.label} className="card" style={{padding:"12px 12px",display:"grid",gap:4,textAlign:"left",background:"rgba(255,255,255,.03)"}}>
+                <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>{metric.label}</div>
+                <div style={{fontSize:22,fontWeight:700,color:metric.tone,lineHeight:1}}>{metric.value}</div>
+              </div>
+            ))}
+          </div>
+          {myTaskPreview.length > 0 ? (
+            <div style={{display:"grid",gap:10}}>
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6,textAlign:"left"}}>
+                Choose the task that has your attention right now so your dashboard reflects your present focus clearly.
+              </div>
+              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(4, minmax(0,1fr))",gap:10}}>
+                {myTaskPreview.map((task) => {
+                  const isSelected = myCurrentTask?.id === task.id;
+                  const isManual = currentWorkTaskId === task.id;
+                  return (
+                    <button
+                      key={task.id}
+                      type="button"
+                      onClick={() => setCurrentWorkTaskId(isManual ? "" : task.id)}
+                      className="card"
+                      style={{
+                        padding:"14px 16px",
+                        display:"grid",
+                        gap:6,
+                        alignContent:"start",
+                        minHeight:128,
+                        textAlign:"left",
+                        border:`1px solid ${isSelected ? C.goldDim : C.border}`,
+                        background:isSelected ? C.goldGlow : C.surface,
+                        cursor:"pointer",
+                      }}
+                    >
+                      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:14,fontWeight:600,color:C.text,lineHeight:1.45}}>{task.title}</div>
+                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginTop:2}}>
+                            {task.due_date ? `Due ${fmtDate(task.due_date)}` : "No due date"}{task.ministry ? ` • ${task.ministry}` : ""}
+                          </div>
+                        </div>
+                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+                          {task.status !== "todo" && (
+                            <span className="badge" style={{background:"rgba(255,255,255,.04)",color:task.status === "in-progress" ? C.blue : C.gold,border:`1px solid ${C.border}`}}>
+                              {task.status === "in-progress" ? "In Progress" : "In Review"}
+                            </span>
+                          )}
+                          {isSelected && (
+                            <span className="badge" style={{background:`${C.gold}22`,color:C.gold,border:`1px solid ${C.goldDim}`}}>
+                              {isManual ? "Working on this now" : "Suggested Focus"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="card" style={{padding:"16px 18px",display:"grid",gap:6,textAlign:"left",background:"rgba(255,255,255,.02)"}}>
+              <div style={{fontSize:16,fontWeight:600,color:C.text}}>You’re clear right now</div>
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                No open tasks are assigned to you at the moment.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      {canSeeTeamSnapshot && previewUsers.length > 0 && (
         <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <div style={{textAlign:"left"}}>
@@ -4460,19 +4629,84 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
         </div>
         {notificationsOpen ? (
           <>
-            {notifications.length === 0 && <p style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"left"}}>No new notifications right now.</p>}
+            {notifications.length === 0 && <p style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"left"}}>No notifications right now.</p>}
             {notifications.map((item) => (
-              <div className="dashboard-note-row" key={item.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`,alignItems:"flex-start"}}>
-                <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:5,flexShrink:0}} />
+              <div
+                className="dashboard-note-row"
+                key={item.id}
+                style={{
+                  display:"flex",
+                  gap:12,
+                  marginBottom:14,
+                  padding:"12px 12px 14px",
+                  borderBottom:`1px solid ${C.border}`,
+                  border:`1px solid ${!readNotificationIds.includes(item.id) ? C.goldDim : C.border}`,
+                  borderRadius:12,
+                  alignItems:"flex-start",
+                  background:!readNotificationIds.includes(item.id) ? C.goldGlow : "rgba(255,255,255,.02)",
+                  opacity:!readNotificationIds.includes(item.id) ? 1 : 0.68,
+                }}
+              >
+                <div style={{width:10,height:10,borderRadius:"50%",background:!readNotificationIds.includes(item.id) ? item.tone : C.muted,marginTop:5,flexShrink:0}} />
                 <div style={{textAlign:"left"}}>
-                  <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
+                  <div style={{fontSize:13,fontWeight:500,color:C.text,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span>{item.title}</span>
+                    {!readNotificationIds.includes(item.id) && (
+                      <span className="badge" style={{fontSize:9,background:`${C.gold}22`,color:C.gold,border:`1px solid ${C.goldDim}`}}>
+                        New
+                      </span>
+                    )}
+                  </div>
                   <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
                 </div>
                 <button type="button" className="btn-gold-compact" onClick={()=>openNotificationTarget?.(item)} style={{marginLeft:"auto"}}>
                   Open
                 </button>
+                <button type="button" className="btn-outline" onClick={() => archiveNotification?.(item.id)} style={{padding:"6px 10px",marginLeft:8}}>
+                  Archive
+                </button>
               </div>
             ))}
+            {archivedNotifications.length > 0 && (
+              <div style={{display:"grid",gap:10,marginTop:10}}>
+                <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+                  <div style={{textAlign:"left"}}>
+                    <div style={{fontSize:12,color:C.muted}}>Archived</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>
+                      {archivedNotifications.length} archived notification{archivedNotifications.length === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                  <button type="button" className="btn-gold-compact" onClick={() => setArchivedNotificationsOpen((current) => !current)}>
+                    {archivedNotificationsOpen ? "Collapse" : "Expand"}
+                  </button>
+                </div>
+                {archivedNotificationsOpen && archivedNotifications.map((item) => (
+                  <div
+                    className="dashboard-note-row"
+                    key={`archived-${item.id}`}
+                    style={{
+                      display:"flex",
+                      gap:12,
+                      padding:"12px 12px 14px",
+                      border:`1px solid ${C.border}`,
+                      borderRadius:12,
+                      alignItems:"flex-start",
+                      background:"rgba(255,255,255,.02)",
+                      opacity:0.6,
+                    }}
+                  >
+                    <div style={{width:10,height:10,borderRadius:"50%",background:C.muted,marginTop:5,flexShrink:0}} />
+                    <div style={{textAlign:"left"}}>
+                      <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
+                      <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
+                    </div>
+                    <button type="button" className="btn-gold-compact" onClick={() => restoreNotification?.(item.id)} style={{marginLeft:"auto"}}>
+                      Restore
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         ) : (
           <div style={{fontSize:13,color:C.muted,textAlign:"left",marginTop:4}}>Notifications collapsed. Expand this section to review and open them.</div>
@@ -6004,11 +6238,11 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
-      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100,textAlign:"left"}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24,textAlign:"left"}}>
         <div style={{textAlign:"left",justifySelf:"start"}}>
           <h2 style={{...pageTitleStyle,textAlign:"left"}}>{financeView ? "Budget Overview" : "Your Budgets"}</h2>
-          <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+          <p style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"left"}}>
             {financeView
               ? "See every ministry's budget standing and manage the church's ministry budgets."
               : "These are the budgets currently assigned to you. If something is missing, reach out to the Finance Director so they can attach the right ministry budget to your profile in the ministry editor."}
@@ -6239,7 +6473,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         {ministrySummaries.map((summary) => (
           <div key={summary.ministry} className="stat-card" style={{borderTop:`3px solid ${CATEGORY_STYLES[summary.ministry]?.color || C.gold}`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
-              <div>
+              <div style={{textAlign:"left"}}>
                 <div style={{...sectionTitleStyle,fontSize:24}}>{summary.ministry}</div>
                 <div style={{fontSize:12,color:C.muted,marginTop:4}}>{summary.transactions} transactions</div>
                 <div style={{fontSize:12,color:C.muted,marginTop:2}}>{summary.purchaseOrders} purchase orders</div>
@@ -6518,60 +6752,281 @@ function Ministries({ ministries }) {
 }
 
 // ── Calendar ───────────────────────────────────────────────────────────────
-function CalendarView({ tasks }) {
+function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalendarEvents, previewUsers, profile, churchId }) {
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const today = new Date();
-  const days = Array.from({length:35},(_,i)=>{
-    const d = new Date(today.getFullYear(),today.getMonth(),1);
-    d.setDate(d.getDate()-d.getDay()+i);
-    return d;
+  const [calendarFilters, setCalendarFilters] = useState({
+    churchEvents: true,
+    myTasks: true,
+    staffTimeOff: false,
   });
-  const upcoming = [...tasks].filter(t=>t.status!=="done").sort((a,b)=>new Date(a.due_date)-new Date(b.due_date));
+  const [showCalendarItemForm, setShowCalendarItemForm] = useState(false);
+  const [calendarItemError, setCalendarItemError] = useState("");
+  const [calendarItemForm, setCalendarItemForm] = useState({
+    calendar_type: "churchEvents",
+    title: "",
+    event_date: "",
+    start_time: "",
+    end_time: "",
+    location: "",
+    notes: "",
+  });
+  const approvedEvents = (eventRequests || [])
+    .filter((request) => request.status === "approved")
+    .map((request) => {
+      const primaryDate = request.single_date || request.multi_start_date || request.recurring_start_date || "";
+      return {
+        id: `event-${request.id}`,
+        type: "churchEvents",
+        date: primaryDate,
+        title: request.event_name || "Church event",
+        detail: getEventDateSummary(request),
+        tone: C.gold,
+        tag: "Church Event",
+      };
+    })
+    .filter((entry) => entry.date);
+  const directChurchEvents = (calendarEvents || [])
+    .map((event) => ({
+      id: `calendar-event-${event.id}`,
+      type: "churchEvents",
+      date: event.event_date,
+      title: event.title || "Church event",
+      detail: [
+        event.start_time && event.end_time ? `${event.start_time} - ${event.end_time}` : event.start_time || "",
+        event.location || "",
+      ].filter(Boolean).join(" • ") || "Added directly to the church calendar",
+      tone: C.gold,
+      tag: "Church Event",
+    }))
+    .filter((entry) => entry.date);
+  const myTasks = (tasks || [])
+    .filter((task) => task.status !== "done" && samePerson(task.assignee, profile?.full_name) && task.due_date)
+    .map((task) => ({
+      id: `task-${task.id}`,
+      type: "myTasks",
+      date: task.due_date,
+      title: task.title,
+      detail: `${task.ministry} • ${task.status === "in-progress" ? "In Progress" : task.status === "in-review" ? "In Review" : "Not Started"}`,
+      tone: CATEGORY_STYLES[task.ministry]?.color || C.blue,
+      tag: "My Task",
+    }));
+  const timeOffEntries = (previewUsers || [])
+    .flatMap((user) => {
+      const rawEntries = user.pto_requests || user.ptoRequests || [];
+      if (!Array.isArray(rawEntries)) return [];
+      return rawEntries
+        .map((entry, index) => {
+          if ((entry?.status || "").toLowerCase() !== "approved") return null;
+          const startDate = entry?.start_date || entry?.startDate || entry?.date || "";
+          if (!startDate) return null;
+          return {
+            id: `timeoff-${user.id}-${index}`,
+            type: "staffTimeOff",
+            date: startDate,
+            title: user.full_name || "Staff PTO",
+            detail: entry?.label || entry?.reason || "Approved PTO",
+            tone: C.muted,
+            tag: "Approved PTO",
+          };
+        })
+        .filter(Boolean);
+    });
+  const calendarItems = [
+    ...(calendarFilters.churchEvents ? [...approvedEvents, ...directChurchEvents] : []),
+    ...(calendarFilters.myTasks ? myTasks : []),
+    ...(calendarFilters.staffTimeOff ? timeOffEntries : []),
+  ]
+    .filter((item) => item.date)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const groupedCalendarItems = calendarItems.reduce((accumulator, item) => {
+    const key = item.date;
+    if (!accumulator[key]) accumulator[key] = [];
+    accumulator[key].push(item);
+    return accumulator;
+  }, {});
+  const groupedCalendarList = Object.entries(groupedCalendarItems)
+    .sort(([a], [b]) => new Date(a) - new Date(b))
+    .map(([date, items]) => ({ date, items }));
+  const filterOptions = [
+    { key: "churchEvents", label: "Church Events" },
+    { key: "myTasks", label: "My Tasks" },
+    { key: "staffTimeOff", label: "Staff Time Off" },
+  ];
+  const saveCalendarItem = async () => {
+    if (!churchId || !profile?.id || !calendarItemForm.title.trim() || !calendarItemForm.event_date) {
+      setCalendarItemError("Add at least a title and date before saving.");
+      return;
+    }
+    if (calendarItemForm.calendar_type === "myTasks") {
+      const payload = {
+        church_id: churchId,
+        title: calendarItemForm.title.trim(),
+        ministry: profile?.ministries?.[0] || "Admin",
+        assignee: profile?.full_name || "Staff Member",
+        due_date: calendarItemForm.event_date,
+        status: "todo",
+        notes: calendarItemForm.notes.trim() || null,
+        review_required: false,
+        reviewers: [],
+        review_approvals: [],
+        comments: [],
+      };
+      const { data, error } = await supabase.from("tasks").insert(payload).select().single();
+      if (error) {
+        setCalendarItemError(error.message || "That task could not be added yet.");
+        return;
+      }
+      setTasks((current) => [normalizeTask(data), ...(current || [])]);
+    } else {
+      const payload = {
+        church_id: churchId,
+        created_by: profile.id,
+        title: calendarItemForm.title.trim(),
+        event_date: calendarItemForm.event_date,
+        start_time: calendarItemForm.start_time || null,
+        end_time: calendarItemForm.end_time || null,
+        location: calendarItemForm.location.trim() || null,
+        notes: calendarItemForm.notes.trim() || null,
+      };
+      const { data, error } = await supabase.from("calendar_events").insert(payload).select().single();
+      if (error) {
+        setCalendarItemError(error.message || "That church event could not be saved yet.");
+        return;
+      }
+      setCalendarEvents((current) => [data, ...(current || [])]);
+    }
+    setCalendarItemError("");
+    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", location: "", notes: "" });
+    setShowCalendarItemForm(false);
+  };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
-      <div style={{marginBottom:24}}>
-        <h2 style={pageTitleStyle}>Calendar</h2>
-        <p style={{color:C.muted,fontSize:13,marginTop:4}}>{months[today.getMonth()]} {today.getFullYear()}</p>
-      </div>
-      <div className="mobile-calendar-layout" style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:24}}>
-        <div className="card" style={{padding:20}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:10}}>
-            {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
-              <div key={d} style={{textAlign:"center",fontSize:11,color:C.muted,fontWeight:600,padding:"4px 0"}}>{d}</div>
-            ))}
-          </div>
-          <div className="calendar-day-grid" style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
-            {days.map((d,i)=>{
-              const isToday = d.toDateString()===today.toDateString();
-              const isMonth = d.getMonth()===today.getMonth();
-              const dt = tasks.filter(t=>new Date(t.due_date).toDateString()===d.toDateString()&&t.status!=="done");
-              return (
-                <div className="calendar-day-cell" key={i} style={{minHeight:60,borderRadius:8,padding:"6px 8px",background:isToday?C.goldGlow:"transparent",border:`1px solid ${isToday?C.goldDim:"transparent"}`,opacity:isMonth?1:0.35}}>
-                  <div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?C.gold:C.text,marginBottom:4}}>{d.getDate()}</div>
-                  {dt.slice(0,2).map(t=>(
-                    <div key={t.id} style={{fontSize:9,background:(CATEGORY_STYLES[t.ministry]?.color||C.blue)+"33",color:CATEGORY_STYLES[t.ministry]?.color||C.blue,borderRadius:3,padding:"1px 4px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100,textAlign:"left"}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",marginBottom:24,textAlign:"left"}}>
+        <div style={{textAlign:"left"}}>
+          <h2 style={pageTitleStyle}>Calendar</h2>
+          <p style={{color:C.muted,fontSize:13,marginTop:4}}>{months[today.getMonth()]} {today.getFullYear()}</p>
         </div>
-        <div className="card" style={{padding:20,height:"fit-content"}}>
-          <h3 style={{...sectionTitleStyle,marginBottom:16}}>Upcoming</h3>
-          {upcoming.length===0&&<p style={{color:C.muted,fontSize:13}}>No upcoming tasks.</p>}
-          {upcoming.slice(0,8).map(t=>(
-            <div key={t.id} style={{display:"flex",gap:12,marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
-              <div style={{textAlign:"center",minWidth:36}}>
-                <div style={{fontSize:18,fontWeight:700,color:C.gold,fontFamily:"'Young Serif Medium', Georgia, serif",lineHeight:1}}>{new Date(t.due_date).getDate()}</div>
-                <div style={{fontSize:10,color:C.muted}}>{months[new Date(t.due_date).getMonth()]}</div>
+        <div className="page-actions" style={{display:"flex",justifyContent:"flex-end"}}>
+          <button className="btn-gold" onClick={() => setShowCalendarItemForm((current) => !current)}>
+            <Icons.plus /> {showCalendarItemForm ? "Close Form" : "Add To Calendar"}
+          </button>
+        </div>
+      </div>
+      {showCalendarItemForm && (
+        <div className="card" style={{padding:20,display:"grid",gap:12,marginBottom:18,textAlign:"left"}}>
+          <div style={{display:"grid",gap:6}}>
+            <label style={{fontSize:12,color:C.muted}}>Calendar</label>
+            <select className="input-field" value={calendarItemForm.calendar_type} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, calendar_type: e.target.value }))} style={{background:C.surface}}>
+              <option value="churchEvents">Church Events</option>
+              <option value="myTasks">My Tasks</option>
+            </select>
+          </div>
+          <div style={{display:"grid",gap:6}}>
+            <label style={{fontSize:12,color:C.muted}}>{calendarItemForm.calendar_type === "myTasks" ? "Task Name" : "Event Name"}</label>
+            <input className="input-field" value={calendarItemForm.title} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, title: e.target.value }))} placeholder={calendarItemForm.calendar_type === "myTasks" ? "Example: Finish camp follow-up email" : "Example: Leadership Prayer Night"} />
+          </div>
+          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+            <div style={{display:"grid",gap:6}}>
+              <label style={{fontSize:12,color:C.muted}}>Date</label>
+              <input className="input-field" type="date" value={calendarItemForm.event_date} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, event_date: e.target.value }))} />
+            </div>
+            {calendarItemForm.calendar_type === "churchEvents" && (
+              <div style={{display:"grid",gap:6}}>
+                <label style={{fontSize:12,color:C.muted}}>Location</label>
+                <input className="input-field" value={calendarItemForm.location} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, location: e.target.value }))} placeholder="Example: Main Lobby" />
               </div>
-              <div>
-                <div style={{fontSize:13,color:C.text}}>{t.title}</div>
-                <span className={`badge ${getTag(t.ministry)}`} style={{fontSize:9,marginTop:4}}>{t.ministry}</span>
+            )}
+          </div>
+          {calendarItemForm.calendar_type === "churchEvents" && (
+            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+              <div style={{display:"grid",gap:6}}>
+                <label style={{fontSize:12,color:C.muted}}>Start Time</label>
+                <input className="input-field" type="time" value={calendarItemForm.start_time} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, start_time: e.target.value }))} />
+              </div>
+              <div style={{display:"grid",gap:6}}>
+                <label style={{fontSize:12,color:C.muted}}>End Time</label>
+                <input className="input-field" type="time" value={calendarItemForm.end_time} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, end_time: e.target.value }))} />
               </div>
             </div>
-          ))}
+          )}
+          <div style={{display:"grid",gap:6}}>
+            <label style={{fontSize:12,color:C.muted}}>Notes</label>
+            <textarea className="input-field" rows={3} value={calendarItemForm.notes} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, notes: e.target.value }))} placeholder={calendarItemForm.calendar_type === "myTasks" ? "Add a quick note for this task" : "Anything your team should know"} style={{resize:"vertical"}} />
+          </div>
+          {calendarItemError && <div style={{fontSize:12,color:C.danger}}>{calendarItemError}</div>}
+          <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+            <button className="btn-outline" onClick={() => setShowCalendarItemForm(false)}>Cancel</button>
+            <button className="btn-gold" onClick={saveCalendarItem}>Save</button>
+          </div>
+        </div>
+      )}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:18}}>
+        {filterOptions.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            className={calendarFilters[option.key] ? "btn-gold-compact" : "btn-outline"}
+            onClick={() => setCalendarFilters((current) => ({ ...current, [option.key]: !current[option.key] }))}
+            style={calendarFilters[option.key]
+              ? { boxShadow:`0 0 0 1px ${C.goldDim}, 0 10px 24px rgba(201,168,76,.24)`, display:"inline-flex", alignItems:"center", gap:8 }
+              : { padding:"6px 12px", fontSize:12, opacity:.78 }}
+          >
+            {calendarFilters[option.key] ? (
+              <>
+                <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:4,background:"rgba(13,18,31,.24)",border:`1px solid ${C.goldText}`,fontSize:11,lineHeight:1,color:C.goldText}}>✓</span>
+                <span>{option.label}</span>
+              </>
+            ) : option.label}
+          </button>
+        ))}
+      </div>
+      <div className="card" style={{padding:20,textAlign:"left"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,marginBottom:18,flexWrap:"wrap",textAlign:"left"}}>
+          <div style={{textAlign:"left"}}>
+            <h3 style={{...sectionTitleStyle,marginBottom:6}}>Calendar Feed</h3>
+            <p style={{color:C.muted,fontSize:13,lineHeight:1.6,margin:0}}>A cleaner running list of what is coming up across the calendars you have turned on.</p>
+          </div>
+        </div>
+        {groupedCalendarList.length === 0 && (
+          <p style={{color:C.muted,fontSize:13}}>Nothing is showing for the calendars you have selected.</p>
+        )}
+        <div style={{display:"grid",gap:16}}>
+          {groupedCalendarList.map((group) => {
+            const groupDate = new Date(group.date);
+            const isToday = groupDate.toDateString() === today.toDateString();
+            return (
+              <div key={group.date} style={{display:"grid",gridTemplateColumns:"minmax(82px,110px) 1fr",gap:16,alignItems:"start"}}>
+                <div style={{paddingTop:2,textAlign:"center"}}>
+                  <div style={{fontSize:11,letterSpacing:".08em",textTransform:"uppercase",color:isToday ? C.gold : C.muted,fontWeight:700}}>
+                    {months[groupDate.getMonth()]}
+                  </div>
+                  <div style={{fontSize:30,lineHeight:1,fontWeight:700,color:isToday ? C.gold : C.text,fontFamily:"'Young Serif Medium', Georgia, serif"}}>
+                    {groupDate.getDate()}
+                  </div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:6}}>
+                    {groupDate.toLocaleDateString(undefined, { weekday:"long" })}
+                  </div>
+                </div>
+                <div style={{display:"grid",gap:10}}>
+                  {group.items.map((item) => (
+                    <div key={item.id} className="card" style={{padding:"14px 16px",display:"grid",gap:6}}>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:14,fontWeight:600,color:C.text,lineHeight:1.45}}>{item.title}</div>
+                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginTop:2}}>{item.detail}</div>
+                        </div>
+                        <span className="badge" style={{fontSize:10,background:`${item.tone}22`,color:item.tone,border:`1px solid ${item.tone}44`,whiteSpace:"nowrap"}}>
+                          {item.tag}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -6588,6 +7043,7 @@ export default function App() {
   const [people, setPeople] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
   const [ministries, setMinistries] = useState([]);
   const [eventRequests, setEventRequests] = useState(null);
   const [trashItems, setTrashItems] = useState([]);
@@ -6597,6 +7053,7 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
+  const [archivedNotificationIds, setArchivedNotificationIds] = useState([]);
   const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
   const shownNotificationIdsRef = useRef(new Set());
 
@@ -6620,14 +7077,42 @@ export default function App() {
     () => buildNotifications(tasks, eventRequests, purchaseOrders, profile),
     [tasks, eventRequests, purchaseOrders, profile]
   );
+  const validNotificationIds = useMemo(
+    () => new Set(notifications.map((item) => item.id)),
+    [notifications]
+  );
+  const cleanedReadNotificationIds = useMemo(
+    () => readNotificationIds.filter((id) => validNotificationIds.has(id)),
+    [readNotificationIds, validNotificationIds]
+  );
+  const cleanedArchivedNotificationIds = useMemo(
+    () => archivedNotificationIds.filter((id) => validNotificationIds.has(id)),
+    [archivedNotificationIds, validNotificationIds]
+  );
   const unreadNotifications = useMemo(
-    () => notifications.filter((item) => !readNotificationIds.includes(item.id)),
-    [notifications, readNotificationIds]
+    () => notifications.filter((item) => !cleanedReadNotificationIds.includes(item.id)),
+    [notifications, cleanedReadNotificationIds]
+  );
+  const activeNotifications = useMemo(
+    () => notifications.filter((item) => !cleanedArchivedNotificationIds.includes(item.id)),
+    [notifications, cleanedArchivedNotificationIds]
+  );
+  const archivedNotifications = useMemo(
+    () => notifications.filter((item) => cleanedArchivedNotificationIds.includes(item.id)),
+    [notifications, cleanedArchivedNotificationIds]
   );
 
   const markNotificationRead = (id) => {
     if (!id) return;
     setReadNotificationIds((current) => current.includes(id) ? current : [...current, id]);
+  };
+  const archiveNotification = (id) => {
+    if (!id) return;
+    setArchivedNotificationIds((current) => current.includes(id) ? current : [...current, id]);
+  };
+  const restoreNotification = (id) => {
+    if (!id) return;
+    setArchivedNotificationIds((current) => current.filter((entry) => entry !== id));
   };
 
   const openNotificationTarget = useCallback((item) => {
@@ -6717,18 +7202,22 @@ export default function App() {
     if (prof?.id && typeof window !== "undefined") {
       const raw = window.localStorage.getItem(getNotificationStorageKey(prof.id));
       setReadNotificationIds(raw ? JSON.parse(raw) : []);
+      const archivedRaw = window.localStorage.getItem(getArchivedNotificationStorageKey(prof.id));
+      setArchivedNotificationIds(archivedRaw ? JSON.parse(archivedRaw) : []);
     } else {
       setReadNotificationIds([]);
+      setArchivedNotificationIds([]);
       setTrashItems([]);
     }
     if (prof?.church_id) {
-      const [ch, t, er, p, tr, po, m, staff] = await Promise.all([
+      const [ch, t, er, p, tr, po, ce, m, staff] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("people").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
         supabase.from("purchase_orders").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+        supabase.from("calendar_events").select("*").eq("church_id", prof.church_id).order("event_date", { ascending: true }),
         supabase.from("ministries").select("*").eq("church_id", prof.church_id),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
       ]);
@@ -6745,6 +7234,7 @@ export default function App() {
       setPeople(p.data || []);
       setTransactions(tr.data || []);
       setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
+      setCalendarEvents(ce.data || []);
       setMinistries(m.data || []);
       setPreviewUsers((staff.data || []).map(normalizeAccessUser));
     } else {
@@ -6755,6 +7245,7 @@ export default function App() {
       setPeople([]);
       setTransactions([]);
       setPurchaseOrders([]);
+      setCalendarEvents([]);
       setMinistries([]);
       setPreviewUsers([]);
     }
@@ -6763,8 +7254,13 @@ export default function App() {
 
   useEffect(() => {
     if (!profile?.id) return;
-    window.localStorage.setItem(getNotificationStorageKey(profile.id), JSON.stringify(readNotificationIds));
-  }, [profile?.id, readNotificationIds]);
+    window.localStorage.setItem(getNotificationStorageKey(profile.id), JSON.stringify(cleanedReadNotificationIds));
+  }, [profile?.id, cleanedReadNotificationIds]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    window.localStorage.setItem(getArchivedNotificationStorageKey(profile.id), JSON.stringify(cleanedArchivedNotificationIds));
+  }, [profile?.id, cleanedArchivedNotificationIds]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -6848,9 +7344,9 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} unreadCount={unreadNotifications.length} openNotificationTarget={openNotificationTarget}/>,
+    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={unreadNotifications.slice(0, 5)} unreadCount={unreadNotifications.length} openNotificationTarget={openNotificationTarget}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
@@ -6860,7 +7356,7 @@ export default function App() {
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
     ministries: <Ministries ministries={ministries}/>,
-    calendar:   <CalendarView tasks={tasks}/>,
+    calendar:   <CalendarView tasks={tasks} setTasks={setTasks} eventRequests={eventRequests || []} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} previewUsers={previewUsers} profile={profile} churchId={church?.id} />,
   };
 
   return (

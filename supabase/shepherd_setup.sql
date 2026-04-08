@@ -68,6 +68,8 @@ create table if not exists public.profiles (
   can_see_team_overview boolean not null default true,
   can_see_admin_overview boolean not null default false,
   read_only_oversight boolean not null default false,
+  current_focus_task_id uuid references public.tasks(id) on delete set null,
+  current_focus_updated_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -82,6 +84,8 @@ alter table public.profiles add column if not exists ministries text[] not null 
 alter table public.profiles add column if not exists can_see_team_overview boolean not null default true;
 alter table public.profiles add column if not exists can_see_admin_overview boolean not null default false;
 alter table public.profiles add column if not exists read_only_oversight boolean not null default false;
+alter table public.profiles add column if not exists current_focus_task_id uuid references public.tasks(id) on delete set null;
+alter table public.profiles add column if not exists current_focus_updated_at timestamptz;
 alter table public.profiles add column if not exists created_at timestamptz not null default now();
 alter table public.profiles drop constraint if exists profiles_role_check;
 

@@ -216,6 +216,8 @@ const normalizeAccessUser = (record) => ({
   canSeeTeamOverview: record?.can_see_team_overview ?? record?.canSeeTeamOverview ?? false,
   canSeeAdminOverview: record?.can_see_admin_overview ?? record?.canSeeAdminOverview ?? false,
   readOnlyOversight: record?.read_only_oversight ?? record?.readOnlyOversight ?? false,
+  current_focus_task_id: record?.current_focus_task_id || record?.currentFocusTaskId || null,
+  current_focus_updated_at: record?.current_focus_updated_at || record?.currentFocusUpdatedAt || null,
 });
 const normalizeTask = (task) => ({
   ...task,
@@ -380,6 +382,8 @@ const createProfilePayload = (authUserId, churchId, staffUser, email) => ({
   can_see_team_overview: staffUser.can_see_team_overview ?? staffUser.canSeeTeamOverview ?? false,
   can_see_admin_overview: staffUser.can_see_admin_overview ?? staffUser.canSeeAdminOverview ?? false,
   read_only_oversight: staffUser.read_only_oversight ?? staffUser.readOnlyOversight ?? false,
+  current_focus_task_id: null,
+  current_focus_updated_at: null,
 });
 const claimStaffProfile = async (staffId, churchId) => {
   if (!staffId || !churchId) return;
@@ -877,6 +881,10 @@ const buildEventPlanTaskNotes = (workflow, details, nodeId) => [
   nodeId ? `Event plan node ID: ${nodeId}` : null,
   details?.trim() || null,
 ].filter(Boolean).join("\n\n");
+const getLinkedEventPlanName = (task) => {
+  const match = String(task?.notes || "").match(/^Linked from event plan:\s*(.+?)(?:\n|$)/);
+  return match?.[1]?.trim() || "";
+};
 const findLinkedEventPlanTask = (tasks, nodeId) =>
   (tasks || []).find((task) => typeof task?.notes === "string" && task.notes.includes(`Event plan node ID: ${nodeId}`)) || null;
 const commentMentionsProfile = (comment, profile) => {
@@ -2780,18 +2788,26 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     };
     setWorkflowError("");
     if (workflowForm.id) {
-      const { data, error } = await supabase.from("event_workflows").update(payload).eq("id", workflowForm.id).select().single();
+      const { data, error } = await supabase.from("event_workflows").update(payload).eq("id", workflowForm.id).select().maybeSingle();
       if (error) {
         setWorkflowError(error.message || "We couldn't save that planning workflow.");
+        return;
+      }
+      if (!data) {
+        setWorkflowError("We couldn't save that planning workflow.");
         return;
       }
       const normalized = normalizeEventWorkflow(data);
       setEventWorkflows((current) => (current || []).map((entry) => entry.id === normalized.id ? normalized : entry));
       setSelectedWorkflow(normalized);
     } else {
-      const { data, error } = await supabase.from("event_workflows").insert(payload).select().single();
+      const { data, error } = await supabase.from("event_workflows").insert(payload).select().maybeSingle();
       if (error) {
         setWorkflowError(error.message || "We couldn't create that planning workflow.");
+        return;
+      }
+      if (!data) {
+        setWorkflowError("We couldn't create that planning workflow.");
         return;
       }
       const normalized = normalizeEventWorkflow(data);
@@ -2820,8 +2836,8 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     });
   };
   const updateWorkflow = async (workflow, changes) => {
-    const { data, error } = await supabase.from("event_workflows").update(changes).eq("id", workflow.id).select().single();
-    if (error) return;
+    const { data, error } = await supabase.from("event_workflows").update(changes).eq("id", workflow.id).select().maybeSingle();
+    if (error || !data) return;
     const normalized = normalizeEventWorkflow(data);
     setEventWorkflows((current) => (current || []).map((entry) => entry.id === normalized.id ? normalized : entry));
     setSelectedWorkflow((current) => current?.id === normalized.id ? normalized : current);
@@ -2876,9 +2892,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
           review_approvals: [],
           review_history: [],
         };
-        const { data: createdTask, error: taskError } = await supabase.from("tasks").insert(taskPayload).select().single();
+        const { data: createdTask, error: taskError } = await supabase.from("tasks").insert(taskPayload).select().maybeSingle();
         if (taskError) {
           setWorkflowError(taskError.message || "We couldn't add that timeline step to Tasks.");
+          return;
+        }
+        if (!createdTask) {
+          setWorkflowError("We couldn't add that timeline step to Tasks.");
           return;
         }
         linkedTaskId = createdTask?.id || null;
@@ -2895,12 +2915,26 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
           review_approvals: [],
           status: timelineDraft.includeInTasks && timelineDraft.reviewRequired && currentItem?.done ? "in-review" : currentItem?.done ? "done" : "todo",
         };
-        const { data: updatedTask, error: taskError } = await supabase.from("tasks").update(taskPayload).eq("id", linkedTaskId).select().single();
+        let { data: updatedTask, error: taskError } = await supabase.from("tasks").update(taskPayload).eq("id", linkedTaskId).select().maybeSingle();
         if (taskError) {
           setWorkflowError(taskError.message || "We couldn't update the linked task.");
           return;
         }
-        if (updatedTask) {
+        if (!updatedTask) {
+          const recreatedTaskPayload = {
+            church_id: church?.id,
+            ministry: "Events",
+            assignee: assigneeName,
+            ...taskPayload,
+          };
+          const { data: recreatedTask, error: recreateError } = await supabase.from("tasks").insert(recreatedTaskPayload).select().maybeSingle();
+          if (recreateError || !recreatedTask) {
+            setWorkflowError(recreateError?.message || "We couldn't update the linked task.");
+            return;
+          }
+          linkedTaskId = recreatedTask.id;
+          setTasks((current) => [normalizeTask(recreatedTask), ...(current || []).filter((task) => task.id !== linkedTaskId)]);
+        } else {
           setTasks((current) => (current || []).map((task) => task.id === updatedTask.id ? normalizeTask(updatedTask) : task));
         }
       }
@@ -2940,9 +2974,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
         review_approvals: [],
         review_history: [],
       };
-      const { data: createdTask, error: taskError } = await supabase.from("tasks").insert(taskPayload).select().single();
+      const { data: createdTask, error: taskError } = await supabase.from("tasks").insert(taskPayload).select().maybeSingle();
       if (taskError) {
         setWorkflowError(taskError.message || "We couldn't add that timeline step to Tasks.");
+        return;
+      }
+      if (!createdTask) {
+        setWorkflowError("We couldn't add that timeline step to Tasks.");
         return;
       }
       linkedTaskId = createdTask?.id || null;
@@ -3008,9 +3046,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
         .update({ status: nextTaskStatus })
         .eq("id", targetItem.linked_task_id)
         .select()
-        .single();
+        .maybeSingle();
       if (taskError) {
         setWorkflowError(taskError.message || "We couldn't update the linked task.");
+        return;
+      }
+      if (!updatedTask) {
+        setWorkflowError("We couldn't update the linked task.");
         return;
       }
       if (updatedTask) {
@@ -4229,7 +4271,7 @@ function PublicEventRequestPage() {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, setActive, profile, church, previewUsers, notifications, archivedNotifications, unreadCount, readNotificationIds, archiveNotification, restoreNotification, openNotificationTarget }) {
+function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile, setPreviewUsers, notifications, archivedNotifications, unreadCount, readNotificationIds, archiveNotification, restoreNotification, openNotificationTarget }) {
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const canSeeTeamSnapshot = !!profile && (
     profile?.role === "senior_pastor"
@@ -4298,20 +4340,13 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
   const [draggedNotepadId, setDraggedNotepadId] = useState(null);
   const [currentWorkTaskId, setCurrentWorkTaskId] = useState(() => {
     if (typeof window === "undefined" || !profile?.id) return "";
-    return window.localStorage.getItem(getCurrentWorkFocusStorageKey(profile.id)) || "";
+    return window.localStorage.getItem(getCurrentWorkFocusStorageKey(profile.id)) || profile?.current_focus_task_id || "";
   });
   const myAssignedTasks = tasks.filter((task) => samePerson(task.assignee, profile?.full_name));
   const myOpenTasks = myAssignedTasks.filter((task) => task.status !== "done");
   const myInReviewTasks = myOpenTasks.filter((task) => task.status === "in-review");
   const myOverdueTasks = myOpenTasks.filter((task) => isAfterDueDate(task.due_date));
-  const derivedCurrentTask =
-    myAssignedTasks.find((task) => task.status === "in-progress")
-    || myAssignedTasks
-      .filter((task) => task.status !== "done")
-      .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0]
-    || null;
   const selectedCurrentTask = myOpenTasks.find((task) => task.id === currentWorkTaskId) || null;
-  const myCurrentTask = selectedCurrentTask || derivedCurrentTask;
   const myTaskPreview = myOpenTasks
     .slice()
     .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))
@@ -4323,17 +4358,20 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
     const openAssigned = assigned.filter((task) => task.status !== "done");
     const inReviewTasks = openAssigned.filter((task) => task.status === "in-review");
     const overdueTasks = openAssigned.filter((task) => isAfterDueDate(task.due_date));
+    const focusedTask = openAssigned.find((task) => task.id === user.current_focus_task_id) || null;
     const currentTask =
-      assigned.find((task) => task.status === "in-progress")
+      focusedTask
+      || assigned.find((task) => task.status === "in-progress")
       || assigned
         .filter((task) => task.status !== "done")
         .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0]
       || null;
-    const upcomingTask = openAssigned
+    const additionalTasks = openAssigned
       .filter((task) => task.id !== currentTask?.id)
-      .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0))[0]
-      || null;
-    const workloadSummary = currentTask
+      .sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0));
+    const workloadSummary = focusedTask
+      ? "Current focus"
+      : currentTask
       ? currentTask.status === "in-progress"
         ? "Currently in progress"
         : currentTask.status === "in-review"
@@ -4346,8 +4384,8 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
       ? `${overdueTasks.length} overdue ${overdueTasks.length === 1 ? "task" : "tasks"}`
       : inReviewTasks.length > 0
         ? `${inReviewTasks.length} item${inReviewTasks.length === 1 ? "" : "s"} in review`
-        : upcomingTask?.due_date
-          ? `Next due ${fmtDate(upcomingTask.due_date)}`
+        : additionalTasks[0]?.due_date
+          ? `Next due ${fmtDate(additionalTasks[0].due_date)}`
           : openAssigned.length > 0
             ? `${openAssigned.length} active task${openAssigned.length === 1 ? "" : "s"}`
             : "No open tasks";
@@ -4357,8 +4395,10 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
       inProgressTasks: assigned.filter((task) => task.status === "in-progress").length,
       inReviewTasks: inReviewTasks.length,
       overdueTasks: overdueTasks.length,
+      focusedTask,
       currentTask,
-      nextTask: upcomingTask,
+      currentTaskContextLabel: currentTask?.ministry === "Events" ? getLinkedEventPlanName(currentTask) || currentTask.ministry : currentTask?.ministry || "",
+      additionalTasks,
       workloadSummary,
       workloadDetail,
     };
@@ -4376,6 +4416,42 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
     }
     window.localStorage.setItem(getCurrentWorkFocusStorageKey(profile.id), currentWorkTaskId);
   }, [profile?.id, currentWorkTaskId]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    if ((profile.current_focus_task_id || "") === currentWorkTaskId) return;
+    let cancelled = false;
+    const nextFocusId = currentWorkTaskId || null;
+    const saveFocus = async () => {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          current_focus_task_id: nextFocusId,
+          current_focus_updated_at: new Date().toISOString(),
+        })
+        .eq("id", profile.id);
+      if (error || cancelled) return;
+      setProfile((current) => current ? normalizeAccessUser({
+        ...current,
+        current_focus_task_id: nextFocusId,
+        current_focus_updated_at: new Date().toISOString(),
+      }) : current);
+      setPreviewUsers((current) => (current || []).map((user) => {
+        if (user.id === profile.id || user.staff_id === profile.staff_id || samePerson(user.full_name, profile.full_name)) {
+          return normalizeAccessUser({
+            ...user,
+            current_focus_task_id: nextFocusId,
+            current_focus_updated_at: new Date().toISOString(),
+          });
+        }
+        return user;
+      }));
+    };
+    saveFocus();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id, profile?.staff_id, profile?.full_name, profile?.current_focus_task_id, currentWorkTaskId, setProfile, setPreviewUsers]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !profile?.id) return;
@@ -4491,7 +4567,8 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
               </div>
               <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(4, minmax(0,1fr))",gap:10}}>
                 {myTaskPreview.map((task) => {
-                  const isSelected = myCurrentTask?.id === task.id;
+                  const isSelected = selectedCurrentTask?.id === task.id;
+                  const linkedEventPlanName = task.ministry === "Events" ? getLinkedEventPlanName(task) : "";
                   return (
                     <button
                       key={task.id}
@@ -4514,7 +4591,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
                         <div style={{minWidth:0}}>
                           <div style={{fontSize:14,fontWeight:600,color:C.text,lineHeight:1.45}}>{task.title}</div>
                           <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginTop:2}}>
-                            {task.due_date ? `Due ${fmtDate(task.due_date)}` : "No due date"}{task.ministry ? ` • ${task.ministry}` : ""}
+                            {task.due_date ? `Due ${fmtDate(task.due_date)}` : "No due date"}{linkedEventPlanName ? ` • ${linkedEventPlanName}` : task.ministry ? ` • ${task.ministry}` : ""}
                           </div>
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
@@ -4558,16 +4635,6 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
               <button type="button" className="btn-gold-compact" onClick={() => setTeamSnapshotOpen((current) => !current)}>
                 {teamSnapshotOpen ? "Collapse" : "Expand"}
               </button>
-              <button
-                type="button"
-                className="btn-gold-compact"
-                onClick={() => {
-                  setActive("tasks");
-                  if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              >
-                Open task board
-              </button>
             </div>
           </div>
           {teamSnapshotOpen ? (
@@ -4601,10 +4668,16 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
                       <>
                         <div style={{fontSize:15,color:C.text,fontWeight:500,lineHeight:1.45}}>{member.currentTask.title}</div>
                         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                          <span className={`badge ${getTag(member.currentTask.ministry)}`}>{member.currentTask.ministry}</span>
-                          <span className="badge" style={{background:"rgba(255,255,255,.04)",color:member.currentTask.status === "in-progress" ? C.blue : C.muted,border:`1px solid ${C.border}`}}>
-                            {member.currentTask.status === "in-progress" ? "In Progress" : member.currentTask.status === "in-review" ? "In Review" : "To Do"}
-                          </span>
+                          {member.currentTaskContextLabel && (
+                            <span style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                              {member.currentTask?.ministry === "Events" ? `From ${member.currentTaskContextLabel}` : member.currentTaskContextLabel}
+                            </span>
+                          )}
+                          {member.currentTask.status !== "todo" && (
+                            <span style={{fontSize:12,color:member.currentTask.status === "in-progress" ? C.blue : C.gold,lineHeight:1.6}}>
+                              {member.currentTask.status === "in-progress" ? "In Progress" : "In Review"}
+                            </span>
+                          )}
                           {member.currentTask.due_date && <span style={{fontSize:11,color:C.muted}}>Due {fmtDate(member.currentTask.due_date)}</span>}
                         </div>
                       </>
@@ -4613,19 +4686,37 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, notificati
                     )}
                   </div>
                 </div>
-                <div className="dashboard-team-row-right" style={{textAlign:"left",display:"grid",gap:8,alignSelf:"stretch",padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:"rgba(255,255,255,.02)"}}>
+                <div className="dashboard-team-row-right" style={{textAlign:"left",display:"grid",gap:10,alignSelf:"stretch",padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:"rgba(255,255,255,.02)"}}>
                   <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>
-                    Workload snapshot
+                    Other open tasks
                   </div>
-                  <div style={{fontSize:16,fontWeight:600,color:member.overdueTasks > 0 ? C.danger : member.inReviewTasks > 0 ? C.blue : C.gold,lineHeight:1.35}}>
-                    {member.workloadSummary}
-                  </div>
-                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-                    {member.workloadDetail}
-                  </div>
-                  {member.nextTask && (
-                    <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>
-                      <span style={{color:C.muted}}>Then:</span> {member.nextTask.title}
+                  {member.additionalTasks?.length ? (
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(2, minmax(0,1fr))",gap:8}}>
+                      {member.additionalTasks.map((task) => {
+                        const taskEventName = task.ministry === "Events" ? getLinkedEventPlanName(task) : "";
+                        return (
+                          <div key={task.id} className="card" style={{padding:"10px 12px",display:"grid",gap:4,textAlign:"left",background:"rgba(255,255,255,.03)"}}>
+                            <div style={{fontSize:12,fontWeight:600,color:C.text,lineHeight:1.45}}>{task.title}</div>
+                            <div style={{fontSize:11,color:C.muted,lineHeight:1.6}}>
+                              {task.due_date ? `Due ${fmtDate(task.due_date)}` : "No due date"}
+                            </div>
+                            {(taskEventName || task.ministry) && (
+                              <div style={{fontSize:11,color:C.muted,lineHeight:1.6}}>
+                                {taskEventName || task.ministry}
+                              </div>
+                            )}
+                            {task.status !== "todo" && (
+                              <div style={{fontSize:11,color:task.status === "in-progress" ? C.blue : C.gold,lineHeight:1.6}}>
+                                {task.status === "in-progress" ? "In Progress" : "In Review"}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                      Nothing else on their plate right now.
                     </div>
                   )}
                 </div>
@@ -5381,9 +5472,21 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       )}
       {selectedTask && !showModal && (
         <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,marginBottom:18}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
-            <div>
-              <button className="btn-outline" onClick={()=>setSelectedTask(null)} style={{marginBottom:14}}>Back to Tasks</button>
+          <div style={{display:"grid",gap:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"nowrap"}}>
+              <button className="btn-outline" onClick={()=>setSelectedTask(null)}>Back to Tasks</button>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexShrink:0}}>
+                {canEditTask(profile, church, selectedTask) ? (
+                  <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,maxWidth:"100%",background:C.card,padding:"8px 10px",fontSize:12}}>
+                    <option value="todo">Not Started</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="in-review">In Review</option>
+                    <option value="done" disabled={selectedTask.review_required && selectedTask.reviewers.some((name) => !listIncludesPerson(selectedTask.review_approvals, name))}>Done</option>
+                  </select>
+                ) : null}
+              </div>
+            </div>
+            <div style={{minWidth:0}}>
               <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{selectedTask.title}</h3>
             </div>
           </div>
@@ -5591,17 +5694,15 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
             {canEditTask(profile, church, selectedTask) && (
               <button className="btn-outline" onClick={()=>openEdit(selectedTask)}>Edit Task</button>
             )}
-            {canEditTask(profile, church, selectedTask) ? (
-              <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,background:C.card,padding:"8px 10px",fontSize:12}}>
-                <option value="todo">Not Started</option>
-                <option value="in-progress">In Progress</option>
-                <option value="in-review">In Review</option>
-                <option value="done" disabled={selectedTask.review_required && selectedTask.reviewers.some((name) => !listIncludesPerson(selectedTask.review_approvals, name))}>Done</option>
-              </select>
-            ) : null}
             {canEditTask(profile, church, selectedTask) && (
-              <button className="btn-outline" onClick={()=>{del(selectedTask.id); setSelectedTask(null);}} style={{color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
-                Delete
+              <button
+                className="btn-outline"
+                onClick={()=>{del(selectedTask.id); setSelectedTask(null);}}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",padding:10,color:C.danger,borderColor:"rgba(224,82,82,.35)"}}
+                aria-label="Delete task"
+                title="Delete task"
+              >
+                <Icons.trash />
               </button>
             )}
           </div>
@@ -7318,7 +7419,7 @@ export default function App() {
       setTrashItems([]);
     }
     if (prof?.church_id) {
-      const [ch, t, er, p, tr, po, ce, m, staff] = await Promise.all([
+      const [ch, t, er, p, tr, po, ce, m, staff, profileRows] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
@@ -7328,6 +7429,7 @@ export default function App() {
         supabase.from("calendar_events").select("*").eq("church_id", prof.church_id).order("event_date", { ascending: true }),
         supabase.from("ministries").select("*").eq("church_id", prof.church_id),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
+        supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
       ]);
       const enhancedProfile = normalizedProfile
         ? {
@@ -7344,7 +7446,16 @@ export default function App() {
       setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
       setCalendarEvents(ce.data || []);
       setMinistries(m.data || []);
-      setPreviewUsers((staff.data || []).map(normalizeAccessUser));
+      const profileFocusMap = new Map((profileRows.data || []).map((entry) => [entry.staff_id || entry.id || entry.full_name, entry]));
+      setPreviewUsers((staff.data || []).map((entry) => {
+        const match = profileFocusMap.get(entry.id)
+          || (profileRows.data || []).find((row) => row.staff_id === entry.id || samePerson(row.full_name, entry.full_name));
+        return normalizeAccessUser({
+          ...entry,
+          current_focus_task_id: match?.current_focus_task_id || null,
+          current_focus_updated_at: match?.current_focus_updated_at || null,
+        });
+      }));
     } else {
       setProfile(normalizedProfile);
       setChurch(null);
@@ -7452,9 +7563,9 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
+    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,

@@ -1693,9 +1693,9 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
     {id:"dashboard",label:"Dashboard",I:Icons.home},
     {id:"workspaces",label:"Planning Center",I:Icons.workspace},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
-    ...(canViewBudget(profile) ? [{id:"budget",label:"Finances",I:Icons.budget}] : []),
     {id:"calendar",label:"Calendar",I:Icons.calendar},
     ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.people}] : []),
+    ...(canViewBudget(profile) ? [{id:"budget",label:"Finances",I:Icons.budget}] : []),
     {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
@@ -2417,6 +2417,11 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     ? church.account_manager_emails
     : (church?.account_admin_email ? [church.account_admin_email] : []);
   const managerCandidates = (previewUsers || []).filter((user) => user?.auth_user_id || user?.email);
+  const currentManagerUsers = managerCandidates.filter((user) => currentAccountManagerIds.includes(user.auth_user_id));
+  const selectedManagerUsers = managerCandidates.filter((user) => selectedAccountManagerIds.includes(user.auth_user_id));
+  const availableManagerCandidates = managerCandidates.filter((user) => !selectedAccountManagerIds.includes(user.auth_user_id));
+  const currentUserCanBeManager = !!profile?.id && managerCandidates.some((user) => user.auth_user_id === profile.id);
+  const currentUserMissingFromSelection = !!profile?.id && currentUserCanBeManager && !selectedAccountManagerIds.includes(profile.id);
   const accountManagerSelectionUnchanged =
     selectedAccountManagerIds.length === currentAccountManagerIds.length
     && selectedAccountManagerIds.every((id) => currentAccountManagerIds.includes(id))
@@ -2442,6 +2447,35 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   useEffect(() => {
     setSelectedAccountManagerIds(currentAccountManagerIds);
   }, [currentAccountManagerIds]);
+
+  useEffect(() => {
+    if (!profile?.id || !currentUserCanBeManager) return;
+    setSelectedAccountManagerIds((current) => (
+      current.includes(profile.id) ? current : [...current, profile.id]
+    ));
+  }, [profile?.id, currentUserCanBeManager]);
+
+  const addAccountManager = (authUserId) => {
+    if (!authUserId) return;
+    setAccountManagerError("");
+    setAccountManagerMessage("");
+    setSelectedAccountManagerIds((current) => current.includes(authUserId) ? current : [...current, authUserId]);
+  };
+
+  const removeAccountManager = (authUserId) => {
+    setAccountManagerError("");
+    setAccountManagerMessage("");
+    if (!authUserId) return;
+    if (selectedAccountManagerIds.length <= 1) {
+      setAccountManagerError("Shepherd needs at least one account manager.");
+      return;
+    }
+    if (authUserId === profile?.id) {
+      setAccountManagerError("You can’t remove yourself here by accident. Add another manager first, then transfer intentionally.");
+      return;
+    }
+    setSelectedAccountManagerIds((current) => current.filter((id) => id !== authUserId));
+  };
 
   const handlePhotoUpload = async (event) => {
     const file = event.target.files?.[0];
@@ -2750,37 +2784,54 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                     <div>
                       <h3 style={sectionTitleStyle}>Shepherd Account Managers</h3>
                       <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
-                        Choose the one or more people who should retain full Shepherd account management for this church, including calendar connection and protected account-level settings.
+                        Manage this like a live list. Add the people who should keep full Shepherd account control, and remove them intentionally instead of replacing the whole list by accident.
                       </p>
                     </div>
-                    <div style={{display:"grid",gap:8,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-                      {managerCandidates.length === 0 ? (
-                        <div style={{fontSize:12,color:C.muted}}>No eligible church team members are available yet.</div>
-                      ) : managerCandidates.map((user) => {
-                        const checked = selectedAccountManagerIds.includes(user.auth_user_id);
-                        return (
-                          <label key={user.id} style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,color:C.text,cursor:"pointer"}}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={!user.auth_user_id}
-                              onChange={() => setSelectedAccountManagerIds((current) => (
-                                checked
-                                  ? current.filter((id) => id !== user.auth_user_id)
-                                  : [...current, user.auth_user_id]
-                              ))}
-                            />
-                            <span>
+                    {currentUserMissingFromSelection && (
+                      <div style={{padding:"10px 12px",border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.goldGlow,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                        <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>
+                          Your account was not in the current manager draft, so Shepherd added you back into the pending list to protect against accidental lockout.
+                        </div>
+                        <button className="btn-outline" onClick={() => addAccountManager(profile.id)}>Keep Me Included</button>
+                      </div>
+                    )}
+                    <div style={{display:"grid",gap:12}}>
+                      <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"grid",gap:10}}>
+                        <div style={{fontSize:12,color:C.muted}}>Current Managers</div>
+                        {selectedManagerUsers.length === 0 ? (
+                          <div style={{fontSize:12,color:C.muted}}>No managers selected yet.</div>
+                        ) : selectedManagerUsers.map((user) => (
+                          <div key={`selected-${user.id}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                            <div style={{fontSize:13,color:C.text,lineHeight:1.6}}>
                               {user.full_name}
                               {user.email ? <span style={{color:C.muted}}> • {user.email}</span> : ""}
-                              {isStaffAccountAdmin(user, church) ? <span style={{color:C.gold}}> • Current manager</span> : ""}
-                            </span>
-                          </label>
-                        );
-                      })}
+                              {user.auth_user_id === profile?.id ? <span style={{color:C.gold}}> • You</span> : ""}
+                            </div>
+                            <button className="btn-outline" onClick={() => removeAccountManager(user.auth_user_id)} disabled={user.auth_user_id === profile?.id}>
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"grid",gap:10}}>
+                        <div style={{fontSize:12,color:C.muted}}>Add Another Manager</div>
+                        {availableManagerCandidates.length === 0 ? (
+                          <div style={{fontSize:12,color:C.muted}}>Everyone eligible is already in the manager list.</div>
+                        ) : availableManagerCandidates.map((user) => (
+                          <div key={`available-${user.id}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                            <div style={{fontSize:13,color:C.text,lineHeight:1.6}}>
+                              {user.full_name}
+                              {user.email ? <span style={{color:C.muted}}> • {user.email}</span> : ""}
+                            </div>
+                            <button className="btn-outline" onClick={() => addAccountManager(user.auth_user_id)}>
+                              Add as Manager
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-                      Current managers: {currentAccountManagerEmails.length ? currentAccountManagerEmails.join(", ") : "None selected yet"}
+                      Saved managers: {currentManagerUsers.length ? currentManagerUsers.map((user) => user.full_name).join(", ") : (currentAccountManagerEmails.length ? currentAccountManagerEmails.join(", ") : "None selected yet")}
                     </div>
                     {accountManagerError && <div style={{fontSize:12,color:C.danger}}>{accountManagerError}</div>}
                     {accountManagerMessage && <div style={{fontSize:12,color:C.success}}>{accountManagerMessage}</div>}

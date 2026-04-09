@@ -62,8 +62,13 @@ const DASHBOARD_SECTION_STATE_STORAGE_PREFIX = "shepherd-dashboard-sections";
 const TASK_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-task-discussion-sections";
 const PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-po-discussion-sections";
 const CURRENT_WORK_FOCUS_STORAGE_PREFIX = "shepherd-current-work-focus";
+const GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-token";
+const GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-refresh-token";
 const NOTIFICATION_RETENTION_MS = 40 * 24 * 60 * 60 * 1000;
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
+
+const getGoogleProviderTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
+const getGoogleProviderRefreshTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 
 const Icon = ({ d, size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -89,6 +94,8 @@ const Icons = {
   pen:      () => <Icon d="M12 20h9M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />,
   bell:     () => <Icon d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />,
   trash:    () => <Icon d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v6M14 11v6" />,
+  settings: () => <Icon d="M12 3l1.8 2.3 2.8-.3.9 2.7 2.6 1.1-1 2.6 1 2.6-2.6 1.1-.9 2.7-2.8-.3L12 21l-1.8-2.3-2.8.3-.9-2.7-2.6-1.1 1-2.6-1-2.6 2.6-1.1.9-2.7 2.8.3L12 3zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
+  refresh:  () => <Icon d="M21 12a9 9 0 11-2.64-6.36M21 4v6h-6" />,
 };
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
   <svg
@@ -6913,20 +6920,35 @@ function Ministries({ ministries }) {
 }
 
 // ── Calendar ───────────────────────────────────────────────────────────────
-function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalendarEvents, previewUsers, profile, churchId, setActive }) {
+function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, profile, church, setChurch, churchId, setActive, session }) {
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const today = new Date();
   const calendarYears = [today.getFullYear(), today.getFullYear() + 1];
-  const [calendarCursor, setCalendarCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [calendarCursor, setCalendarCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [calendarFilters, setCalendarFilters] = useState({
-    churchEvents: true,
     myTasks: true,
-    staffTimeOff: false,
   });
+  const [googleCalendarFilters, setGoogleCalendarFilters] = useState({});
   const [showCalendarItemForm, setShowCalendarItemForm] = useState(false);
   const [editingCalendarEventId, setEditingCalendarEventId] = useState(null);
   const [selectedCalendarItem, setSelectedCalendarItem] = useState(null);
   const [calendarItemError, setCalendarItemError] = useState("");
+  const [googleCalendarLinked, setGoogleCalendarLinked] = useState(false);
+  const [googleCalendarActionMessage, setGoogleCalendarActionMessage] = useState("");
+  const [googleCalendarActionError, setGoogleCalendarActionError] = useState("");
+  const [googleCalendars, setGoogleCalendars] = useState([]);
+  const [googleCalendarsLoading, setGoogleCalendarsLoading] = useState(false);
+  const [googleIdentityCount, setGoogleIdentityCount] = useState(0);
+  const [selectedGoogleCalendarIds, setSelectedGoogleCalendarIds] = useState(() => (
+    Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
+      ? church.google_calendar_ids
+      : (church?.google_calendar_id ? [church.google_calendar_id] : [])
+  ));
+  const [googleSyncLoading, setGoogleSyncLoading] = useState(false);
+  const [googleCalendarSaving, setGoogleCalendarSaving] = useState(false);
+  const [googleLastSyncAt, setGoogleLastSyncAt] = useState("");
+  const [showGoogleCalendarSettings, setShowGoogleCalendarSettings] = useState(false);
+  const [showAvailableGoogleCalendars, setShowAvailableGoogleCalendars] = useState(false);
   const [calendarItemForm, setCalendarItemForm] = useState({
     calendar_type: "churchEvents",
     title: "",
@@ -6936,40 +6958,208 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
     location: "",
     notes: "",
   });
-  const approvedEvents = (eventRequests || [])
-    .filter((request) => request.status === "approved")
-    .map((request) => {
-      const primaryDate = request.single_date || request.multi_start_date || request.recurring_start_date || "";
+  const googleProviderToken = session?.provider_token
+    || session?.providerToken
+    || (typeof window !== "undefined" && session?.user?.id
+      ? window.localStorage.getItem(getGoogleProviderTokenStorageKey(session.user.id)) || ""
+      : "");
+  const canSetOfficialGoogleCalendar = hasAdministrativeOversight(profile, church);
+  const officialGoogleCalendarIds = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
+    ? church.google_calendar_ids
+    : (church?.google_calendar_id ? [church.google_calendar_id] : []);
+  const officialGoogleCalendarTitles = Array.isArray(church?.google_calendar_titles) && church.google_calendar_titles.length
+    ? church.google_calendar_titles
+    : (church?.google_calendar_title ? [church.google_calendar_title] : []);
+  const activeGoogleCalendarIds = officialGoogleCalendarIds.length ? officialGoogleCalendarIds : selectedGoogleCalendarIds;
+  const officialGoogleCalendarTitleMap = Object.fromEntries(
+    officialGoogleCalendarIds.map((id, index) => [id, officialGoogleCalendarTitles[index] || "Imported Calendar"])
+  );
+
+  const formatGoogleTime = (value) => {
+    if (!value) return "";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "";
+    return `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
+  };
+
+  const getGoogleEventDate = (value) => {
+    if (!value) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "";
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+  };
+
+  const getGoogleImportMarker = (calendarId, eventId) => `google-calendar-id:${encodeURIComponent(calendarId)}\ngoogle-event-id:${eventId}`;
+  const getGoogleCalendarTitleMarker = (title) => `google-calendar-title:${title}`;
+  const getGoogleCalendarIdFromNotes = (notes) => {
+    const text = String(notes || "");
+    const safeMatch = text.match(/google-calendar-id:([^\n]+)/);
+    if (safeMatch?.[1]) {
+      try {
+        return decodeURIComponent(safeMatch[1].trim());
+      } catch {
+        return safeMatch[1].trim();
+      }
+    }
+    const legacyMatch = text.match(/google-calendar:(.+):([^\n]+)/);
+    return legacyMatch?.[1]?.trim() || "";
+  };
+  const getGoogleEventIdFromNotes = (notes) => {
+    const text = String(notes || "");
+    const safeMatch = text.match(/google-event-id:([^\n]+)/);
+    if (safeMatch?.[1]) return safeMatch[1].trim();
+    const legacyMatch = text.match(/google-calendar:(.+):([^\n]+)/);
+    return legacyMatch?.[2]?.trim() || "";
+  };
+  const getGoogleCalendarTitleFromNotes = (notes) => {
+    const match = String(notes || "").match(/google-calendar-title:([^\n]+)/);
+    return match?.[1]?.trim() || "";
+  };
+  useEffect(() => {
+    let active = true;
+    const loadGoogleCalendarIdentity = async () => {
+      try {
+        if (typeof supabase.auth.getUserIdentities !== "function") {
+          if (active) {
+            setGoogleCalendarLinked(false);
+          }
+          return;
+        }
+        const { data, error } = await supabase.auth.getUserIdentities();
+        if (error) throw error;
+        const identities = Array.isArray(data?.identities) ? data.identities : [];
+        const linked = !!data?.identities?.some((identity) => identity.provider === "google");
+        if (!active) return;
+        setGoogleIdentityCount(identities.length);
+        setGoogleCalendarLinked(linked);
+      } catch {
+        if (!active) return;
+        setGoogleIdentityCount(0);
+        setGoogleCalendarLinked(false);
+      }
+    };
+    loadGoogleCalendarIdentity();
+    return () => {
+      active = false;
+    };
+  }, [profile?.id]);
+  useEffect(() => {
+    setSelectedGoogleCalendarIds(
+      Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
+        ? church.google_calendar_ids
+        : (church?.google_calendar_id ? [church.google_calendar_id] : [])
+    );
+  }, [church?.google_calendar_id, church?.google_calendar_ids]);
+  useEffect(() => {
+    setShowAvailableGoogleCalendars(!(Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length));
+  }, [church?.google_calendar_ids]);
+  useEffect(() => {
+    const ids = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
+      ? church.google_calendar_ids
+      : (church?.google_calendar_id ? [church.google_calendar_id] : []);
+    setGoogleCalendarFilters((current) => {
+      const next = {};
+      ids.forEach((id) => {
+        next[id] = Object.prototype.hasOwnProperty.call(current, id) ? current[id] : true;
+      });
+      return next;
+    });
+  }, [church?.google_calendar_id, church?.google_calendar_ids]);
+
+  useEffect(() => {
+    let active = true;
+    const loadGoogleCalendars = async () => {
+      if (!googleCalendarLinked) {
+        if (!active) return;
+        setGoogleCalendars([]);
+        setGoogleCalendarsLoading(false);
+        return;
+      }
+      if (!googleProviderToken) {
+        if (!active) return;
+        setGoogleCalendars([]);
+        setGoogleCalendarsLoading(false);
+        setGoogleCalendarActionError("Google is linked, but this session does not have a live Google calendar token yet. Click Connect Google again to refresh the connection.");
+        return;
+      }
+      setGoogleCalendarsLoading(true);
+      setGoogleCalendarActionError("");
+      try {
+        const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
+          body: {
+            action: "listCalendars",
+            providerToken: googleProviderToken,
+          },
+        });
+        if (error) throw error;
+        const payload = data || {};
+        if (!active) return;
+        const calendars = Array.isArray(payload?.items)
+          ? payload.items.map((entry) => ({
+              id: entry.id,
+              title: entry.summary || "Untitled calendar",
+              primary: !!entry.primary,
+            }))
+          : [];
+        setGoogleCalendars(calendars);
+        setSelectedGoogleCalendarIds((current) => {
+          const churchSelection = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
+            ? church.google_calendar_ids.filter((id) => calendars.some((entry) => entry.id === id))
+            : (church?.google_calendar_id && calendars.some((entry) => entry.id === church.google_calendar_id) ? [church.google_calendar_id] : []);
+          if (churchSelection.length) {
+            return churchSelection;
+          }
+          const currentSelection = Array.isArray(current)
+            ? current.filter((id) => calendars.some((entry) => entry.id === id))
+            : [];
+          if (currentSelection.length) return currentSelection;
+          return [];
+        });
+      } catch (error) {
+        if (!active) return;
+        setGoogleCalendars([]);
+        setGoogleCalendarActionError(error?.message || "We couldn't load your Google calendars yet.");
+      } finally {
+        if (active) setGoogleCalendarsLoading(false);
+      }
+    };
+    loadGoogleCalendars();
+    return () => {
+      active = false;
+    };
+  }, [googleProviderToken, googleCalendarLinked, church?.google_calendar_id, church?.google_calendar_ids]);
+  const approvedEvents = [];
+  const directChurchEvents = (calendarEvents || [])
+    .map((event) => {
+      const googleCalendarId = event.google_calendar_source_id || getGoogleCalendarIdFromNotes(event.notes);
+      const noteCalendarTitle = event.google_calendar_source_title || getGoogleCalendarTitleFromNotes(event.notes);
+      const liveCalendarTitle = googleCalendars.find((entry) => entry.id === googleCalendarId)?.title || "";
+      const savedCalendarTitle = googleCalendarId ? (officialGoogleCalendarTitleMap[googleCalendarId] || "") : "";
+      const googleCalendarTitle = noteCalendarTitle || liveCalendarTitle || savedCalendarTitle;
       return {
-        id: `event-${request.id}`,
-        sourceId: request.id,
+        id: `calendar-event-${event.id}`,
+        sourceId: event.id,
         type: "churchEvents",
-        date: primaryDate,
-        title: request.event_name || "Church event",
-        detail: getEventDateSummary(request),
+        date: event.event_date,
+        title: event.title || "Church event",
+        detail: [
+          event.start_time && event.end_time ? `${event.start_time} - ${event.end_time}` : event.start_time || "",
+          event.location || "",
+          googleCalendarTitle || "",
+        ].filter(Boolean).join(" • ") || "Added directly to the church calendar",
         tone: C.gold,
-        tag: "Church Event",
-        source: request,
+        tag: googleCalendarTitle || "Church Event",
+        editable: true,
+        source: event,
+        googleCalendarId,
       };
     })
     .filter((entry) => entry.date);
-  const directChurchEvents = (calendarEvents || [])
-    .map((event) => ({
-      id: `calendar-event-${event.id}`,
-      sourceId: event.id,
-      type: "churchEvents",
-      date: event.event_date,
-      title: event.title || "Church event",
-      detail: [
-        event.start_time && event.end_time ? `${event.start_time} - ${event.end_time}` : event.start_time || "",
-        event.location || "",
-      ].filter(Boolean).join(" • ") || "Added directly to the church calendar",
-      tone: C.gold,
-      tag: "Church Event",
-      editable: true,
-      source: event,
-    }))
-    .filter((entry) => entry.date);
+  const visibleDirectChurchEvents = directChurchEvents.filter((event) => {
+    if (!event.googleCalendarId) return true;
+    return googleCalendarFilters[event.googleCalendarId] !== false;
+  });
   const myTasks = (tasks || [])
     .filter((task) => task.status !== "done" && samePerson(task.assignee, profile?.full_name) && task.due_date)
     .map((task) => ({
@@ -6983,39 +7173,25 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
       tag: "My Task",
       source: task,
     }));
-  const timeOffEntries = (previewUsers || [])
-    .flatMap((user) => {
-      const rawEntries = user.pto_requests || user.ptoRequests || [];
-      if (!Array.isArray(rawEntries)) return [];
-      return rawEntries
-        .map((entry, index) => {
-          if ((entry?.status || "").toLowerCase() !== "approved") return null;
-          const startDate = entry?.start_date || entry?.startDate || entry?.date || "";
-          if (!startDate) return null;
-          return {
-            id: `timeoff-${user.id}-${index}`,
-            type: "staffTimeOff",
-            date: startDate,
-            title: user.full_name || "Staff PTO",
-            detail: entry?.label || entry?.reason || "Approved PTO",
-            tone: C.muted,
-            tag: "Approved PTO",
-            source: entry,
-          };
-        })
-        .filter(Boolean);
-    });
   const calendarItems = [
-    ...(calendarFilters.churchEvents ? [...approvedEvents, ...directChurchEvents] : []),
+    ...approvedEvents.filter((event) => {
+      if (!event.googleCalendarId) return false;
+      return googleCalendarFilters[event.googleCalendarId] !== false;
+    }),
+    ...visibleDirectChurchEvents,
     ...(calendarFilters.myTasks ? myTasks : []),
-    ...(calendarFilters.staffTimeOff ? timeOffEntries : []),
   ]
     .filter((item) => item.date)
     .sort((a, b) => getDateSortValue(a.date) - getDateSortValue(b.date));
+  const weekdayLabels = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const toDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const mondayOffset = (calendarCursor.getDay() + 6) % 7;
+  const weekStart = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), calendarCursor.getDate() - mondayOffset);
+  const weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
   const visibleCalendarItems = calendarItems.filter((item) => {
     const parsed = parseAppDate(item.date);
     if (!parsed) return false;
-    return parsed.getFullYear() === calendarCursor.getFullYear() && parsed.getMonth() === calendarCursor.getMonth();
+    return parsed >= new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()) && parsed <= new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
   });
   const groupedCalendarItems = visibleCalendarItems.reduce((accumulator, item) => {
     const key = item.date;
@@ -7023,25 +7199,18 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
     accumulator[key].push(item);
     return accumulator;
   }, {});
-  const weekdayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const firstDayOfMonth = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1);
-  const calendarGridStart = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1 - firstDayOfMonth.getDay());
-  const toDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  const monthGridDays = Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(calendarGridStart.getFullYear(), calendarGridStart.getMonth(), calendarGridStart.getDate() + index);
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
     const key = toDateKey(date);
     return {
       key,
       date,
       items: groupedCalendarItems[key] || [],
-      isCurrentMonth: date.getMonth() === calendarCursor.getMonth(),
       isToday: toDateKey(date) === toDateKey(today),
     };
   });
   const filterOptions = [
-    { key: "churchEvents", label: "Church Events" },
     { key: "myTasks", label: "My Tasks" },
-    { key: "staffTimeOff", label: "Staff Time Off" },
   ];
   const saveCalendarItem = async () => {
     if (!churchId || !profile?.id || !calendarItemForm.title.trim() || !calendarItemForm.event_date) {
@@ -7148,12 +7317,257 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
     }
   };
 
+  const connectGoogleCalendar = async () => {
+    setGoogleCalendarActionError("");
+    setGoogleCalendarActionMessage("");
+    try {
+      const redirectTo = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : undefined;
+      if (!googleCalendarLinked && typeof supabase.auth.linkIdentity === "function") {
+        const { error } = await supabase.auth.linkIdentity({
+          provider: "google",
+          options: {
+            redirectTo,
+            scopes: "https://www.googleapis.com/auth/calendar.readonly",
+            queryParams: {
+              access_type: "offline",
+              prompt: "consent",
+            },
+          },
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo,
+            scopes: "https://www.googleapis.com/auth/calendar.readonly",
+            queryParams: {
+              access_type: "offline",
+              prompt: "consent",
+            },
+          },
+        });
+        if (error) throw error;
+      }
+      setGoogleCalendarActionMessage(
+        googleCalendarLinked
+          ? "Google is opening so Shepherd can refresh the live calendar connection for this session."
+          : "Google is opening so you can approve the calendar connection for this Shepherd account."
+      );
+    } catch (error) {
+      setGoogleCalendarActionError(error?.message || "We couldn't start the Google connection just yet.");
+    }
+  };
+
+  const disconnectGoogleCalendar = async () => {
+    setGoogleCalendarActionError("");
+    setGoogleCalendarActionMessage("");
+    if (typeof supabase.auth.getUserIdentities !== "function" || typeof supabase.auth.unlinkIdentity !== "function") {
+      setGoogleCalendarActionError("This Supabase setup does not support disconnecting Google from Shepherd yet.");
+      return;
+    }
+    try {
+      const { data, error } = await supabase.auth.getUserIdentities();
+      if (error) throw error;
+      const identities = Array.isArray(data?.identities) ? data.identities : [];
+      const googleIdentity = identities.find((identity) => identity.provider === "google");
+      if (!googleIdentity) {
+        setGoogleCalendarLinked(false);
+        setGoogleIdentityCount(identities.length);
+        setGoogleCalendars([]);
+        setShowAvailableGoogleCalendars(false);
+        setGoogleCalendarActionMessage("Google is already disconnected from this Shepherd account.");
+        return;
+      }
+      if (identities.length < 2) {
+        setGoogleCalendarActionError("Google cannot be disconnected until this account has at least one other sign-in method linked.");
+        return;
+      }
+      const { error: unlinkError } = await supabase.auth.unlinkIdentity(googleIdentity);
+      if (unlinkError) throw unlinkError;
+      if (typeof window !== "undefined" && session?.user?.id) {
+        window.localStorage.removeItem(getGoogleProviderTokenStorageKey(session.user.id));
+        window.localStorage.removeItem(getGoogleProviderRefreshTokenStorageKey(session.user.id));
+      }
+      setGoogleCalendarLinked(false);
+      setGoogleIdentityCount(Math.max(identities.length - 1, 0));
+      setGoogleCalendars([]);
+      setShowAvailableGoogleCalendars(false);
+      setGoogleCalendarActionMessage("Google has been disconnected from this Shepherd account.");
+    } catch (error) {
+      setGoogleCalendarActionError(error?.message || "We couldn't disconnect Google from this Shepherd account yet.");
+    }
+  };
+
+  const importGoogleCalendar = async () => {
+    if (!churchId || !profile?.id) {
+      setGoogleCalendarActionError("We couldn't find your church profile yet.");
+      return;
+    }
+    if (!googleProviderToken) {
+      setGoogleCalendarActionError("Reconnect Google first so Shepherd has a fresh calendar token.");
+      return;
+    }
+    if (!activeGoogleCalendarIds.length) {
+      setGoogleCalendarActionError(canSetOfficialGoogleCalendar ? "Choose and save at least one official church Google calendar first." : "A church admin still needs to choose the official church Google calendars.");
+      return;
+    }
+    setGoogleSyncLoading(true);
+    setGoogleCalendarActionError("");
+    setGoogleCalendarActionMessage("");
+    try {
+      const startWindow = new Date(today.getFullYear(), 0, 1).toISOString();
+      const endWindow = new Date(today.getFullYear() + 2, 0, 1).toISOString();
+      const existingEvents = Array.isArray(calendarEvents) ? calendarEvents : [];
+      const imports = [];
+      for (const calendarId of activeGoogleCalendarIds) {
+        const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
+          body: {
+            action: "listEvents",
+            providerToken: googleProviderToken,
+            calendarId,
+            timeMin: startWindow,
+            timeMax: endWindow,
+          },
+        });
+        if (error) throw error;
+        const payload = data || {};
+        const calendarImports = (payload?.items || [])
+          .map((entry) => {
+            const eventDate = getGoogleEventDate(entry.start?.dateTime || entry.start?.date);
+            if (!eventDate) return null;
+            const marker = getGoogleImportMarker(calendarId, entry.id);
+            const titleMarker = getGoogleCalendarTitleMarker(
+              googleCalendars.find((calendar) => calendar.id === calendarId)?.title || "Imported Calendar"
+            );
+            const existing = existingEvents.find((event) => (
+              (event.google_calendar_source_id || getGoogleCalendarIdFromNotes(event.notes)) === calendarId
+              && (event.google_calendar_source_event_id || getGoogleEventIdFromNotes(event.notes)) === entry.id
+            ));
+            const sourceTitle = googleCalendars.find((calendar) => calendar.id === calendarId)?.title || "Imported Calendar";
+            return {
+              ...(existing?.id ? { id: existing.id } : {}),
+              church_id: churchId,
+              created_by: profile.id,
+              title: entry.summary || "Google calendar event",
+              event_date: eventDate,
+              start_time: entry.start?.dateTime ? formatGoogleTime(entry.start.dateTime) : null,
+              end_time: entry.end?.dateTime ? formatGoogleTime(entry.end.dateTime) : null,
+              location: entry.location || null,
+              google_calendar_source_id: calendarId,
+              google_calendar_source_title: sourceTitle,
+              google_calendar_source_event_id: entry.id,
+              notes: [marker, titleMarker, entry.description || ""].filter(Boolean).join("\n\n"),
+            };
+          })
+          .filter(Boolean);
+        imports.push(...calendarImports);
+      }
+      if (!imports.length) {
+        setGoogleCalendarActionMessage("Those Google calendars do not have any events in this year or next year yet.");
+        setGoogleSyncLoading(false);
+        return;
+      }
+      const updates = imports.filter((entry) => entry.id);
+      const inserts = imports.filter((entry) => !entry.id);
+      const updatedEvents = [];
+      if (updates.length) {
+        const { data, error } = await supabase.from("calendar_events").upsert(updates).select();
+        if (error) throw error;
+        updatedEvents.push(...(Array.isArray(data) ? data : []));
+      }
+      if (inserts.length) {
+        const { data, error } = await supabase.from("calendar_events").insert(inserts).select();
+        if (error) throw error;
+        updatedEvents.push(...(Array.isArray(data) ? data : []));
+      }
+      setCalendarEvents((current) => {
+        const others = (current || []).filter((event) => !updatedEvents.some((updated) => updated.id === event.id));
+        return [...updatedEvents, ...others].sort((a, b) => getDateSortValue(a.event_date) - getDateSortValue(b.event_date));
+      });
+      setGoogleLastSyncAt(new Date().toISOString());
+      setGoogleCalendarActionMessage(`Imported ${updatedEvents.length} Google calendar event${updatedEvents.length === 1 ? "" : "s"} into Church Events.`);
+    } catch (error) {
+      setGoogleCalendarActionError(error?.message || "We couldn't import that Google calendar yet.");
+    } finally {
+      setGoogleSyncLoading(false);
+    }
+  };
+
+  const saveOfficialGoogleCalendar = async () => {
+    if (!church?.id || !selectedGoogleCalendarIds.length) {
+      setGoogleCalendarActionError("Choose at least one Google calendar first.");
+      return;
+    }
+    setGoogleCalendarSaving(true);
+    setGoogleCalendarActionError("");
+    setGoogleCalendarActionMessage("");
+    try {
+      const selectedCalendars = googleCalendars.filter((entry) => selectedGoogleCalendarIds.includes(entry.id));
+      const payload = {
+        google_calendar_id: selectedGoogleCalendarIds[0] || null,
+        google_calendar_title: selectedCalendars[0]?.title || officialGoogleCalendarTitles[0] || "Church Calendar",
+        google_calendar_ids: selectedGoogleCalendarIds,
+        google_calendar_titles: selectedCalendars.map((entry) => entry.title),
+      };
+      const { data, error } = await supabase.from("churches").update(payload).eq("id", church.id).select().single();
+      if (error) throw error;
+      if (data) setChurch?.(data);
+      setGoogleCalendarActionMessage(`Saved ${selectedCalendars.length} official church Google calendar${selectedCalendars.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setGoogleCalendarActionError(error?.message || "We couldn't save that church calendar yet.");
+    } finally {
+      setGoogleCalendarSaving(false);
+    }
+  };
+  const removeImportedGoogleCalendar = async (calendarId) => {
+    if (!church?.id || !canSetOfficialGoogleCalendar) return;
+    const nextIds = officialGoogleCalendarIds.filter((id) => id !== calendarId);
+    const nextTitles = officialGoogleCalendarIds
+      .map((id, index) => ({ id, title: officialGoogleCalendarTitles[index] || "" }))
+      .filter((entry) => entry.id !== calendarId)
+      .map((entry) => entry.title);
+    setGoogleCalendarSaving(true);
+    setGoogleCalendarActionError("");
+    setGoogleCalendarActionMessage("");
+    try {
+      const { error: deleteError } = await supabase
+        .from("calendar_events")
+        .delete()
+        .eq("church_id", church.id)
+        .eq("google_calendar_source_id", calendarId);
+      if (deleteError) throw deleteError;
+      const payload = {
+        google_calendar_id: nextIds[0] || null,
+        google_calendar_title: nextTitles[0] || null,
+        google_calendar_ids: nextIds,
+        google_calendar_titles: nextTitles,
+      };
+      const { data, error } = await supabase.from("churches").update(payload).eq("id", church.id).select().single();
+      if (error) throw error;
+      if (data) setChurch?.(data);
+      setCalendarEvents((current) => (current || []).filter((event) => event.google_calendar_source_id !== calendarId));
+      setSelectedGoogleCalendarIds(nextIds);
+      setGoogleCalendarActionMessage("Imported calendar removed from the shared view.");
+    } catch (error) {
+      setGoogleCalendarActionError(error?.message || "We couldn't remove that calendar yet.");
+    } finally {
+      setGoogleCalendarSaving(false);
+    }
+  };
+  const googleCalendarSelectionUnchanged =
+    selectedGoogleCalendarIds.length === officialGoogleCalendarIds.length
+    && selectedGoogleCalendarIds.every((id) => officialGoogleCalendarIds.includes(id))
+    && officialGoogleCalendarIds.every((id) => selectedGoogleCalendarIds.includes(id));
+
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100,textAlign:"left"}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",marginBottom:24,textAlign:"left"}}>
         <div style={{textAlign:"left"}}>
           <h2 style={pageTitleStyle}>Calendar</h2>
-          <p style={{color:C.muted,fontSize:13,marginTop:4}}>{months[calendarCursor.getMonth()]} {calendarCursor.getFullYear()}</p>
+          <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+            {fmtDate(weekStart)} - {fmtDate(weekEnd)}
+          </p>
         </div>
         <div className="page-actions" style={{display:"flex",justifyContent:"flex-end"}}>
           <button className="btn-gold" onClick={() => showCalendarItemForm ? closeCalendarItemForm() : setShowCalendarItemForm(true)}>
@@ -7210,6 +7624,28 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
         </div>
       )}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:18}}>
+        {officialGoogleCalendarIds.map((id, index) => {
+          const active = googleCalendarFilters[id] !== false;
+          const label = officialGoogleCalendarTitleMap[id] || `Calendar ${index + 1}`;
+          return (
+            <button
+              key={id}
+              type="button"
+              className={active ? "btn-gold-compact" : "btn-outline"}
+              onClick={() => setGoogleCalendarFilters((current) => ({ ...current, [id]: !active }))}
+              style={active
+                ? { boxShadow:`0 0 0 1px ${C.goldDim}, 0 10px 24px rgba(201,168,76,.24)`, display:"inline-flex", alignItems:"center", gap:8 }
+                : { padding:"6px 12px", fontSize:12, opacity:.78 }}
+            >
+              {active ? (
+                <>
+                  <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:4,background:"rgba(13,18,31,.24)",border:`1px solid ${C.goldText}`,fontSize:11,lineHeight:1,color:C.goldText}}>✓</span>
+                  <span>{label}</span>
+                </>
+              ) : label}
+            </button>
+          );
+        })}
         {filterOptions.map((option) => (
           <button
             key={option.key}
@@ -7230,39 +7666,209 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
         ))}
       </div>
       <div className="card" style={{padding:20,textAlign:"left"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,marginBottom:18,flexWrap:"wrap",textAlign:"left"}}>
-          <div style={{textAlign:"left"}}>
-            <h3 style={{...sectionTitleStyle,marginBottom:6}}>Calendar</h3>
-            <p style={{color:C.muted,fontSize:13,lineHeight:1.6,margin:0}}>View this month at a glance across the calendars you have turned on.</p>
-          </div>
-          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,180px))",gap:10,justifyContent:"end"}}>
-            <div style={{display:"grid",gap:6}}>
-              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Year</label>
-              <select
-                className="input-field"
-                value={calendarCursor.getFullYear()}
-                onChange={(e) => setCalendarCursor((current) => new Date(Number(e.target.value), current.getMonth(), 1))}
-                style={{background:C.surface}}
+        <div style={{display:"grid",gap:12,marginBottom:18,textAlign:"left"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+            <h3 style={{...sectionTitleStyle,margin:0}}>Weekly Calendar</h3>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+              <button
+                className="btn-gold-compact"
+                onClick={importGoogleCalendar}
+                aria-label={googleLastSyncAt ? "Refresh Google Events" : "Import Events"}
+                title={googleLastSyncAt ? "Refresh Google Events" : "Import Events"}
+                disabled={googleSyncLoading || !activeGoogleCalendarIds.length}
+                style={{display:"inline-flex",alignItems:"center",justifyContent:"center",padding:8}}
               >
-                {calendarYears.map((year) => (
-                  <option key={year} value={year}>{year}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{display:"grid",gap:6}}>
-              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Month</label>
-              <select
-                className="input-field"
-                value={calendarCursor.getMonth()}
-                onChange={(e) => setCalendarCursor((current) => new Date(current.getFullYear(), Number(e.target.value), 1))}
-                style={{background:C.surface}}
+                <Icons.refresh />
+              </button>
+              <button
+                className="btn-gold-compact"
+                onClick={() => setShowGoogleCalendarSettings((current) => !current)}
+                aria-label="Google calendar settings"
+                title="Google calendar settings"
+                style={{display:"inline-flex",alignItems:"center",justifyContent:"center",padding:8}}
               >
-                {months.map((month, index) => (
-                  <option key={month} value={index}>{month}</option>
-                ))}
-              </select>
+                <Icons.settings />
+              </button>
             </div>
           </div>
+          <p style={{color:C.muted,fontSize:13,lineHeight:1.6,margin:0}}>View this week at a glance across the calendars you have turned on.</p>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,width:"100%",maxWidth:320}}>
+              <div style={{display:"grid",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Month</label>
+                <select
+                  className="input-field"
+                  value={calendarCursor.getMonth()}
+                  onChange={(e) => setCalendarCursor((current) => new Date(current.getFullYear(), Number(e.target.value), 1))}
+                  style={{background:C.surface,padding:"10px 12px",fontSize:13}}
+                >
+                  {months.map((month, index) => (
+                    <option key={month} value={index}>{month}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{display:"grid",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Year</label>
+                <select
+                  className="input-field"
+                  value={calendarCursor.getFullYear()}
+                  onChange={(e) => setCalendarCursor((current) => new Date(Number(e.target.value), current.getMonth(), 1))}
+                  style={{background:C.surface,padding:"10px 12px",fontSize:13}}
+                >
+                  {calendarYears.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",alignItems:"center",marginLeft:"auto"}}>
+              <button
+                type="button"
+                className="btn-gold-compact"
+                onClick={() => setCalendarCursor((current) => new Date(current.getFullYear(), current.getMonth(), current.getDate() - 7))}
+              >
+                ←
+              </button>
+              <div style={{fontSize:12,color:C.text,minWidth:112,textAlign:"center",alignSelf:"center",flex:"0 1 auto"}}>
+                {fmtShortDate(weekStart)}-{fmtShortDate(weekEnd)}
+              </div>
+              <button
+                type="button"
+                className="btn-gold-compact"
+                onClick={() => setCalendarCursor((current) => new Date(current.getFullYear(), current.getMonth(), current.getDate() + 7))}
+              >
+                →
+              </button>
+              <button
+                type="button"
+                className="btn-gold-compact"
+                onClick={() => setCalendarCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate()))}
+                style={{padding:"6px 12px",fontSize:12}}
+              >
+                This Week
+              </button>
+            </div>
+          </div>
+        </div>
+        <div style={{display:"grid",gap:12,marginBottom:18,paddingBottom:18,borderBottom:`1px solid ${C.border}`}}>
+          {showGoogleCalendarSettings && (
+            <div style={{display:"grid",gap:14,padding:"18px 18px 16px",border:`1px solid ${C.border}`,borderRadius:16,background:"rgba(255,255,255,.03)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+                <div style={{display:"grid",gap:6,maxWidth:620,textAlign:"left"}}>
+                  <div style={{fontSize:16,fontWeight:600,color:C.text,lineHeight:1.3}}>Google Calendar Settings</div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.7}}>
+                    Connect Google, choose the calendars your church wants to share in Shepherd, then save that shared setup once for the whole team.
+                  </div>
+                  <div style={{fontSize:12,color:googleCalendarLinked ? C.gold : C.muted,lineHeight:1.6}}>
+                    {googleCalendarLinked
+                      ? officialGoogleCalendarIds.length
+                        ? `${officialGoogleCalendarIds.length} shared calendar${officialGoogleCalendarIds.length === 1 ? "" : "s"} selected`
+                        : "Google connected. Choose the calendars your church wants to use."
+                      : "Google is not connected yet."}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  <button className="btn-gold-compact" onClick={connectGoogleCalendar}>
+                    Connect Google
+                  </button>
+                  {googleCalendarLinked && (
+                    <button
+                      className="btn-outline"
+                      onClick={disconnectGoogleCalendar}
+                      disabled={googleCalendarSaving || googleCalendarsLoading || googleIdentityCount < 2}
+                      style={{padding:"8px 12px",fontSize:12}}
+                      title={googleIdentityCount < 2 ? "This account needs another sign-in method before Google can be disconnected." : "Disconnect Google from this Shepherd account"}
+                    >
+                      Disconnect Google
+                    </button>
+                  )}
+                  {canSetOfficialGoogleCalendar && (
+                    <button
+                      className="btn-gold"
+                      onClick={saveOfficialGoogleCalendar}
+                      disabled={googleCalendarSaving || googleCalendarsLoading || !selectedGoogleCalendarIds.length || googleCalendarSelectionUnchanged}
+                    >
+                      {googleCalendarSaving ? "Saving..." : "Set Calendars"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div style={{height:1,background:C.border,opacity:.75}} />
+              {googleCalendarLinked && canSetOfficialGoogleCalendar ? (
+                <div style={{display:"grid",gap:14}}>
+                  {officialGoogleCalendarIds.length > 0 && (
+                    <div style={{display:"grid",gap:8}}>
+                      <label style={{fontSize:12,color:C.muted}}>Current Imported Calendars</label>
+                      <div style={{display:"grid",gap:8,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                        {officialGoogleCalendarIds.map((id, index) => (
+                          <div key={id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                            <div style={{fontSize:13,color:C.text}}>
+                        {officialGoogleCalendarTitleMap[id] || `Calendar ${index + 1}`}
+                            </div>
+                            <button
+                              className="btn-outline"
+                              onClick={() => removeImportedGoogleCalendar(id)}
+                              disabled={googleCalendarSaving}
+                              style={{padding:"6px 12px",fontSize:12}}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{height:1,background:C.border,opacity:.55}} />
+                  <div style={{display:"grid",gap:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                      <label style={{fontSize:12,color:C.muted}}>Available Google Calendars</label>
+                      <button
+                        className="btn-outline"
+                        onClick={() => setShowAvailableGoogleCalendars((current) => !current)}
+                        style={{padding:"6px 12px",fontSize:12}}
+                      >
+                        {showAvailableGoogleCalendars ? "Hide Available Calendars" : "Change Shared Calendars"}
+                      </button>
+                    </div>
+                    {showAvailableGoogleCalendars && (
+                      <div style={{display:"grid",gap:8,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                        {!googleCalendars.length && !googleCalendarActionError && (
+                          <div style={{fontSize:12,color:C.muted}}>
+                            {googleCalendarsLoading ? "Loading calendars..." : "No calendars found"}
+                          </div>
+                        )}
+                        {googleCalendars.map((entry) => {
+                          const checked = selectedGoogleCalendarIds.includes(entry.id);
+                          return (
+                            <label key={entry.id} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.text,cursor:"pointer"}}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => setSelectedGoogleCalendarIds((current) => (
+                                  checked
+                                    ? current.filter((id) => id !== entry.id)
+                                    : [...current, entry.id]
+                                ))}
+                              />
+                              <span>{entry.title}{entry.primary ? " (Primary)" : ""}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div style={{fontSize:12,color:C.muted,lineHeight:1.7}}>
+                  {googleCalendarLinked
+                    ? "Only church leadership can choose which Google calendars are shared here."
+                    : "Connect Google first to load the calendars available to this account."}
+                </div>
+              )}
+            </div>
+          )}
+          {googleCalendarActionMessage && <div style={{fontSize:12,color:C.success}}>{googleCalendarActionMessage}</div>}
+          {googleCalendarActionError && <div style={{fontSize:12,color:C.danger}}>{googleCalendarActionError}</div>}
         </div>
         {selectedCalendarItem && (
           <div className="card" style={{padding:16,display:"grid",gap:10,marginBottom:18,textAlign:"left",background:"rgba(255,255,255,.03)"}}>
@@ -7287,50 +7893,47 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
           </div>
         )}
         {!visibleCalendarItems.length && (
-          <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected in {months[calendarCursor.getMonth()]} {calendarCursor.getFullYear()}.</p>
+          <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected this week.</p>
         )}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:10,alignItems:"stretch"}}>
-          {weekdayLabels.map((label) => (
-            <div key={label} style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",padding:"0 4px 6px",textAlign:"left"}}>
-              {label}
-            </div>
-          ))}
-          {monthGridDays.map((day) => (
+        <div style={{display:"grid",gap:12}}>
+          {weekDays.map((day, index) => (
             <div
               key={day.key}
               className="card"
               style={{
-                minHeight:140,
-                height:176,
-                padding:"8px 8px 10px",
+                padding:"12px 14px",
                 display:"grid",
-                gridTemplateRows:"auto 1fr",
-                gap:6,
-                background:day.isCurrentMonth ? C.card : "rgba(255,255,255,.02)",
+                gap:10,
+                background:C.card,
                 border:day.isToday ? `1px solid ${C.goldDim}` : `1px solid ${C.border}`,
-                opacity:day.isCurrentMonth ? 1 : 0.5,
-                overflow:"hidden",
-                minWidth:0,
               }}
             >
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                <div style={{fontSize:day.isToday ? 17 : 15,fontWeight:700,color:day.isToday ? C.gold : C.text,fontFamily:"'Young Serif Medium', Georgia, serif",lineHeight:1}}>
-                  {day.date.getDate()}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:4}}>
+                    {weekdayLabels[index]}
+                  </div>
+                  <div style={{fontSize:18,fontWeight:700,color:day.isToday ? C.gold : C.text,fontFamily:"'Young Serif Medium', Georgia, serif",lineHeight:1.1}}>
+                    {fmtDate(day.date)}
+                  </div>
                 </div>
                 {day.isToday && (
                   <span style={{fontSize:9,color:C.gold,textTransform:"uppercase",letterSpacing:".08em"}}>Today</span>
                 )}
               </div>
-              <div style={{display:"grid",gap:6,alignContent:"start",minHeight:0,minWidth:0,overflow:"hidden"}}>
-                {day.items.slice(0, 4).map((item) => (
+              <div style={{display:"grid",gap:8}}>
+                {day.items.length === 0 && (
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>Nothing scheduled.</div>
+                )}
+                {day.items.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => openCalendarItem(item)}
-                    style={{display:"grid",gap:3,padding:"6px 7px",border:`1px solid ${item.tone}33`,borderRadius:9,background:`${item.tone}12`,textAlign:"left",minWidth:0,overflow:"hidden",cursor:"pointer"}}
+                    style={{display:"grid",gap:4,padding:"8px 10px",border:`1px solid ${item.tone}33`,borderRadius:10,background:`${item.tone}12`,textAlign:"left",minWidth:0,cursor:"pointer"}}
                   >
                     <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
-                      <div style={{fontSize:10.5,fontWeight:600,color:C.text,lineHeight:1.35,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</div>
+                      <div style={{fontSize:12,fontWeight:600,color:C.text,lineHeight:1.4,minWidth:0}}>{item.title}</div>
                       {item.editable && (
                         <button
                           type="button"
@@ -7347,14 +7950,9 @@ function CalendarView({ tasks, setTasks, eventRequests, calendarEvents, setCalen
                         </button>
                       )}
                     </div>
-                    <div style={{fontSize:9.5,color:C.muted,lineHeight:1.35,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.tag}</div>
+                    <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>{item.detail || item.tag}</div>
                   </button>
                 ))}
-                {day.items.length > 4 && (
-                  <div style={{fontSize:9.5,color:C.muted,lineHeight:1.35,paddingLeft:2}}>
-                    +{day.items.length - 4} more
-                  </div>
-                )}
               </div>
             </div>
           ))}
@@ -7682,12 +8280,39 @@ export default function App() {
   }, [browserPermission, unreadNotifications]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const persistProviderTokens = (session) => {
+      if (typeof window !== "undefined" && session?.user?.id) {
+        if (session.provider_token) {
+          window.localStorage.setItem(getGoogleProviderTokenStorageKey(session.user.id), session.provider_token);
+        }
+        if (session.provider_refresh_token) {
+          window.localStorage.setItem(getGoogleProviderRefreshTokenStorageKey(session.user.id), session.provider_refresh_token);
+        }
+      }
+    };
+    const initializeSession = async () => {
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+        if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (!error) {
+            persistProviderTokens(data?.session || null);
+            url.searchParams.delete("code");
+            url.searchParams.delete("state");
+            window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+          }
+        }
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      persistProviderTokens(session);
       setSession(session);
       if (session) loadData(session.user.id);
       else setLoading(false);
-    });
+    };
+    initializeSession();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      persistProviderTokens(session);
       setSession(session);
       if (session) loadData(session.user.id);
       else {
@@ -7751,7 +8376,7 @@ export default function App() {
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
     ministries: <Ministries ministries={ministries}/>,
-    calendar:   <CalendarView tasks={tasks} setTasks={setTasks} eventRequests={eventRequests || []} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} previewUsers={previewUsers} profile={profile} churchId={church?.id} setActive={setActive} />,
+    calendar:   <CalendarView tasks={tasks} setTasks={setTasks} eventRequests={eventRequests || []} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} previewUsers={previewUsers} profile={profile} church={church} setChurch={setChurch} churchId={church?.id} setActive={setActive} session={session} />,
   };
 
   return (

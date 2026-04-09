@@ -13,6 +13,10 @@ alter table public.churches add column if not exists name text;
 alter table public.churches add column if not exists code text;
 alter table public.churches add column if not exists account_admin_user_id uuid references auth.users(id) on delete set null;
 alter table public.churches add column if not exists account_admin_email text;
+alter table public.churches add column if not exists google_calendar_id text;
+alter table public.churches add column if not exists google_calendar_title text;
+alter table public.churches add column if not exists google_calendar_ids text[] not null default '{}';
+alter table public.churches add column if not exists google_calendar_titles text[] not null default '{}';
 alter table public.churches add column if not exists created_at timestamptz not null default now();
 
 create unique index if not exists churches_code_key on public.churches (code);
@@ -293,6 +297,9 @@ create table if not exists public.calendar_events (
   start_time text,
   end_time text,
   location text,
+  google_calendar_source_id text,
+  google_calendar_source_title text,
+  google_calendar_source_event_id text,
   notes text,
   created_at timestamptz not null default now()
 );
@@ -304,6 +311,9 @@ alter table public.calendar_events add column if not exists event_date date;
 alter table public.calendar_events add column if not exists start_time text;
 alter table public.calendar_events add column if not exists end_time text;
 alter table public.calendar_events add column if not exists location text;
+alter table public.calendar_events add column if not exists google_calendar_source_id text;
+alter table public.calendar_events add column if not exists google_calendar_source_title text;
+alter table public.calendar_events add column if not exists google_calendar_source_event_id text;
 alter table public.calendar_events add column if not exists notes text;
 alter table public.calendar_events add column if not exists created_at timestamptz not null default now();
 
@@ -1028,6 +1038,13 @@ create policy "church code lookup"
 on public.churches
 for select
 using (true);
+
+drop policy if exists "church admin write" on public.churches;
+create policy "church admin write"
+on public.churches
+for update
+using (public.user_can_manage_church(id))
+with check (public.user_can_manage_church(id));
 
 drop policy if exists "church staff lookup" on public.church_staff;
 create policy "church staff lookup"

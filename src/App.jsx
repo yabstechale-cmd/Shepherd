@@ -2114,6 +2114,8 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
     selectedGoogleCalendarIds.length === officialGoogleCalendarIds.length
     && selectedGoogleCalendarIds.every((id) => officialGoogleCalendarIds.includes(id))
     && officialGoogleCalendarIds.every((id) => selectedGoogleCalendarIds.includes(id));
+  const primaryButtonStyle = { minHeight: 42, fontSize: 14, justifyContent: "center" };
+  const secondaryButtonStyle = { padding: "8px 12px", fontSize: 14, minHeight: 42 };
 
   if (!canManageSettings) {
     return (
@@ -2128,112 +2130,144 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
 
   return (
     <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-        <div style={{display:"grid",gap:6,maxWidth:620,textAlign:"left"}}>
-          <h3 style={{...sectionTitleStyle,margin:0}}>Calendar Settings</h3>
-          <div style={{fontSize:12,color:C.muted,lineHeight:1.7}}>
-            Connect Google, choose the calendars your church wants to share in Shepherd, then save and refresh that shared setup here for the whole team.
-          </div>
-          <div style={{fontSize:12,color:googleCalendarLinked ? C.gold : C.muted,lineHeight:1.6}}>
-            {googleCalendarLinked
-              ? officialGoogleCalendarIds.length
-                ? `${officialGoogleCalendarIds.length} shared calendar${officialGoogleCalendarIds.length === 1 ? "" : "s"} selected${googleConnectionEmail ? ` • ${googleConnectionEmail}` : ""}`
-                : `Google connected for this church${googleConnectionEmail ? ` • ${googleConnectionEmail}` : ""}. Choose the calendars your church wants to use.`
-              : "Google is not connected yet."}
-          </div>
+      <div style={{display:"grid",gap:6,maxWidth:680,textAlign:"left"}}>
+        <h3 style={{...sectionTitleStyle,margin:0}}>Calendar Settings</h3>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.7}}>
+          Set up one shared Google calendar connection for your church, choose which calendars Shepherd should display, then refresh the shared calendar whenever you need the latest items.
         </div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
-          <button className="btn-gold-compact" onClick={connectGoogleCalendar}>
-            Connect Google
-          </button>
-          {googleCalendarLinked && (
-            <button
-              className="btn-outline"
-              onClick={disconnectGoogleCalendar}
-              disabled={googleCalendarSaving || googleCalendarsLoading}
-              style={{padding:"8px 12px",fontSize:12}}
-              title="Disconnect Google from this church"
-            >
-              Disconnect Google
-            </button>
-          )}
-          <button
-            className="btn-gold"
-            onClick={saveOfficialGoogleCalendar}
-            disabled={googleCalendarSaving || googleCalendarsLoading || !selectedGoogleCalendarIds.length || googleCalendarSelectionUnchanged}
-          >
-            {googleCalendarSaving ? "Saving..." : "Set Calendars"}
-          </button>
-          <button
-            className="btn-gold"
-            onClick={importGoogleCalendar}
-            disabled={googleSyncLoading || !officialGoogleCalendarIds.length}
-          >
-            {googleSyncLoading ? "Refreshing..." : "Refresh Shared Calendars"}
-          </button>
+        <div style={{fontSize:12,color:googleCalendarLinked ? C.gold : C.muted,lineHeight:1.6}}>
+          {googleCalendarLinked
+            ? officialGoogleCalendarIds.length
+              ? `${officialGoogleCalendarIds.length} shared calendar${officialGoogleCalendarIds.length === 1 ? "" : "s"} selected${googleConnectionEmail ? ` • ${googleConnectionEmail}` : ""}`
+              : `Google connected for this church${googleConnectionEmail ? ` • ${googleConnectionEmail}` : ""}. Choose the calendars your church wants to use.`
+            : "Google is not connected yet."}
         </div>
       </div>
       <div style={{height:1,background:C.border,opacity:.75}} />
-      {officialGoogleCalendarIds.length > 0 && (
-        <div style={{display:"grid",gap:8}}>
-          <label style={{fontSize:12,color:C.muted}}>Current Imported Calendars</label>
-          <div style={{display:"grid",gap:8,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-            {officialGoogleCalendarIds.map((id, index) => (
-              <div key={id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <div style={{fontSize:13,color:C.text}}>
-                  {officialGoogleCalendarTitleMap[id] || `Calendar ${index + 1}`}
-                </div>
-                <button
-                  className="btn-outline"
-                  onClick={() => removeImportedGoogleCalendar(id)}
-                  disabled={googleCalendarSaving}
-                  style={{padding:"6px 12px",fontSize:12}}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
+      <div style={{display:"grid",gap:14}}>
+        <div className="card" style={{padding:16,display:"grid",gap:12,background:C.surface}}>
+          <div style={{display:"grid",gap:4}}>
+            <div style={{fontSize:11,color:C.gold,letterSpacing:".08em",textTransform:"uppercase",fontWeight:700}}>Step 1</div>
+            <div style={{fontSize:15,color:C.text,fontWeight:600}}>Connect Google</div>
+            <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+              Connect the church’s Google account once so Shepherd can load and refresh the shared calendars for the whole team.
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+            <button className="btn-gold" onClick={connectGoogleCalendar} style={primaryButtonStyle}>
+              Connect Google
+            </button>
+            {googleCalendarLinked && (
+              <button
+                className="btn-outline"
+                onClick={disconnectGoogleCalendar}
+                disabled={googleCalendarSaving || googleCalendarsLoading}
+                style={secondaryButtonStyle}
+                title="Disconnect Google from this church"
+              >
+                Disconnect Google
+              </button>
+            )}
           </div>
         </div>
-      )}
-      <div style={{height:1,background:C.border,opacity:.55}} />
-      <div style={{display:"grid",gap:8}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-          <label style={{fontSize:12,color:C.muted}}>Available Google Calendars</label>
-          <button
-            className="btn-outline"
-            onClick={() => setShowAvailableGoogleCalendars((current) => !current)}
-            style={{padding:"6px 12px",fontSize:12}}
-          >
-            {showAvailableGoogleCalendars ? "Hide Available Calendars" : "Change Shared Calendars"}
-          </button>
-        </div>
-        {showAvailableGoogleCalendars && (
-          <div style={{display:"grid",gap:8,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-            {!googleCalendars.length && !googleCalendarActionError && (
-              <div style={{fontSize:12,color:C.muted}}>
-                {googleCalendarsLoading ? "Loading calendars..." : "No calendars found"}
+        <div className="card" style={{padding:16,display:"grid",gap:12,background:C.surface}}>
+          <div style={{display:"grid",gap:4}}>
+            <div style={{fontSize:11,color:C.gold,letterSpacing:".08em",textTransform:"uppercase",fontWeight:700}}>Step 2</div>
+            <div style={{fontSize:15,color:C.text,fontWeight:600}}>Choose Shared Calendars</div>
+            <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+              Pick the Google calendars your church wants everyone to see in Shepherd, then save that shared selection.
+            </div>
+          </div>
+          {officialGoogleCalendarIds.length > 0 && (
+            <div style={{display:"grid",gap:8}}>
+              <label style={{fontSize:12,color:C.muted}}>Current Imported Calendars</label>
+              <div style={{display:"grid",gap:8,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+                {officialGoogleCalendarIds.map((id, index) => (
+                  <div key={id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <div style={{fontSize:13,color:C.text}}>
+                      {officialGoogleCalendarTitleMap[id] || `Calendar ${index + 1}`}
+                    </div>
+                    <button
+                      className="btn-outline"
+                      onClick={() => removeImportedGoogleCalendar(id)}
+                      disabled={googleCalendarSaving}
+                      style={secondaryButtonStyle}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{display:"grid",gap:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <label style={{fontSize:12,color:C.muted}}>Available Google Calendars</label>
+              <button
+                className="btn-outline"
+                onClick={() => setShowAvailableGoogleCalendars((current) => !current)}
+                style={secondaryButtonStyle}
+              >
+                {showAvailableGoogleCalendars ? "Hide Calendar List" : "Choose Calendars"}
+              </button>
+            </div>
+            {showAvailableGoogleCalendars && (
+              <div style={{display:"grid",gap:8,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+                {!googleCalendars.length && !googleCalendarActionError && (
+                  <div style={{fontSize:12,color:C.muted}}>
+                    {googleCalendarsLoading ? "Loading calendars..." : "No calendars found"}
+                  </div>
+                )}
+                {googleCalendars.map((entry) => {
+                  const checked = selectedGoogleCalendarIds.includes(entry.id);
+                  return (
+                    <label key={entry.id} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.text,cursor:"pointer"}}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setSelectedGoogleCalendarIds((current) => (
+                          checked
+                            ? current.filter((id) => id !== entry.id)
+                            : [...current, entry.id]
+                        ))}
+                      />
+                      <span>{entry.title}{entry.primary ? " (Primary)" : ""}</span>
+                    </label>
+                  );
+                })}
               </div>
             )}
-            {googleCalendars.map((entry) => {
-              const checked = selectedGoogleCalendarIds.includes(entry.id);
-              return (
-                <label key={entry.id} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.text,cursor:"pointer"}}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => setSelectedGoogleCalendarIds((current) => (
-                      checked
-                        ? current.filter((id) => id !== entry.id)
-                        : [...current, entry.id]
-                    ))}
-                  />
-                  <span>{entry.title}{entry.primary ? " (Primary)" : ""}</span>
-                </label>
-              );
-            })}
           </div>
-        )}
+          <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+            <button
+              className="btn-gold"
+              onClick={saveOfficialGoogleCalendar}
+              disabled={googleCalendarSaving || googleCalendarsLoading || !selectedGoogleCalendarIds.length || googleCalendarSelectionUnchanged}
+              style={primaryButtonStyle}
+            >
+              {googleCalendarSaving ? "Saving..." : "Set Calendars"}
+            </button>
+          </div>
+        </div>
+        <div className="card" style={{padding:16,display:"grid",gap:12,background:C.surface}}>
+          <div style={{display:"grid",gap:4}}>
+            <div style={{fontSize:11,color:C.gold,letterSpacing:".08em",textTransform:"uppercase",fontWeight:700}}>Step 3</div>
+            <div style={{fontSize:15,color:C.text,fontWeight:600}}>Refresh Shared Calendar</div>
+            <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+              Pull the latest items from the saved Google calendars into Shepherd’s shared calendar view.
+            </div>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+            <button
+              className="btn-gold"
+              onClick={importGoogleCalendar}
+              disabled={googleSyncLoading || !officialGoogleCalendarIds.length}
+              style={primaryButtonStyle}
+            >
+              {googleSyncLoading ? "Refreshing..." : "Refresh Shared Calendars"}
+            </button>
+          </div>
+        </div>
       </div>
       {googleCalendarActionMessage && <div style={{fontSize:12,color:C.success}}>{googleCalendarActionMessage}</div>}
       {googleCalendarActionError && <div style={{fontSize:12,color:C.danger}}>{googleCalendarActionError}</div>}
@@ -2641,7 +2675,7 @@ function TrashPage({ trashItems, clearTrash, restoreTrashItem }) {
   );
 }
 
-function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
+function ChurchTeamPage({ church, profile, setProfile, previewUsers, setPreviewUsers }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const blank = { first_name: "", last_name: "", roles: ["youth_pastor"], title: formatRoleTitles(["youth_pastor"]), oversight: "standard" };
@@ -2761,8 +2795,8 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
         saveError = retry.error;
       }
     }
-    setSaving(false);
     if (saveError) {
+      setSaving(false);
       setError(saveError.message || "We couldn't save that team member.");
       return;
     }
@@ -2794,10 +2828,25 @@ function ChurchTeamPage({ church, profile, previewUsers, setPreviewUsers }) {
         })
         .eq("staff_id", data.id);
     }
+    setProfile?.((current) => {
+      if (!current || current.staff_id !== data.id) return current;
+      return normalizeAccessUser({
+        ...current,
+        full_name: data.full_name,
+        role: data.role,
+        title: data.title,
+        staff_roles: Array.isArray(data.staff_roles) ? data.staff_roles : (data.role ? [data.role] : []),
+        ministries: data.ministries || [],
+        can_see_team_overview: data.can_see_team_overview,
+        can_see_admin_overview: data.can_see_admin_overview,
+        read_only_oversight: data.read_only_oversight,
+      });
+    });
     setPreviewUsers((current) => {
       const others = (current || []).filter((entry) => entry.id !== data.id);
       return [...others, normalizeAccessUser(data)].sort((a, b) => a.full_name.localeCompare(b.full_name));
     });
+    setSaving(false);
     setEditingMemberId(null);
     setForm(blank);
     setShowTeamMemberModal(false);
@@ -8486,7 +8535,7 @@ export default function App() {
   const pages = {
     dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,

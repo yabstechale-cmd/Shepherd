@@ -343,6 +343,79 @@ alter table public.calendar_events add column if not exists created_at timestamp
 alter table public.calendar_events
   enable row level security;
 
+create table if not exists public.staff_availability_requests (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  requester_id uuid references public.profiles(id) on delete set null,
+  requested_by text not null,
+  requester_email text,
+  request_type text not null,
+  from_date date not null,
+  to_date date,
+  start_time text,
+  end_time text,
+  reason text,
+  notes text,
+  status text not null default 'submitted',
+  required_approvers text[] not null default '{}',
+  approvals text[] not null default '{}',
+  approval_history jsonb not null default '[]'::jsonb,
+  calendar_event_ids uuid[] not null default '{}',
+  decided_at timestamptz,
+  decided_by text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.staff_availability_requests add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.staff_availability_requests add column if not exists requester_id uuid references public.profiles(id) on delete set null;
+alter table public.staff_availability_requests add column if not exists requested_by text;
+alter table public.staff_availability_requests add column if not exists requester_email text;
+alter table public.staff_availability_requests add column if not exists request_type text;
+alter table public.staff_availability_requests add column if not exists from_date date;
+alter table public.staff_availability_requests add column if not exists to_date date;
+alter table public.staff_availability_requests add column if not exists start_time text;
+alter table public.staff_availability_requests add column if not exists end_time text;
+alter table public.staff_availability_requests add column if not exists reason text;
+alter table public.staff_availability_requests add column if not exists notes text;
+alter table public.staff_availability_requests add column if not exists status text not null default 'submitted';
+alter table public.staff_availability_requests add column if not exists required_approvers text[] not null default '{}';
+alter table public.staff_availability_requests add column if not exists approvals text[] not null default '{}';
+alter table public.staff_availability_requests add column if not exists approval_history jsonb not null default '[]'::jsonb;
+alter table public.staff_availability_requests add column if not exists calendar_event_ids uuid[] not null default '{}';
+alter table public.staff_availability_requests add column if not exists decided_at timestamptz;
+alter table public.staff_availability_requests add column if not exists decided_by text;
+alter table public.staff_availability_requests add column if not exists created_at timestamptz not null default now();
+
+alter table public.staff_availability_requests
+  enable row level security;
+
+create table if not exists public.church_lockup_assignments (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  assigned_by_id uuid references public.profiles(id) on delete set null,
+  assigned_by text not null,
+  week_of date not null,
+  service_label text not null default 'Sunday Services',
+  assignee_names text[] not null default '{}',
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.church_lockup_assignments add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.church_lockup_assignments add column if not exists assigned_by_id uuid references public.profiles(id) on delete set null;
+alter table public.church_lockup_assignments add column if not exists assigned_by text;
+alter table public.church_lockup_assignments add column if not exists week_of date;
+alter table public.church_lockup_assignments add column if not exists service_label text not null default 'Sunday Services';
+alter table public.church_lockup_assignments add column if not exists assignee_names text[] not null default '{}';
+alter table public.church_lockup_assignments add column if not exists notes text;
+alter table public.church_lockup_assignments add column if not exists created_at timestamptz not null default now();
+
+create unique index if not exists church_lockup_assignments_church_week_key
+  on public.church_lockup_assignments (church_id, week_of);
+
+alter table public.church_lockup_assignments
+  enable row level security;
+
 create table if not exists public.event_workflows (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -1361,6 +1434,110 @@ using (
         p.id = calendar_events.created_by
         or public.user_can_manage_church(calendar_events.church_id)
       )
+  )
+);
+
+drop policy if exists "staff availability same church read" on public.staff_availability_requests;
+create policy "staff availability same church read"
+on public.staff_availability_requests
+for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = staff_availability_requests.church_id
+  )
+);
+
+drop policy if exists "staff availability submit write" on public.staff_availability_requests;
+create policy "staff availability submit write"
+on public.staff_availability_requests
+for insert
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = staff_availability_requests.church_id
+      and p.id = staff_availability_requests.requester_id
+  )
+);
+
+drop policy if exists "staff availability requester or admin update" on public.staff_availability_requests;
+create policy "staff availability requester or admin update"
+on public.staff_availability_requests
+for update
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = staff_availability_requests.church_id
+      and (
+        p.id = staff_availability_requests.requester_id
+        or public.user_can_manage_church(staff_availability_requests.church_id)
+      )
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = staff_availability_requests.church_id
+      and (
+        p.id = staff_availability_requests.requester_id
+        or public.user_can_manage_church(staff_availability_requests.church_id)
+      )
+  )
+);
+
+drop policy if exists "church lockup same church read" on public.church_lockup_assignments;
+create policy "church lockup same church read"
+on public.church_lockup_assignments
+for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = church_lockup_assignments.church_id
+  )
+);
+
+drop policy if exists "church lockup same church insert" on public.church_lockup_assignments;
+create policy "church lockup same church insert"
+on public.church_lockup_assignments
+for insert
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = church_lockup_assignments.church_id
+      and p.id = church_lockup_assignments.assigned_by_id
+  )
+);
+
+drop policy if exists "church lockup same church update" on public.church_lockup_assignments;
+create policy "church lockup same church update"
+on public.church_lockup_assignments
+for update
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = church_lockup_assignments.church_id
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = church_lockup_assignments.church_id
   )
 );
 

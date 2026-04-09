@@ -50,6 +50,24 @@ const fmtShortDate = (d) => {
   const parsed = parseAppDate(d);
   return parsed ? parsed.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) : "—";
 };
+const startOfWeekMonday = (value) => {
+  const parsed = parseAppDate(value) || new Date();
+  const base = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  const offset = (base.getDay() + 6) % 7;
+  base.setDate(base.getDate() - offset);
+  return base;
+};
+const toAppDateValue = (value) => {
+  const parsed = parseAppDate(value);
+  return parsed
+    ? `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`
+    : "";
+};
+const fmtWeekRange = (value) => {
+  const weekStart = startOfWeekMonday(value);
+  const weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
+  return `${fmtShortDate(weekStart)}-${fmtShortDate(weekEnd)}`;
+};
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
@@ -288,6 +306,18 @@ const normalizePurchaseOrder = (order) => ({
   approvals: Array.isArray(order?.approvals) ? order.approvals : [],
   comments: Array.isArray(order?.comments) ? order.comments : [],
   approval_history: Array.isArray(order?.approval_history) ? order.approval_history : [],
+});
+const normalizeStaffAvailabilityRequest = (request) => ({
+  ...request,
+  status: ["pending_review", "submitted", "approved", "denied"].includes(request?.status) ? request.status : "submitted",
+  required_approvers: Array.isArray(request?.required_approvers) ? request.required_approvers : [],
+  approvals: Array.isArray(request?.approvals) ? request.approvals : [],
+  approval_history: Array.isArray(request?.approval_history) ? request.approval_history : [],
+  calendar_event_ids: Array.isArray(request?.calendar_event_ids) ? request.calendar_event_ids : [],
+});
+const normalizeChurchLockupAssignment = (assignment) => ({
+  ...assignment,
+  assignee_names: Array.isArray(assignment?.assignee_names) ? assignment.assignee_names : [],
 });
 const normalizeEventWorkflow = (workflow) => ({
   ...workflow,
@@ -1045,12 +1075,29 @@ const canApprovePurchaseOrder = (profile, order) =>
   listIncludesPerson(order?.required_approvers, profile?.full_name)
   && !getPurchaseOrderReviewerDecision(order, profile?.full_name)
   && ["pending", "in-review"].includes(order?.status || "pending");
+const getAvailabilityReviewerDecision = (request, reviewer) => {
+  if (!reviewer) return null;
+  const history = Array.isArray(request?.approval_history) ? [...request.approval_history] : [];
+  const match = history
+    .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0))
+    .find((entry) => samePerson(entry?.reviewer, reviewer));
+  if (!match) return null;
+  return {
+    action: match.action === "denied" ? "denied" : match.action === "approved" ? "approved" : "pending",
+    created_at: match.created_at || "",
+  };
+};
+const canApproveAvailabilityRequest = (profile, request) =>
+  request?.request_type === "PTO Request"
+  && listIncludesPerson(request?.required_approvers, profile?.full_name)
+  && !getAvailabilityReviewerDecision(request, profile?.full_name)
+  && request?.status === "pending_review";
 const canDeletePurchaseOrder = (profile, order) =>
   !!order && (
     (order.requester_id === profile?.id && ["pending", "in-review"].includes(order.status || "pending"))
     || canReviewPurchaseOrders(profile)
   );
-const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
+const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile) => {
   if (!profile?.full_name) return [];
   const fullName = profile.full_name;
   const isAdminViewer = hasAdministrativeOversight(profile, null);
@@ -1276,6 +1323,46 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, profile) => {
       target: "events-board",
       createdAt: decisionAt.getTime(),
     });
+  });
+
+  (staffAvailabilityRequests || []).forEach((request) => {
+    const createdAt = request.created_at ? new Date(request.created_at) : null;
+    const decidedAt = request.decided_at ? new Date(request.decided_at) : null;
+    const isRequester = request.requester_id === profile?.id || samePerson(request.requested_by, fullName);
+    const reviewRequestedForMe = canApproveAvailabilityRequest(profile, request);
+
+    if (reviewRequestedForMe && createdAt) {
+      items.push({
+        id: `availability-review-${request.id}-${normalizeName(fullName)}`,
+        tone: C.gold,
+        title: "PTO request needs review",
+        detail: `${request.requested_by || "A staff member"} submitted a PTO request.`,
+        target: "operations-board",
+        createdAt: createdAt.getTime(),
+      });
+    }
+
+    if (isRequester && request.status === "approved" && decidedAt) {
+      items.push({
+        id: `availability-approved-${request.id}`,
+        tone: C.success,
+        title: "PTO request approved",
+        detail: `${request.request_type} was approved${request.decided_by ? ` by ${request.decided_by}` : ""}.`,
+        target: "operations-board",
+        createdAt: decidedAt.getTime(),
+      });
+    }
+
+    if (isRequester && request.status === "denied" && decidedAt) {
+      items.push({
+        id: `availability-denied-${request.id}`,
+        tone: C.danger,
+        title: "PTO request denied",
+        detail: `${request.request_type} was denied${request.decided_by ? ` by ${request.decided_by}` : ""}.`,
+        target: "operations-board",
+        createdAt: decidedAt.getTime(),
+      });
+    }
   });
 
   return items
@@ -4991,6 +5078,837 @@ function PlaceholderBoard({ title, summary, systems }) {
   );
 }
 
+function OperationsBoard({ profile, church, previewUsers, staffAvailabilityRequests, setStaffAvailabilityRequests, churchLockupAssignments, setChurchLockupAssignments, setCalendarEvents }) {
+  const [operationsSection, setOperationsSection] = useState("home");
+  const [timeOffMode, setTimeOffMode] = useState("");
+  const [lockupMode, setLockupMode] = useState("home");
+  const [operationsMessage, setOperationsMessage] = useState("");
+  const [operationsError, setOperationsError] = useState("");
+  const [operationsSubmitting, setOperationsSubmitting] = useState(false);
+  const [timeOffForm, setTimeOffForm] = useState({
+    requestType: "PTO Request",
+    fromDate: "",
+    toDate: "",
+    startTime: "",
+    endTime: "",
+    reason: "",
+    coverage: "",
+    details: "",
+    returnDate: "",
+  });
+  const cards = [
+    {
+      id: "time-off",
+      name: "Staff Time Off / Out Of Office / Sick Days",
+      summary: "Handle staff PTO requests, out-of-office visibility, and sick-day tracking from one operations workflow.",
+      systems: ["PTO requests", "Out-of-office tracking", "Sick day logging"],
+    },
+    {
+      id: "lock-up",
+      name: "Church Lock Up",
+      summary: "Assign the staff member responsible for locking up after services each week so there is always a clear owner.",
+      systems: ["Weekly assignment", "Service coverage", "After-service accountability"],
+    },
+  ];
+  const approverCandidates = [...new Map((previewUsers || [])
+    .filter((user) =>
+      (Array.isArray(user?.staff_roles) && (
+        user.staff_roles.includes("senior_pastor")
+        || user.staff_roles.includes("church_administrator")
+      ))
+      || samePerson(user?.title, "Senior Pastor")
+      || samePerson(user?.title, "Church Administrator")
+    )
+    .map((user) => [normalizeName(user.full_name), user])).values()];
+  const ptoApproverNames = approverCandidates.map((user) => user.full_name).filter(Boolean);
+  const availabilityRequests = (staffAvailabilityRequests || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  const staffOptions = [...new Map((previewUsers || [])
+    .filter((user) => String(user?.full_name || "").trim())
+    .map((user) => [normalizeName(user.full_name), user.full_name.trim()])).values()];
+  const lockupAssignments = (churchLockupAssignments || [])
+    .slice()
+    .sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
+  const currentLockupAssignment = lockupAssignments.find((assignment) => {
+    if (!assignment?.week_of) return false;
+    const weekStart = parseAppDate(assignment.week_of);
+    if (!weekStart) return false;
+    const thisWeekStart = startOfWeekMonday(new Date());
+    return weekStart.getFullYear() === thisWeekStart.getFullYear()
+      && weekStart.getMonth() === thisWeekStart.getMonth()
+      && weekStart.getDate() === thisWeekStart.getDate();
+  }) || null;
+  const [lockupForm, setLockupForm] = useState(() => {
+    const baseWeek = startOfWeekMonday(new Date());
+    const weekValue = toAppDateValue(baseWeek);
+    return {
+      weekOf: weekValue,
+      assigneeNames: [],
+      notes: "",
+    };
+  });
+  const lockupWeekRangeLabel = fmtWeekRange(lockupForm.weekOf);
+
+  const buildAvailabilityEventRows = (request) => {
+    const rows = [];
+    const start = parseAppDate(request.from_date);
+    const end = parseAppDate(request.to_date || request.from_date);
+    if (!start || !end) return rows;
+    const finalDay = end.getTime() >= start.getTime() ? end : start;
+    const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const title = request.request_type === "Out Of Office Notice"
+      ? `${request.requested_by} • Out Of Office`
+      : request.request_type === "Sick Day Log"
+        ? `${request.requested_by} • Sick Day`
+        : `${request.requested_by} • PTO`;
+    while (cursor.getTime() <= finalDay.getTime()) {
+      const eventDate = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+      rows.push({
+        church_id: church?.id,
+        created_by: profile?.id || null,
+        title,
+        event_date: eventDate,
+        start_time: request.start_time || null,
+        end_time: request.end_time || null,
+        location: "Staff Availability",
+        notes: [
+          `staff-availability-request:${request.id}`,
+          request.notes || "",
+        ].filter(Boolean).join("\n\n"),
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return rows;
+  };
+
+  const syncAvailabilityRequestCalendar = async (request) => {
+    if (!request?.id || !church?.id) return [];
+    const existingIds = Array.isArray(request.calendar_event_ids) ? request.calendar_event_ids.filter(Boolean) : [];
+    if (existingIds.length) {
+      await supabase.from("calendar_events").delete().in("id", existingIds);
+      setCalendarEvents((current) => (current || []).filter((event) => !existingIds.includes(event.id)));
+    }
+    const rows = buildAvailabilityEventRows(request);
+    if (!rows.length) return [];
+    const { data, error } = await supabase.from("calendar_events").insert(rows).select();
+    if (error) throw error;
+    const saved = data || [];
+    setCalendarEvents((current) => {
+      const others = (current || []).filter((event) => !saved.some((entry) => entry.id === event.id));
+      return [...others, ...saved].sort((a, b) => getDateSortValue(a.event_date) - getDateSortValue(b.event_date));
+    });
+    return saved.map((entry) => entry.id);
+  };
+
+  const resetOperationsFlow = () => {
+    setTimeOffMode("");
+    setLockupMode("home");
+    setOperationsMessage("");
+    setOperationsError("");
+    setOperationsSubmitting(false);
+    setTimeOffForm({
+      requestType: "PTO Request",
+      fromDate: "",
+      toDate: "",
+      startTime: "",
+      endTime: "",
+      reason: "",
+      coverage: "",
+      details: "",
+        returnDate: "",
+      });
+    const baseWeek = startOfWeekMonday(new Date());
+    const weekValue = toAppDateValue(baseWeek);
+    setLockupForm({
+      weekOf: weekValue,
+      assigneeNames: [],
+      notes: "",
+    });
+  };
+
+  const openWorkflowCard = (cardId) => {
+    if (cardId === "time-off") {
+      resetOperationsFlow();
+      setOperationsSection("time-off");
+      return;
+    }
+    if (cardId === "lock-up") {
+      resetOperationsFlow();
+      setOperationsSection("lock-up");
+    }
+  };
+
+  const chooseTimeOffMode = (mode) => {
+    setOperationsMessage("");
+    setOperationsError("");
+    setTimeOffMode(mode);
+    setTimeOffForm((current) => ({
+      ...current,
+      requestType:
+        mode === "pto"
+          ? "PTO Request"
+          : mode === "ooo"
+            ? "Out Of Office Notice"
+            : "Sick Day Log",
+    }));
+  };
+
+  const submitOperationsForm = async () => {
+    setOperationsError("");
+    setOperationsMessage("");
+    if (!timeOffMode) {
+      setOperationsError("Choose what you want to do first.");
+      return;
+    }
+    if (!timeOffForm.fromDate) {
+      setOperationsError(timeOffMode === "sick" ? "Choose the sick day date." : "Choose a start date.");
+      return;
+    }
+    if ((timeOffMode === "pto" || timeOffMode === "ooo") && !timeOffForm.toDate) {
+      setOperationsError("Choose an end date.");
+      return;
+    }
+    if (timeOffMode === "pto" && !timeOffForm.reason.trim()) {
+      setOperationsError("Add a short reason for the time-off request.");
+      return;
+    }
+    if (timeOffMode === "ooo" && !timeOffForm.details.trim()) {
+      setOperationsError("Add a short note so the team knows why you are out of office.");
+      return;
+    }
+    if (timeOffMode === "sick" && !timeOffForm.details.trim()) {
+      setOperationsError("Add a short note for the sick day log.");
+      return;
+    }
+    if (!church?.id || !profile?.id) {
+      setOperationsError("We couldn't find your church profile yet.");
+      return;
+    }
+    setOperationsSubmitting(true);
+    try {
+      const requestType = timeOffMode === "pto"
+        ? "PTO Request"
+        : timeOffMode === "ooo"
+          ? "Out Of Office Notice"
+          : "Sick Day Log";
+      const payload = {
+        church_id: church.id,
+        requester_id: profile.id,
+        requested_by: profile.full_name || "Staff Member",
+        requester_email: profile.email || null,
+        request_type: requestType,
+        from_date: timeOffForm.fromDate,
+        to_date: timeOffMode === "sick" ? (timeOffForm.returnDate || timeOffForm.fromDate) : timeOffForm.toDate,
+        start_time: timeOffMode === "sick" ? null : (timeOffForm.startTime || null),
+        end_time: timeOffMode === "sick" ? null : (timeOffForm.endTime || null),
+        notes: timeOffMode === "pto" ? timeOffForm.coverage.trim() : timeOffForm.details.trim(),
+        reason: timeOffMode === "pto" ? timeOffForm.reason.trim() : null,
+        status: timeOffMode === "pto" ? "pending_review" : "submitted",
+        required_approvers: timeOffMode === "pto" ? ptoApproverNames : [],
+        approvals: [],
+        approval_history: [],
+        calendar_event_ids: [],
+      };
+      const { data, error } = await supabase.from("staff_availability_requests").insert(payload).select().single();
+      if (error) throw error;
+      let saved = normalizeStaffAvailabilityRequest(data);
+      if (timeOffMode !== "pto") {
+        const calendarEventIds = await syncAvailabilityRequestCalendar(saved);
+        if (calendarEventIds.length) {
+          const updateResult = await supabase
+            .from("staff_availability_requests")
+            .update({ calendar_event_ids: calendarEventIds })
+            .eq("id", saved.id)
+            .select()
+            .single();
+          if (updateResult.error) throw updateResult.error;
+          saved = normalizeStaffAvailabilityRequest(updateResult.data);
+        }
+      }
+      setStaffAvailabilityRequests((current) => [saved, ...(current || []).filter((entry) => entry.id !== saved.id)]);
+      setOperationsMessage(
+        timeOffMode === "pto"
+          ? "PTO request submitted for review. The Senior Pastor and Church Administrator have both been notified."
+          : timeOffMode === "ooo"
+            ? "Out-of-office notice submitted and added to the calendar."
+            : "Sick day logged and added to the calendar."
+      );
+      setTimeOffMode("");
+      setTimeOffForm({
+        requestType: "PTO Request",
+        fromDate: "",
+        toDate: "",
+        startTime: "",
+        endTime: "",
+        reason: "",
+        coverage: "",
+        details: "",
+        returnDate: "",
+      });
+    } catch (error) {
+      setOperationsError(error?.message || "We couldn't submit that availability request yet.");
+    } finally {
+      setOperationsSubmitting(false);
+    }
+  };
+
+  const updateAvailabilityRequestStatus = async (request, status) => {
+    if (!request?.id || !canApproveAvailabilityRequest(profile, request)) return;
+    const nowIso = new Date().toISOString();
+    const nextHistory = [
+      ...(request.approval_history || []),
+      {
+        id: `${request.id}-${status}-${nowIso}`,
+        reviewer: profile?.full_name || "Reviewer",
+        action: status,
+        created_at: nowIso,
+      },
+    ];
+    const nextApprovals = status === "approved"
+      ? [...new Set([...(request.approvals || []), profile?.full_name].filter(Boolean))]
+      : (request.approvals || []);
+    const fullyApproved = status === "approved"
+      && (request.required_approvers || []).every((name) => listIncludesPerson(nextApprovals, name));
+    let changes = status === "denied"
+      ? {
+          status: "denied",
+          approvals: nextApprovals,
+          approval_history: nextHistory,
+          decided_at: nowIso,
+          decided_by: profile?.full_name || "Reviewer",
+        }
+      : {
+          status: fullyApproved ? "approved" : "pending_review",
+          approvals: nextApprovals,
+          approval_history: nextHistory,
+          decided_at: fullyApproved ? nowIso : null,
+          decided_by: fullyApproved ? (profile?.full_name || "Reviewer") : null,
+        };
+    if (fullyApproved) {
+      const calendarEventIds = await syncAvailabilityRequestCalendar({ ...request, ...changes });
+      changes = { ...changes, calendar_event_ids: calendarEventIds };
+    }
+    const { data, error } = await supabase.from("staff_availability_requests").update(changes).eq("id", request.id).select().single();
+    if (error) {
+      setOperationsError(error.message || "We couldn't update that request.");
+      return;
+    }
+    const saved = normalizeStaffAvailabilityRequest(data);
+    setStaffAvailabilityRequests((current) => (current || []).map((entry) => entry.id === saved.id ? saved : entry));
+    setOperationsMessage(
+      status === "denied"
+        ? "PTO request denied."
+        : fullyApproved
+          ? "PTO request fully approved and added to the calendar."
+          : "Approval recorded. Waiting on the remaining reviewer."
+    );
+  };
+
+  const openLockupAssignment = (assignment = null) => {
+    setOperationsMessage("");
+    setOperationsError("");
+    setLockupMode("form");
+    if (assignment) {
+      setLockupForm({
+        weekOf: toAppDateValue(startOfWeekMonday(assignment.week_of)),
+        assigneeNames: Array.isArray(assignment.assignee_names) ? assignment.assignee_names : [],
+        notes: assignment.notes || "",
+      });
+      return;
+    }
+    const baseWeek = startOfWeekMonday(new Date());
+    const weekValue = toAppDateValue(baseWeek);
+    setLockupForm({
+      weekOf: weekValue,
+      assigneeNames: [],
+      notes: "",
+    });
+  };
+
+  const submitLockupAssignment = async () => {
+    setOperationsError("");
+    setOperationsMessage("");
+    if (!church?.id || !profile?.id) {
+      setOperationsError("We couldn't find your church profile yet.");
+      return;
+    }
+    if (!lockupForm.weekOf) {
+      setOperationsError("Choose the week this lock-up assignment should cover.");
+      return;
+    }
+    if (!lockupForm.assigneeNames.length) {
+      setOperationsError("Choose at least one staff member to cover church lock up.");
+      return;
+    }
+    setOperationsSubmitting(true);
+    try {
+      const normalizedWeekOf = toAppDateValue(startOfWeekMonday(lockupForm.weekOf));
+      const payload = {
+        church_id: church.id,
+        assigned_by: profile.full_name || "Staff Member",
+        assigned_by_id: profile.id,
+        week_of: normalizedWeekOf,
+        service_label: "After Services",
+        assignee_names: lockupForm.assigneeNames,
+        notes: lockupForm.notes.trim() || null,
+      };
+      const existing = lockupAssignments.find((assignment) => assignment.week_of === normalizedWeekOf);
+      let saved;
+      if (existing?.id) {
+        const result = await supabase
+          .from("church_lockup_assignments")
+          .update(payload)
+          .eq("id", existing.id)
+          .select()
+          .single();
+        if (result.error) throw result.error;
+        saved = normalizeChurchLockupAssignment(result.data);
+      } else {
+        const result = await supabase
+          .from("church_lockup_assignments")
+          .insert(payload)
+          .select()
+          .single();
+        if (result.error) throw result.error;
+        saved = normalizeChurchLockupAssignment(result.data);
+      }
+      setChurchLockupAssignments((current) => {
+        const next = [...(current || []).filter((assignment) => assignment.id !== saved.id && assignment.week_of !== saved.week_of), saved];
+        return next.sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
+      });
+      setOperationsMessage("Church lock-up assignment saved.");
+      setLockupMode("home");
+    } catch (error) {
+      setOperationsError(error?.message || "We couldn't save that lock-up assignment yet.");
+    } finally {
+      setOperationsSubmitting(false);
+    }
+  };
+
+  const shiftLockupWeek = (direction) => {
+    setLockupForm((current) => {
+      const base = startOfWeekMonday(current.weekOf);
+      base.setDate(base.getDate() + (direction * 7));
+      return {
+        ...current,
+        weekOf: toAppDateValue(base),
+      };
+    });
+  };
+
+  const renderLockupForm = () => (
+    <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,background:C.surface}}>
+      <div>
+        <div style={{fontSize:18,fontWeight:600,color:C.text}}>Church Lock Up</div>
+        <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
+          Assign who is responsible for locking up after services that week so Operations always has a clear owner.
+        </div>
+      </div>
+      <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+        <div style={{display:"grid",gap:6}}>
+          <label style={{fontSize:12,color:C.muted}}>Week</label>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <button className="btn-outline" onClick={() => shiftLockupWeek(-1)} style={{padding:"8px 12px",minWidth:44}} aria-label="Previous week">
+              ←
+            </button>
+            <div
+              style={{
+                flex:"1 1 220px",
+                minHeight:44,
+                border:`1px solid ${C.border}`,
+                borderRadius:12,
+                background:C.bg,
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"center",
+                padding:"0 14px",
+                fontSize:13,
+                color:C.text,
+                textAlign:"center",
+              }}
+            >
+              {lockupWeekRangeLabel}
+            </div>
+            <button className="btn-outline" onClick={() => shiftLockupWeek(1)} style={{padding:"8px 12px",minWidth:44}} aria-label="Next week">
+              →
+            </button>
+          </div>
+        </div>
+      </div>
+      <div style={{display:"grid",gap:6}}>
+        <label style={{fontSize:12,color:C.muted}}>Assigned Staff</label>
+        <div style={{display:"grid",gap:10}}>
+          {staffOptions.length === 0 && (
+            <div style={{fontSize:12,color:C.muted}}>No staff records are available to assign yet.</div>
+          )}
+          {staffOptions.map((name) => {
+            const selected = lockupForm.assigneeNames.some((entry) => samePerson(entry, name));
+            return (
+              <label key={name} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.text}}>
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setLockupForm((current) => ({
+                      ...current,
+                      assigneeNames: checked
+                        ? [...current.assigneeNames, name]
+                        : current.assigneeNames.filter((entry) => !samePerson(entry, name)),
+                    }));
+                  }}
+                />
+                <span>{name}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+      <div style={{display:"grid",gap:6}}>
+        <label style={{fontSize:12,color:C.muted}}>Notes</label>
+        <textarea
+          className="input-field"
+          rows={4}
+          value={lockupForm.notes}
+          onChange={(e) => setLockupForm((current) => ({ ...current, notes: e.target.value }))}
+          placeholder="Example: Include sanctuary, lobby, and youth entrance checks after the last service."
+          style={{minHeight:120,resize:"vertical"}}
+        />
+      </div>
+      {operationsError && <div style={{fontSize:12,color:C.danger}}>{operationsError}</div>}
+      {operationsMessage && <div style={{fontSize:12,color:C.success}}>{operationsMessage}</div>}
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+        <button className="btn-outline" onClick={() => setLockupMode("home")}>Back</button>
+        <button className="btn-gold" onClick={submitLockupAssignment} disabled={operationsSubmitting}>
+          {operationsSubmitting ? "Saving..." : "Save Lock Up Assignment"}
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderLockupAssignments = () => (
+    <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,background:C.surface}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:18,fontWeight:600,color:C.text}}>Weekly Lock Up</div>
+          <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
+            Keep one visible record of who is assigned to close the building after services each week.
+          </div>
+        </div>
+        <button className="btn-gold-compact" onClick={() => openLockupAssignment()}>
+          Assign Week
+        </button>
+      </div>
+      {currentLockupAssignment && (
+        <div className="card" style={{padding:18,display:"grid",gap:8,background:C.card}}>
+          <div style={{fontSize:11,color:C.gold,textTransform:"uppercase",letterSpacing:".12em"}}>This Week</div>
+          <div style={{fontSize:16,fontWeight:600,color:C.text}}>
+            {currentLockupAssignment.assignee_names.join(", ") || "No one assigned yet"}
+          </div>
+          <div style={{fontSize:12,color:C.muted}}>
+            {fmtWeekRange(currentLockupAssignment.week_of)} • {currentLockupAssignment.service_label || "Sunday Services"}
+          </div>
+        </div>
+      )}
+      <div style={{display:"grid",gap:12}}>
+        {lockupAssignments.length === 0 && (
+          <div style={{padding:"22px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>
+            No weekly church lock-up assignments have been added yet.
+          </div>
+        )}
+        {lockupAssignments.map((assignment) => (
+          <div key={assignment.id} className="card" style={{padding:18,display:"grid",gap:10,background:C.card}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:600,color:C.text}}>
+                  {assignment.assignee_names.join(", ") || "No one assigned"}
+                </div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4}}>
+                  {fmtWeekRange(assignment.week_of)} • {assignment.service_label || "Sunday Services"}
+                </div>
+              </div>
+              <button className="btn-outline" onClick={() => openLockupAssignment(assignment)}>Swap / Edit</button>
+            </div>
+            {assignment.notes && (
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                {assignment.notes}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {operationsError && <div style={{fontSize:12,color:C.danger}}>{operationsError}</div>}
+      {operationsMessage && <div style={{fontSize:12,color:C.success}}>{operationsMessage}</div>}
+    </div>
+  );
+
+  const renderTimeOffForm = () => {
+    if (!timeOffMode) return null;
+    const title = timeOffMode === "pto"
+      ? "Request Time Off"
+      : timeOffMode === "ooo"
+        ? "Indicate Out Of Office"
+        : "Log Sick Days";
+    const helper = timeOffMode === "pto"
+      ? "Submit a planned time-off request with dates, coverage, and the basic context leaders need."
+      : timeOffMode === "ooo"
+        ? "Let the team know when you will be out and what coverage or communication notes they should have."
+        : "Record a sick day quickly so operations and leadership know your availability and return timing.";
+
+    return (
+      <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,background:C.surface}}>
+        <div>
+          <div style={{fontSize:18,fontWeight:600,color:C.text}}>{title}</div>
+          <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>{helper}</div>
+        </div>
+        <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+          <div style={{display:"grid",gap:6}}>
+            <label style={{fontSize:12,color:C.muted}}>Submitted By</label>
+            <input className="input-field" value={profile?.full_name || ""} readOnly />
+          </div>
+          <div style={{display:"grid",gap:6}}>
+            <label style={{fontSize:12,color:C.muted}}>Request Type</label>
+            <input className="input-field" value={timeOffForm.requestType} readOnly />
+          </div>
+        </div>
+        <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+          <div style={{display:"grid",gap:6}}>
+            <label style={{fontSize:12,color:C.muted}}>{timeOffMode === "sick" ? "Date" : "From Date"}</label>
+            <input className="input-field" type="date" value={timeOffForm.fromDate} onChange={(e) => setTimeOffForm((current) => ({ ...current, fromDate: e.target.value }))} />
+          </div>
+          <div style={{display:"grid",gap:6}}>
+            <label style={{fontSize:12,color:C.muted}}>{timeOffMode === "sick" ? "Return Date" : "To Date"}</label>
+            <input
+              className="input-field"
+              type="date"
+              value={timeOffMode === "sick" ? timeOffForm.returnDate : timeOffForm.toDate}
+              onChange={(e) => setTimeOffForm((current) => ({
+                ...current,
+                ...(timeOffMode === "sick" ? { returnDate: e.target.value } : { toDate: e.target.value }),
+              }))}
+            />
+          </div>
+        </div>
+        {timeOffMode !== "sick" && (
+          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+            <div style={{display:"grid",gap:6}}>
+              <label style={{fontSize:12,color:C.muted}}>Start Time</label>
+              <input className="input-field" type="time" value={timeOffForm.startTime} onChange={(e) => setTimeOffForm((current) => ({ ...current, startTime: e.target.value }))} />
+            </div>
+            <div style={{display:"grid",gap:6}}>
+              <label style={{fontSize:12,color:C.muted}}>End Time</label>
+              <input className="input-field" type="time" value={timeOffForm.endTime} onChange={(e) => setTimeOffForm((current) => ({ ...current, endTime: e.target.value }))} />
+            </div>
+          </div>
+        )}
+        {timeOffMode === "pto" && (
+          <div style={{display:"grid",gap:6}}>
+            <label style={{fontSize:12,color:C.muted}}>Reason</label>
+            <input className="input-field" value={timeOffForm.reason} onChange={(e) => setTimeOffForm((current) => ({ ...current, reason: e.target.value }))} placeholder="Example: Family trip" />
+          </div>
+        )}
+        <div style={{display:"grid",gap:6}}>
+          <label style={{fontSize:12,color:C.muted}}>Notes</label>
+          <textarea
+            className="input-field"
+            rows={4}
+            value={timeOffMode === "pto" ? timeOffForm.coverage : timeOffForm.details}
+            onChange={(e) => setTimeOffForm((current) => ({
+              ...current,
+              ...(timeOffMode === "pto" ? { coverage: e.target.value } : { details: e.target.value }),
+            }))}
+            placeholder={
+              timeOffMode === "pto"
+                ? "Who is covering and what should leadership know?"
+                : timeOffMode === "ooo"
+                  ? "Example: At a conference, available only by text for urgent issues."
+                  : "Example: Sick today, resting, and will update the team tomorrow morning."
+            }
+            style={{minHeight:120,resize:"vertical"}}
+          />
+        </div>
+        {operationsError && <div style={{fontSize:12,color:C.danger}}>{operationsError}</div>}
+        {operationsMessage && <div style={{fontSize:12,color:C.success}}>{operationsMessage}</div>}
+        <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+          <button className="btn-outline" onClick={() => chooseTimeOffMode("")}>Back</button>
+          <button className="btn-gold" onClick={submitOperationsForm} disabled={operationsSubmitting}>
+            {operationsSubmitting ? "Saving..." : title}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAvailabilityRequests = () => (
+    <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,background:C.surface}}>
+      <div>
+        <div style={{fontSize:18,fontWeight:600,color:C.text}}>Availability Requests</div>
+        <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
+          Review the latest PTO, out-of-office, and sick-day entries submitted through Operations.
+        </div>
+      </div>
+      <div style={{display:"grid",gap:12}}>
+        {availabilityRequests.length === 0 && (
+          <div style={{padding:"22px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted}}>
+            No availability requests have been submitted yet.
+          </div>
+        )}
+        {availabilityRequests.map((request) => (
+          <div key={request.id} className="card" style={{padding:18,display:"grid",gap:12,background:C.card}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:600,color:C.text}}>{request.request_type}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4}}>
+                  {request.requested_by} • {fmtDate(request.from_date)}{request.to_date && request.to_date !== request.from_date ? ` to ${fmtDate(request.to_date)}` : ""}
+                </div>
+              </div>
+              <div style={{fontSize:12,color:request.status === "approved" ? C.success : request.status === "denied" ? C.danger : C.gold,textTransform:"capitalize"}}>
+                {request.status.replace("_", " ")}
+              </div>
+            </div>
+            {request.notes && (
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                {request.notes}
+              </div>
+            )}
+            {request.request_type === "PTO Request" && (
+              <div style={{display:"grid",gap:8}}>
+                {(request.required_approvers || []).map((reviewer) => {
+                  const decision = getAvailabilityReviewerDecision(request, reviewer);
+                  const decisionLabel = decision?.action === "approved"
+                    ? "Approved"
+                    : decision?.action === "denied"
+                      ? "Denied"
+                      : "Waiting";
+                  const decisionTone = decision?.action === "approved"
+                    ? C.success
+                    : decision?.action === "denied"
+                      ? C.danger
+                      : C.muted;
+                  return (
+                    <div key={`${request.id}-${reviewer}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                      <div style={{fontSize:12,color:C.text}}>{reviewer}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                        <div style={{fontSize:11,color:decisionTone}}>{decisionLabel}</div>
+                        {samePerson(reviewer, profile?.full_name) && canApproveAvailabilityRequest(profile, request) && (
+                          <>
+                            <button className="btn-outline" onClick={() => updateAvailabilityRequestStatus(request, "approved")} style={{padding:"7px 10px",color:C.success,borderColor:"rgba(82,200,122,.35)"}}>Approve</button>
+                            <button className="btn-outline" onClick={() => updateAvailabilityRequestStatus(request, "denied")} style={{padding:"7px 10px",color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>Deny</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div
+        className="card"
+        style={{
+          padding:22,
+          textAlign:"left",
+          display:"grid",
+          gap:18,
+          background:`linear-gradient(180deg, rgba(154,163,178,.08) 0%, ${C.card} 20%)`,
+          border:`1px solid ${C.border}`,
+        }}
+      >
+        <div style={{display:"grid",gap:6,maxWidth:760}}>
+          <h2 style={{...pageTitleStyle,margin:0}}>Operations Board</h2>
+          <div style={{fontSize:12,color:C.muted,lineHeight:1.7}}>
+            Build the internal systems that help your church run smoothly behind the scenes, starting with staff coverage and time-off workflows.
+          </div>
+        </div>
+        {operationsSection === "home" ? (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:18}}>
+            {cards.map((card) => (
+              <button
+                key={card.id}
+                className="card"
+                onClick={() => openWorkflowCard(card.id)}
+                style={{
+                  padding:22,
+                  textAlign:"left",
+                  display:"grid",
+                  gap:10,
+                  minHeight:180,
+                  background:C.surface,
+                  border:`1px solid ${C.border}`,
+                  cursor:"pointer",
+                }}
+              >
+                <div style={{fontSize:18,fontWeight:600,color:C.text,maxWidth:320}}>{card.name}</div>
+                <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                  {card.summary}
+                </div>
+                <div style={{marginTop:"auto",justifySelf:"end"}}>
+                  <span className="btn-gold-compact">Open workflow</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{display:"grid",gap:18}}>
+            <button className="btn-outline" onClick={() => { resetOperationsFlow(); setOperationsSection("home"); }} style={{justifySelf:"start"}}>
+              Back to Operations Board
+            </button>
+            {operationsSection === "time-off" && !timeOffMode ? (
+              <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,background:C.surface}}>
+                <div>
+                  <div style={{fontSize:18,fontWeight:600,color:C.text}}>Staff Availability</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
+                    Choose the kind of availability update you need to submit so Shepherd can guide you through the right next step.
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
+                  {[
+                    {
+                      id: "pto",
+                      title: "Request Time Off",
+                      summary: "PTO requests are subject to review and may be approved or declined before they are placed on the shared calendar.",
+                    },
+                    {
+                      id: "ooo",
+                      title: "Indicate Out Of Office",
+                      summary: "Let the team know when you are away and how reachable you are.",
+                    },
+                    {
+                      id: "sick",
+                      title: "Log Sick Days",
+                      summary: "Record a sick day quickly so operations and leadership can track availability.",
+                    },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      className="card"
+                      onClick={() => chooseTimeOffMode(option.id)}
+                      style={{padding:20,textAlign:"left",background:C.card,display:"grid",gap:10,cursor:"pointer",minHeight:160}}
+                    >
+                      <div style={{fontSize:18,fontWeight:600,color:C.text}}>{option.title}</div>
+                      <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>{option.summary}</div>
+                      <div style={{marginTop:"auto",justifySelf:"end"}}>
+                        <span className="btn-gold-compact">Open form</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : operationsSection === "time-off" ? renderTimeOffForm() : lockupMode === "form" ? renderLockupForm() : renderLockupAssignments()}
+            {operationsSection === "time-off" ? renderAvailabilityRequests() : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PublicEventRequestPage() {
   const [churchCode, setChurchCode] = useState("");
   const [churchRecord, setChurchRecord] = useState(null);
@@ -5127,7 +6045,7 @@ function PublicEventRequestPage() {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile, setPreviewUsers, notifications, archivedNotifications, unreadCount, readNotificationIds, archiveNotification, restoreNotification, openNotificationTarget }) {
+function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile, setPreviewUsers, churchLockupAssignments, notifications, archivedNotifications, unreadCount, readNotificationIds, archiveNotification, restoreNotification, openNotificationTarget }) {
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const canSeeTeamSnapshot = !!profile && (
     profile?.role === "senior_pastor"
@@ -5153,6 +6071,15 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
     try {
       const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
       return stored.notificationsOpen ?? true;
+    } catch {
+      return true;
+    }
+  });
+  const [lockupOpen, setLockupOpen] = useState(() => {
+    if (typeof window === "undefined" || !profile?.id) return true;
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
+      return stored.lockupOpen ?? true;
     } catch {
       return true;
     }
@@ -5203,6 +6130,21 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
   const myInReviewTasks = myOpenTasks.filter((task) => task.status === "in-review");
   const myOverdueTasks = myOpenTasks.filter((task) => isAfterDueDate(task.due_date));
   const selectedCurrentTask = myOpenTasks.find((task) => task.id === currentWorkTaskId) || null;
+  const sortedLockupAssignments = (churchLockupAssignments || [])
+    .slice()
+    .sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
+  const thisWeekStart = startOfWeekMonday(new Date());
+  const currentLockupAssignment = sortedLockupAssignments.find((assignment) => {
+    const weekStart = parseAppDate(assignment?.week_of);
+    return weekStart
+      && weekStart.getFullYear() === thisWeekStart.getFullYear()
+      && weekStart.getMonth() === thisWeekStart.getMonth()
+      && weekStart.getDate() === thisWeekStart.getDate();
+  }) || null;
+  const nextLockupAssignment = currentLockupAssignment || sortedLockupAssignments.find((assignment) => {
+    const weekStart = parseAppDate(assignment?.week_of);
+    return weekStart && weekStart.getTime() > thisWeekStart.getTime();
+  }) || null;
   const myTaskPreview = myOpenTasks
     .slice()
     .sort((a, b) => getDateSortValue(a.due_date) - getDateSortValue(b.due_date))
@@ -5312,11 +6254,12 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
   useEffect(() => {
     if (typeof window === "undefined" || !profile?.id) return;
     window.localStorage.setItem(getDashboardSectionStateStorageKey(profile.id), JSON.stringify({
+      lockupOpen,
       teamSnapshotOpen,
       notificationsOpen,
       archivedNotificationsOpen,
     }));
-  }, [profile?.id, teamSnapshotOpen, notificationsOpen, archivedNotificationsOpen]);
+  }, [profile?.id, lockupOpen, teamSnapshotOpen, notificationsOpen, archivedNotificationsOpen]);
 
   const postPersonalNote = () => {
     if (!notepadDraft.trim()) return;
@@ -5477,6 +6420,49 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
             </div>
           )}
         </div>
+      </div>
+      <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
+        <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{textAlign:"left"}}>
+            <h3 style={sectionTitleStyle}>Church Lock Up</h3>
+            <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.5}}>
+              {nextLockupAssignment ? `Current week: ${fmtWeekRange(nextLockupAssignment.week_of)}` : "No weekly lock-up assignment is set yet"}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end",marginLeft:"auto"}}>
+            <button type="button" className="btn-gold-compact" onClick={() => setLockupOpen((current) => !current)}>
+              {lockupOpen ? "Collapse" : "Expand"}
+            </button>
+          </div>
+        </div>
+        {lockupOpen ? (
+          nextLockupAssignment ? (
+            <div className="card" style={{padding:"18px 18px",display:"grid",gap:8,textAlign:"left",background:"rgba(255,255,255,.03)"}}>
+              <div style={{fontSize:11,color:C.gold,textTransform:"uppercase",letterSpacing:".08em"}}>
+                {currentLockupAssignment ? "This Week" : "Next Up"}
+              </div>
+              <div style={{fontSize:18,fontWeight:600,color:C.text,lineHeight:1.35}}>
+                {(nextLockupAssignment.assignee_names || []).join(", ") || "No one assigned"}
+              </div>
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                {fmtWeekRange(nextLockupAssignment.week_of)}
+              </div>
+              {nextLockupAssignment.notes && (
+                <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                  {nextLockupAssignment.notes}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{fontSize:13,color:C.muted,textAlign:"left",marginTop:4}}>
+              No one is assigned to lock up this week yet.
+            </div>
+          )
+        ) : (
+          <div style={{fontSize:13,color:C.muted,textAlign:"left",marginTop:4}}>
+            Lock-up assignment collapsed. Expand it when you want to check this week’s coverage.
+          </div>
+        )}
       </div>
       {canSeeTeamSnapshot && previewUsers.length > 0 && (
         <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
@@ -8264,6 +9250,8 @@ export default function App() {
   const [people, setPeople] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [staffAvailabilityRequests, setStaffAvailabilityRequests] = useState([]);
+  const [churchLockupAssignments, setChurchLockupAssignments] = useState([]);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [ministries, setMinistries] = useState([]);
   const [eventRequests, setEventRequests] = useState(null);
@@ -8295,8 +9283,8 @@ export default function App() {
   const safeActive = allowedPages.has(active) ? active : "dashboard";
 
   const notifications = useMemo(
-    () => buildNotifications(tasks, eventRequests, purchaseOrders, profile),
-    [tasks, eventRequests, purchaseOrders, profile]
+    () => buildNotifications(tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile),
+    [tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile]
   );
   const validNotificationIds = useMemo(
     () => new Set(notifications.map((item) => item.id)),
@@ -8485,13 +9473,15 @@ export default function App() {
       setTrashItems([]);
     }
     if (prof?.church_id) {
-      const [ch, t, er, p, tr, po, ce, m, staff, profileRows] = await Promise.all([
+      const [ch, t, er, p, tr, po, sar, cla, ce, m, staff, profileRows] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("people").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
         supabase.from("purchase_orders").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+        supabase.from("staff_availability_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+        supabase.from("church_lockup_assignments").select("*").eq("church_id", prof.church_id).order("week_of", { ascending: true }),
         supabase.from("calendar_events").select("*").eq("church_id", prof.church_id).order("event_date", { ascending: true }),
         supabase.from("ministries").select("*").eq("church_id", prof.church_id),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
@@ -8510,6 +9500,8 @@ export default function App() {
       setPeople(p.data || []);
       setTransactions(tr.data || []);
       setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
+      setStaffAvailabilityRequests((sar.data || []).map(normalizeStaffAvailabilityRequest));
+      setChurchLockupAssignments((cla.data || []).map(normalizeChurchLockupAssignment));
       setCalendarEvents(ce.data || []);
       setMinistries(m.data || []);
       const profileFocusMap = new Map((profileRows.data || []).map((entry) => [entry.staff_id || entry.id || entry.full_name, entry]));
@@ -8530,6 +9522,8 @@ export default function App() {
       setPeople([]);
       setTransactions([]);
       setPurchaseOrders([]);
+      setStaffAvailabilityRequests([]);
+      setChurchLockupAssignments([]);
       setCalendarEvents([]);
       setMinistries([]);
       setPreviewUsers([]);
@@ -8659,13 +9653,13 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
+    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
-    "operations-board": <PlaceholderBoard title="Operations Board" summary="This board will hold weekly church operations, facility prep, and recurring support frameworks in their own dedicated workspace." systems={["Service prep", "Facility workflows", "Volunteer coordination"]} />,
+    "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} />,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest}/>,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,

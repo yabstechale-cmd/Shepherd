@@ -24,6 +24,25 @@ create unique index if not exists churches_code_key on public.churches (code);
 alter table public.churches
   enable row level security;
 
+create table if not exists public.church_google_connections (
+  church_id uuid primary key references public.churches(id) on delete cascade,
+  connected_by uuid references public.profiles(id) on delete set null,
+  google_account_email text,
+  refresh_token text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.church_google_connections add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.church_google_connections add column if not exists connected_by uuid references public.profiles(id) on delete set null;
+alter table public.church_google_connections add column if not exists google_account_email text;
+alter table public.church_google_connections add column if not exists refresh_token text;
+alter table public.church_google_connections add column if not exists created_at timestamptz not null default now();
+alter table public.church_google_connections add column if not exists updated_at timestamptz not null default now();
+
+alter table public.church_google_connections
+  enable row level security;
+
 create table if not exists public.church_staff (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -773,6 +792,34 @@ begin
 end;
 $$;
 
+create or replace function public.user_can_manage_calendar_settings(
+  p_church_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  can_manage boolean := false;
+begin
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = p_church_id
+      and (
+        p.role in ('church_administrator', 'admin')
+        or 'church_administrator' = any(coalesce(p.staff_roles, '{}'::text[]))
+        or lower(coalesce(p.title, '')) = 'church administrator'
+      )
+  )
+  into can_manage;
+
+  return coalesce(can_manage, false);
+end;
+$$;
+
 create or replace function public.delete_church_account(
   p_church_id uuid
 )
@@ -826,6 +873,7 @@ grant execute on function public.reserve_staff_registration(uuid, uuid, text) to
 grant execute on function public.claim_staff_profile(uuid, uuid) to authenticated;
 grant execute on function public.create_church_with_admin(text, text, text, text, text, text, uuid) to anon, authenticated;
 grant execute on function public.user_can_manage_church(uuid) to authenticated;
+grant execute on function public.user_can_manage_calendar_settings(uuid) to authenticated;
 grant execute on function public.delete_church_account(uuid) to authenticated;
 
 create or replace function public.add_task_comment(
@@ -1045,6 +1093,19 @@ on public.churches
 for update
 using (public.user_can_manage_church(id))
 with check (public.user_can_manage_church(id));
+
+drop policy if exists "church google connection admin read" on public.church_google_connections;
+create policy "church google connection admin read"
+on public.church_google_connections
+for select
+using (public.user_can_manage_calendar_settings(church_id));
+
+drop policy if exists "church google connection admin write" on public.church_google_connections;
+create policy "church google connection admin write"
+on public.church_google_connections
+for all
+using (public.user_can_manage_calendar_settings(church_id))
+with check (public.user_can_manage_calendar_settings(church_id));
 
 drop policy if exists "church staff lookup" on public.church_staff;
 create policy "church staff lookup"

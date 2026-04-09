@@ -64,11 +64,27 @@ const PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-po-discussion-s
 const CURRENT_WORK_FOCUS_STORAGE_PREFIX = "shepherd-current-work-focus";
 const GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-token";
 const GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-refresh-token";
+const GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX = "shepherd-google-calendar-oauth-state";
+const ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY = "shepherd-account-settings-branch";
 const NOTIFICATION_RETENTION_MS = 40 * 24 * 60 * 60 * 1000;
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const getGoogleProviderTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 const getGoogleProviderRefreshTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
+const getGoogleCalendarOAuthStateStorageKey = (churchId) => `${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:${churchId || "anon"}`;
+const hasStoredGoogleCalendarOAuthState = (state) => {
+  if (typeof window === "undefined" || !state) return false;
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key || !key.startsWith(`${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:`)) continue;
+      if ((window.localStorage.getItem(key) || "") === state) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+};
 
 const Icon = ({ d, size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -1646,7 +1662,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   const [googleCalendarActionError, setGoogleCalendarActionError] = useState("");
   const [googleCalendars, setGoogleCalendars] = useState([]);
   const [googleCalendarsLoading, setGoogleCalendarsLoading] = useState(false);
-  const [googleIdentityCount, setGoogleIdentityCount] = useState(0);
+  const [googleConnectionEmail, setGoogleConnectionEmail] = useState("");
   const [selectedGoogleCalendarIds, setSelectedGoogleCalendarIds] = useState(() => (
     Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
       ? church.google_calendar_ids
@@ -1655,11 +1671,6 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   const [googleSyncLoading, setGoogleSyncLoading] = useState(false);
   const [googleCalendarSaving, setGoogleCalendarSaving] = useState(false);
   const [showAvailableGoogleCalendars, setShowAvailableGoogleCalendars] = useState(false);
-  const googleProviderToken = session?.provider_token
-    || session?.providerToken
-    || (typeof window !== "undefined" && session?.user?.id
-      ? window.localStorage.getItem(getGoogleProviderTokenStorageKey(session.user.id)) || ""
-      : "");
   const officialGoogleCalendarIds = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
     ? church.google_calendar_ids
     : (church?.google_calendar_id ? [church.google_calendar_id] : []);
@@ -1706,35 +1717,109 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
     if (Number.isNaN(parsed.getTime())) return "";
     return `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
   };
+  const invokeGoogleCalendarSync = useCallback(async (body) => {
+    const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
+      body,
+      headers: session?.access_token
+        ? {
+            Authorization: `Bearer ${session.access_token}`,
+          }
+        : undefined,
+    });
+    if (error) {
+      const detailedError = error?.context && typeof error.context.json === "function"
+        ? await error.context.json().catch(() => null)
+        : null;
+      throw new Error(detailedError?.error || error?.message || "We couldn't reach the Google calendar service.");
+    }
+    return data;
+  }, [session?.access_token]);
 
   useEffect(() => {
     let active = true;
-    const loadGoogleCalendarIdentity = async () => {
-      try {
-        if (typeof supabase.auth.getUserIdentities !== "function") {
-          if (active) {
-            setGoogleIdentityCount(0);
-            setGoogleCalendarLinked(false);
-          }
-          return;
+    const loadGoogleCalendarConnection = async () => {
+      if (!canManageSettings || !churchId) {
+        if (active) {
+          setGoogleCalendarLinked(false);
+          setGoogleConnectionEmail("");
         }
-        const { data, error } = await supabase.auth.getUserIdentities();
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from("church_google_connections")
+          .select("church_id, google_account_email")
+          .eq("church_id", churchId)
+          .maybeSingle();
         if (error) throw error;
-        const identities = Array.isArray(data?.identities) ? data.identities : [];
         if (!active) return;
-        setGoogleIdentityCount(identities.length);
-        setGoogleCalendarLinked(identities.some((identity) => identity.provider === "google"));
-      } catch {
+        setGoogleCalendarLinked(!!data?.church_id);
+        setGoogleConnectionEmail(data?.google_account_email || "");
+      } catch (error) {
         if (!active) return;
-        setGoogleIdentityCount(0);
         setGoogleCalendarLinked(false);
+        setGoogleConnectionEmail("");
+        setGoogleCalendarActionError(error?.message || "We couldn't load the saved Google connection for this church yet.");
       }
     };
-    loadGoogleCalendarIdentity();
+    loadGoogleCalendarConnection();
     return () => {
       active = false;
     };
-  }, [profile?.id]);
+  }, [canManageSettings, churchId, invokeGoogleCalendarSync]);
+
+  useEffect(() => {
+    let active = true;
+    const completeGoogleCalendarConnection = async () => {
+      if (!canManageSettings || !churchId || typeof window === "undefined") return;
+      const url = new URL(window.location.href);
+      const state = url.searchParams.get("state");
+      const isGoogleCalendarOauth = url.searchParams.get("google_calendar_oauth") === "1"
+        || hasStoredGoogleCalendarOAuthState(state);
+      const code = url.searchParams.get("code");
+      if (!isGoogleCalendarOauth || !code || !state) return;
+
+      const stateStorageKey = getGoogleCalendarOAuthStateStorageKey(churchId);
+      const expectedState = window.localStorage.getItem(stateStorageKey) || "";
+      if (!expectedState || expectedState !== state) {
+        if (!active) return;
+        setGoogleCalendarActionError("The Google calendar connection could not be verified for this church. Try Connect Google again.");
+        return;
+      }
+
+      try {
+        setGoogleCalendarSaving(true);
+        setGoogleCalendarActionError("");
+        const redirectUri = `${window.location.origin}${window.location.pathname}?google_calendar_oauth=1`;
+        const data = await invokeGoogleCalendarSync({
+          action: "completeConnection",
+          code,
+          redirectUri,
+        });
+        if (!active) return;
+        setGoogleCalendarLinked(true);
+        setGoogleConnectionEmail(data?.connectedEmail || "");
+        setGoogleCalendarActionMessage("Google is now connected for this church.");
+        window.localStorage.removeItem(stateStorageKey);
+        url.searchParams.delete("google_calendar_oauth");
+        url.searchParams.delete("code");
+        url.searchParams.delete("state");
+        url.searchParams.delete("scope");
+        url.searchParams.delete("authuser");
+        url.searchParams.delete("prompt");
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      } catch (error) {
+        if (!active) return;
+        setGoogleCalendarActionError(error?.message || "We couldn't finish connecting Google for this church.");
+      } finally {
+        if (active) setGoogleCalendarSaving(false);
+      }
+    };
+    completeGoogleCalendarConnection();
+    return () => {
+      active = false;
+    };
+  }, [canManageSettings, churchId, invokeGoogleCalendarSync]);
 
   useEffect(() => {
     setSelectedGoogleCalendarIds(
@@ -1757,23 +1842,12 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
         setGoogleCalendarsLoading(false);
         return;
       }
-      if (!googleProviderToken) {
-        if (!active) return;
-        setGoogleCalendars([]);
-        setGoogleCalendarsLoading(false);
-        setGoogleCalendarActionError("Google is linked, but this session does not have a live Google calendar token yet. Click Connect Google again to refresh the connection.");
-        return;
-      }
       setGoogleCalendarsLoading(true);
       setGoogleCalendarActionError("");
       try {
-        const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
-          body: {
-            action: "listCalendars",
-            providerToken: googleProviderToken,
-          },
+        const data = await invokeGoogleCalendarSync({
+          action: "listCalendars",
         });
-        if (error) throw error;
         if (!active) return;
         const calendars = Array.isArray(data?.items)
           ? data.items.map((entry) => ({
@@ -1805,45 +1879,29 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
     return () => {
       active = false;
     };
-  }, [googleProviderToken, googleCalendarLinked, church?.google_calendar_id, church?.google_calendar_ids]);
+  }, [googleCalendarLinked, church?.google_calendar_id, church?.google_calendar_ids, invokeGoogleCalendarSync]);
 
   const connectGoogleCalendar = async () => {
     setGoogleCalendarActionError("");
     setGoogleCalendarActionMessage("");
     try {
-      const redirectTo = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : undefined;
-      if (!googleCalendarLinked && typeof supabase.auth.linkIdentity === "function") {
-        const { error } = await supabase.auth.linkIdentity({
-          provider: "google",
-          options: {
-            redirectTo,
-            scopes: "https://www.googleapis.com/auth/calendar.readonly",
-            queryParams: {
-              access_type: "offline",
-              prompt: "consent",
-            },
-          },
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo,
-            scopes: "https://www.googleapis.com/auth/calendar.readonly",
-            queryParams: {
-              access_type: "offline",
-              prompt: "consent",
-            },
-          },
-        });
-        if (error) throw error;
+      if (typeof window === "undefined" || !churchId) {
+        throw new Error("We couldn't start Google connection for this church yet.");
       }
-      setGoogleCalendarActionMessage(
-        googleCalendarLinked
-          ? "Google is opening so Shepherd can refresh the live calendar connection for this session."
-          : "Google is opening so you can approve the calendar connection for this Shepherd account."
-      );
+      window.localStorage.setItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY, "calendar");
+      const state = `${churchId}:${crypto.randomUUID()}`;
+      window.localStorage.setItem(getGoogleCalendarOAuthStateStorageKey(churchId), state);
+      const redirectUri = `${window.location.origin}${window.location.pathname}?google_calendar_oauth=1`;
+      const data = await invokeGoogleCalendarSync({
+        action: "getAuthUrl",
+        redirectUri,
+        state,
+      });
+      if (!data?.authUrl) {
+        throw new Error("We couldn't create the Google authorization link for this church yet.");
+      }
+      setGoogleCalendarActionMessage("Google is opening so you can connect Google Calendar for this church.");
+      window.location.href = data.authUrl;
     } catch (error) {
       setGoogleCalendarActionError(error?.message || "We couldn't start the Google connection just yet.");
     }
@@ -1852,50 +1910,54 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   const disconnectGoogleCalendar = async () => {
     setGoogleCalendarActionError("");
     setGoogleCalendarActionMessage("");
-    if (typeof supabase.auth.getUserIdentities !== "function" || typeof supabase.auth.unlinkIdentity !== "function") {
-      setGoogleCalendarActionError("This Supabase setup does not support disconnecting Google from Shepherd yet.");
+    if (!church?.id) {
+      setGoogleCalendarActionError("We couldn't find this church account.");
       return;
     }
     try {
-      const { data, error } = await supabase.auth.getUserIdentities();
-      if (error) throw error;
-      const identities = Array.isArray(data?.identities) ? data.identities : [];
-      const googleIdentity = identities.find((identity) => identity.provider === "google");
-      if (!googleIdentity) {
-        setGoogleCalendarLinked(false);
-        setGoogleIdentityCount(identities.length);
-        setGoogleCalendars([]);
-        setShowAvailableGoogleCalendars(false);
-        setGoogleCalendarActionMessage("Google is already disconnected from this Shepherd account.");
-        return;
-      }
-      if (identities.length < 2) {
-        setGoogleCalendarActionError("Google cannot be disconnected until this account has at least one other sign-in method linked.");
-        return;
-      }
-      const { error: unlinkError } = await supabase.auth.unlinkIdentity(googleIdentity);
-      if (unlinkError) throw unlinkError;
+      const { error: connectionError } = await supabase
+        .from("church_google_connections")
+        .delete()
+        .eq("church_id", church.id);
+      if (connectionError) throw connectionError;
+      const { error: calendarEventError } = await supabase
+        .from("calendar_events")
+        .delete()
+        .eq("church_id", church.id)
+        .not("google_calendar_source_id", "is", null);
+      if (calendarEventError) throw calendarEventError;
+      const { data: churchData, error: churchError } = await supabase
+        .from("churches")
+        .update({
+          google_calendar_id: null,
+          google_calendar_title: null,
+          google_calendar_ids: [],
+          google_calendar_titles: [],
+        })
+        .eq("id", church.id)
+        .select()
+        .single();
+      if (churchError) throw churchError;
       if (typeof window !== "undefined" && session?.user?.id) {
         window.localStorage.removeItem(getGoogleProviderTokenStorageKey(session.user.id));
         window.localStorage.removeItem(getGoogleProviderRefreshTokenStorageKey(session.user.id));
       }
+      if (churchData) setChurch?.(churchData);
       setGoogleCalendarLinked(false);
-      setGoogleIdentityCount(Math.max(identities.length - 1, 0));
+      setGoogleConnectionEmail("");
       setGoogleCalendars([]);
+      setCalendarEvents((current) => (current || []).filter((event) => !event.google_calendar_source_id));
+      setSelectedGoogleCalendarIds([]);
       setShowAvailableGoogleCalendars(false);
-      setGoogleCalendarActionMessage("Google has been disconnected from this Shepherd account.");
+      setGoogleCalendarActionMessage("Google has been disconnected from this church.");
     } catch (error) {
-      setGoogleCalendarActionError(error?.message || "We couldn't disconnect Google from this Shepherd account yet.");
+      setGoogleCalendarActionError(error?.message || "We couldn't disconnect Google from this church yet.");
     }
   };
 
   const importGoogleCalendar = async () => {
     if (!churchId || !profile?.id) {
       setGoogleCalendarActionError("We couldn't find your church profile yet.");
-      return;
-    }
-    if (!googleProviderToken) {
-      setGoogleCalendarActionError("Reconnect Google first so Shepherd has a fresh calendar token.");
       return;
     }
     if (!officialGoogleCalendarIds.length) {
@@ -1912,16 +1974,12 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
       const existingEvents = Array.isArray(calendarEvents) ? calendarEvents : [];
       const imports = [];
       for (const calendarId of officialGoogleCalendarIds) {
-        const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
-          body: {
-            action: "listEvents",
-            providerToken: googleProviderToken,
-            calendarId,
-            timeMin: startWindow,
-            timeMax: endWindow,
-          },
+        const data = await invokeGoogleCalendarSync({
+          action: "listEvents",
+          calendarId,
+          timeMin: startWindow,
+          timeMax: endWindow,
         });
-        if (error) throw error;
         const sourceTitle = googleCalendars.find((calendar) => calendar.id === calendarId)?.title
           || officialGoogleCalendarTitleMap[calendarId]
           || "Imported Calendar";
@@ -2079,8 +2137,8 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
           <div style={{fontSize:12,color:googleCalendarLinked ? C.gold : C.muted,lineHeight:1.6}}>
             {googleCalendarLinked
               ? officialGoogleCalendarIds.length
-                ? `${officialGoogleCalendarIds.length} shared calendar${officialGoogleCalendarIds.length === 1 ? "" : "s"} selected`
-                : "Google connected. Choose the calendars your church wants to use."
+                ? `${officialGoogleCalendarIds.length} shared calendar${officialGoogleCalendarIds.length === 1 ? "" : "s"} selected${googleConnectionEmail ? ` • ${googleConnectionEmail}` : ""}`
+                : `Google connected for this church${googleConnectionEmail ? ` • ${googleConnectionEmail}` : ""}. Choose the calendars your church wants to use.`
               : "Google is not connected yet."}
           </div>
         </div>
@@ -2092,9 +2150,9 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
             <button
               className="btn-outline"
               onClick={disconnectGoogleCalendar}
-              disabled={googleCalendarSaving || googleCalendarsLoading || googleIdentityCount < 2}
+              disabled={googleCalendarSaving || googleCalendarsLoading}
               style={{padding:"8px 12px",fontSize:12}}
-              title={googleIdentityCount < 2 ? "This account needs another sign-in method before Google can be disconnected." : "Disconnect Google from this Shepherd account"}
+              title="Disconnect Google from this church"
             >
               Disconnect Google
             </button>
@@ -2185,7 +2243,11 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
 
 function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, setCalendarEvents, session }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
-  const [settingsBranch, setSettingsBranch] = useState("account");
+  const [settingsBranch, setSettingsBranch] = useState(() => {
+    if (typeof window === "undefined") return "account";
+    const stored = window.localStorage.getItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY);
+    return stored === "calendar" ? "calendar" : "account";
+  });
   const [photoMessage, setPhotoMessage] = useState("");
   const [emailForm, setEmailForm] = useState({ nextEmail: profile?.email || "", currentPassword: "" });
   const [emailMessage, setEmailMessage] = useState("");
@@ -2201,6 +2263,11 @@ function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, s
   const [deleteError, setDeleteError] = useState("");
   const [deletingChurch, setDeletingChurch] = useState(false);
   const activeSettingsBranch = !canSeeCalendarSettings && settingsBranch === "calendar" ? "account" : settingsBranch;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY, activeSettingsBranch);
+  }, [activeSettingsBranch]);
 
   useEffect(() => {
     let active = true;
@@ -2361,8 +2428,8 @@ function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, s
           {activeSettingsBranch === "calendar" ? "Manage the shared church calendar connection and imported Google calendars." : "Manage your profile photo, email, password, and account recovery."}
         </p>
       </div>
-      <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:18}}>
-        <div style={{display:"grid",gap:18}}>
+      <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:18,alignItems:"start"}}>
+        <div style={{display:"grid",gap:18,alignContent:"start",alignSelf:"start"}}>
           <div className="card" style={{padding:22,textAlign:"left"}}>
             <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center"}}>
               <div style={{width:112,height:112,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",fontSize:34,fontWeight:700,color:"#0f1117"}}>
@@ -2377,11 +2444,11 @@ function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, s
               {photoMessage && <div style={{marginTop:10,fontSize:12,color:C.success}}>{photoMessage}</div>}
             </div>
           </div>
-          <div className="card" style={{padding:18,textAlign:"left",display:"grid",gap:10}}>
+          <div className="card" style={{padding:18,textAlign:"left",display:"grid",gap:10,alignContent:"start"}}>
             <button
               className={activeSettingsBranch === "account" ? "btn-gold" : "btn-outline"}
               onClick={() => setSettingsBranch("account")}
-              style={{justifyContent:"flex-start",textAlign:"left"}}
+              style={{justifyContent:"flex-start",textAlign:"left",width:"100%",minHeight:44}}
             >
               Account Settings
             </button>
@@ -2389,7 +2456,7 @@ function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, s
               <button
                 className={activeSettingsBranch === "calendar" ? "btn-gold" : "btn-outline"}
                 onClick={() => setSettingsBranch("calendar")}
-                style={{justifyContent:"flex-start",textAlign:"left"}}
+                style={{justifyContent:"flex-start",textAlign:"left",width:"100%",minHeight:44}}
               >
                 Calendar Settings
               </button>
@@ -8344,7 +8411,10 @@ export default function App() {
       if (typeof window !== "undefined") {
         const url = new URL(window.location.href);
         const code = url.searchParams.get("code");
-        if (code) {
+        const state = url.searchParams.get("state");
+        const isGoogleCalendarOauth = url.searchParams.get("google_calendar_oauth") === "1"
+          || hasStoredGoogleCalendarOAuthState(state);
+        if (code && !isGoogleCalendarOauth) {
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           if (!error) {
             persistProviderTokens(data?.session || null);

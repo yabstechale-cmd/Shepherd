@@ -241,7 +241,7 @@ const GS = () => (
     @media (max-width: 760px){
       .app-shell{flex-direction:column}
       .app-sidebar{width:100% !important;min-height:auto !important;border-right:none !important;border-bottom:1px solid ${C.border}}
-      .app-sidebar-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 12px !important}
+      .app-sidebar-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 12px !important;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;touch-action:pan-x}
       .app-sidebar-nav .nav-item{margin-bottom:0;flex-shrink:0}
       .app-sidebar-footer{padding:10px 12px !important}
       .section-header{flex-direction:row;align-items:flex-start !important;justify-content:space-between;flex-wrap:wrap;gap:12px}
@@ -284,6 +284,7 @@ const normalizeAccessUser = (record) => ({
   ...record,
   ministries: Array.isArray(record?.ministries) ? record.ministries : [],
   staff_roles: Array.isArray(record?.staff_roles) ? record.staff_roles : (record?.role ? [record.role] : []),
+  photo_url: record?.photo_url || "",
   canSeeTeamOverview: record?.can_see_team_overview ?? record?.canSeeTeamOverview ?? false,
   canSeeAdminOverview: record?.can_see_admin_overview ?? record?.canSeeAdminOverview ?? false,
   readOnlyOversight: record?.read_only_oversight ?? record?.readOnlyOversight ?? false,
@@ -471,6 +472,7 @@ const createProfilePayload = (authUserId, churchId, staffUser, email) => ({
   email,
   staff_roles: Array.isArray(staffUser.staff_roles) ? staffUser.staff_roles : (staffUser.role ? [staffUser.role] : []),
   ministries: staffUser.ministries || [],
+  photo_url: staffUser.photo_url || "",
   can_see_team_overview: staffUser.can_see_team_overview ?? staffUser.canSeeTeamOverview ?? false,
   can_see_admin_overview: staffUser.can_see_admin_overview ?? staffUser.canSeeAdminOverview ?? false,
   read_only_oversight: staffUser.read_only_oversight ?? staffUser.readOnlyOversight ?? false,
@@ -2386,6 +2388,8 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     return stored === "calendar" ? "calendar" : "account";
   });
   const [photoMessage, setPhotoMessage] = useState("");
+  const [photoError, setPhotoError] = useState("");
+  const [photoSaving, setPhotoSaving] = useState(false);
   const [emailForm, setEmailForm] = useState({ nextEmail: profile?.email || "", currentPassword: "" });
   const [emailMessage, setEmailMessage] = useState("");
   const [emailError, setEmailError] = useState("");
@@ -2439,19 +2443,86 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     setSelectedAccountManagerIds(currentAccountManagerIds);
   }, [currentAccountManagerIds]);
 
-  const handlePhotoUpload = (event) => {
+  const handlePhotoUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setPhotoMessage("");
+    setPhotoError("");
+    if (!profile?.id) {
+      setPhotoError("We couldn't find your account yet.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setPhotoError("Choose an image file for your profile picture.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setPhotoError("Keep profile pictures under 2 MB.");
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const photoUrl = String(reader.result || "");
-      if (typeof window !== "undefined" && profile?.id) {
-        window.localStorage.setItem(`shepherd-profile-photo:${profile.id}`, photoUrl);
+      setPhotoSaving(true);
+      try {
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({ photo_url: photoUrl })
+          .eq("id", profile.id);
+        if (profileError) throw profileError;
+        if (profile?.staff_id) {
+          const { error: staffError } = await supabase
+            .from("church_staff")
+            .update({ photo_url: photoUrl })
+            .eq("id", profile.staff_id);
+          if (staffError) throw staffError;
+        }
+        if (typeof window !== "undefined" && profile?.id) {
+          window.localStorage.setItem(`shepherd-profile-photo:${profile.id}`, photoUrl);
+        }
+        setProfile((current) => current ? normalizeAccessUser({ ...current, photo_url: photoUrl }) : current);
+        setPhotoMessage("Profile photo updated.");
+      } catch (error) {
+        setPhotoError(error?.message || "We couldn't save that profile photo yet.");
+      } finally {
+        setPhotoSaving(false);
+        event.target.value = "";
       }
-      setProfile((current) => current ? { ...current, photo_url: photoUrl } : current);
-      setPhotoMessage("Profile photo updated locally.");
     };
     reader.readAsDataURL(file);
+  };
+
+  const removeProfilePhoto = async () => {
+    setPhotoMessage("");
+    setPhotoError("");
+    if (!profile?.id) {
+      setPhotoError("We couldn't find your account yet.");
+      return;
+    }
+    setPhotoSaving(true);
+    try {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ photo_url: null })
+        .eq("id", profile.id);
+      if (profileError) throw profileError;
+      if (profile?.staff_id) {
+        const { error: staffError } = await supabase
+          .from("church_staff")
+          .update({ photo_url: null })
+          .eq("id", profile.staff_id);
+        if (staffError) throw staffError;
+      }
+      if (typeof window !== "undefined" && profile?.id) {
+        window.localStorage.removeItem(`shepherd-profile-photo:${profile.id}`);
+      }
+      setProfile((current) => current ? normalizeAccessUser({ ...current, photo_url: "" }) : current);
+      setPhotoMessage("Profile photo removed.");
+    } catch (error) {
+      setPhotoError(error?.message || "We couldn't remove that profile photo yet.");
+    } finally {
+      setPhotoSaving(false);
+    }
   };
 
   const saveAccountManagers = async () => {
@@ -2627,11 +2698,19 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               </div>
               <div style={{marginTop:14,fontSize:18,fontWeight:600,color:C.text}}>{profile?.full_name || "User"}</div>
               <div style={{marginTop:4,fontSize:12,color:C.muted}}>{roleLabel(profile)}</div>
-              <label className="btn-outline" style={{marginTop:18,cursor:"pointer"}}>
-                Add Profile Picture
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center",marginTop:18}}>
+              <label className="btn-outline" style={{cursor:"pointer"}}>
+                {photoSaving ? "Saving..." : (profile?.photo_url ? "Upload New Photo" : "Upload Photo")}
                 <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{display:"none"}} />
               </label>
-              {photoMessage && <div style={{marginTop:10,fontSize:12,color:C.success}}>{photoMessage}</div>}
+              {profile?.photo_url && (
+                <button className="btn-outline" onClick={removeProfilePhoto} disabled={photoSaving}>
+                  Remove Photo
+                </button>
+              )}
+              </div>
+              {photoError && <div style={{marginTop:10,fontSize:12,color:C.danger,textAlign:"center"}}>{photoError}</div>}
+              {photoMessage && <div style={{marginTop:10,fontSize:12,color:C.success,textAlign:"center"}}>{photoMessage}</div>}
             </div>
           </div>
           <div className="card" style={{padding:18,textAlign:"left",display:"grid",gap:10,alignContent:"start"}}>
@@ -5503,16 +5582,16 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
           Assign who is responsible for locking up after services that week so Operations always has a clear owner.
         </div>
       </div>
-      <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
-        <div style={{display:"grid",gap:6}}>
-          <label style={{fontSize:12,color:C.muted}}>Week</label>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+      <div style={{display:"grid",gap:6}}>
+        <label style={{fontSize:12,color:C.muted}}>Week</label>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"nowrap"}}>
             <button className="btn-outline" onClick={() => shiftLockupWeek(-1)} style={{padding:"8px 12px",minWidth:44}} aria-label="Previous week">
               ←
             </button>
             <div
               style={{
-                flex:"1 1 220px",
+                flex:"1 1 auto",
+                minWidth:0,
                 minHeight:44,
                 border:`1px solid ${C.border}`,
                 borderRadius:12,
@@ -5531,7 +5610,6 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
             <button className="btn-outline" onClick={() => shiftLockupWeek(1)} style={{padding:"8px 12px",minWidth:44}} aria-label="Next week">
               →
             </button>
-          </div>
         </div>
       </div>
       <div style={{display:"grid",gap:6}}>

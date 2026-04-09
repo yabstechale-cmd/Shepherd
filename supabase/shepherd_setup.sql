@@ -56,6 +56,7 @@ create table if not exists public.church_staff (
   staff_roles text[] not null default '{}',
   title text not null,
   email text,
+  photo_url text,
   ministries text[] not null default '{}',
   can_see_team_overview boolean not null default true,
   can_see_admin_overview boolean not null default false,
@@ -70,6 +71,7 @@ alter table public.church_staff add column if not exists role text;
 alter table public.church_staff add column if not exists staff_roles text[] not null default '{}';
 alter table public.church_staff add column if not exists title text;
 alter table public.church_staff add column if not exists email text;
+alter table public.church_staff add column if not exists photo_url text;
 alter table public.church_staff add column if not exists ministries text[] not null default '{}';
 alter table public.church_staff add column if not exists can_see_team_overview boolean not null default true;
 alter table public.church_staff add column if not exists can_see_admin_overview boolean not null default false;
@@ -91,6 +93,7 @@ create table if not exists public.profiles (
   staff_roles text[] not null default '{}',
   title text,
   email text,
+  photo_url text,
   ministries text[] not null default '{}',
   can_see_team_overview boolean not null default true,
   can_see_admin_overview boolean not null default false,
@@ -107,6 +110,7 @@ alter table public.profiles add column if not exists role text;
 alter table public.profiles add column if not exists staff_roles text[] not null default '{}';
 alter table public.profiles add column if not exists title text;
 alter table public.profiles add column if not exists email text;
+alter table public.profiles add column if not exists photo_url text;
 alter table public.profiles add column if not exists ministries text[] not null default '{}';
 alter table public.profiles add column if not exists can_see_team_overview boolean not null default true;
 alter table public.profiles add column if not exists can_see_admin_overview boolean not null default false;

@@ -6,6 +6,8 @@ create table if not exists public.churches (
   code text not null,
   account_admin_user_id uuid references auth.users(id) on delete set null,
   account_admin_email text,
+  account_manager_user_ids uuid[] not null default '{}',
+  account_manager_emails text[] not null default '{}',
   created_at timestamptz not null default now()
 );
 
@@ -13,6 +15,8 @@ alter table public.churches add column if not exists name text;
 alter table public.churches add column if not exists code text;
 alter table public.churches add column if not exists account_admin_user_id uuid references auth.users(id) on delete set null;
 alter table public.churches add column if not exists account_admin_email text;
+alter table public.churches add column if not exists account_manager_user_ids uuid[] not null default '{}';
+alter table public.churches add column if not exists account_manager_emails text[] not null default '{}';
 alter table public.churches add column if not exists google_calendar_id text;
 alter table public.churches add column if not exists google_calendar_title text;
 alter table public.churches add column if not exists google_calendar_ids text[] not null default '{}';
@@ -780,9 +784,15 @@ begin
         p.can_see_admin_overview
         or p.role in ('church_administrator', 'admin', 'senior_pastor')
         or c.account_admin_user_id = p.id
+        or p.id = any(coalesce(c.account_manager_user_ids, '{}'::uuid[]))
         or (
           c.account_admin_email is not null
           and lower(c.account_admin_email) = lower(coalesce(p.email, ''))
+        )
+        or exists (
+          select 1
+          from unnest(coalesce(c.account_manager_emails, '{}'::text[])) as manager_email
+          where lower(manager_email) = lower(coalesce(p.email, ''))
         )
       )
   )

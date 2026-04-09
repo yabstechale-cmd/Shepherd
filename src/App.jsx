@@ -72,6 +72,16 @@ const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "K
 const getGoogleProviderTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 const getGoogleProviderRefreshTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 const getGoogleCalendarOAuthStateStorageKey = (churchId) => `${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:${churchId || "anon"}`;
+const getChurchAccountManagerUserIds = (church) => (
+  Array.isArray(church?.account_manager_user_ids) && church.account_manager_user_ids.length
+    ? church.account_manager_user_ids
+    : (church?.account_admin_user_id ? [church.account_admin_user_id] : [])
+);
+const getChurchAccountManagerEmails = (church) => (
+  Array.isArray(church?.account_manager_emails) && church.account_manager_emails.length
+    ? church.account_manager_emails
+    : (church?.account_admin_email ? [church.account_admin_email] : [])
+);
 const hasStoredGoogleCalendarOAuthState = (state) => {
   if (typeof window === "undefined" || !state) return false;
   try {
@@ -330,15 +340,15 @@ const profileHasMinistry = (profile, ministry) => Array.isArray(profile?.ministr
 const roleLabel = (profile) => profile?.title || profile?.role || "Staff";
 const isChurchAccountAdmin = (profile, church) =>
   !!profile?.id && (
-    church?.account_admin_user_id === profile.id
-    || (church?.account_admin_email && samePerson(church.account_admin_email, profile.email))
+    getChurchAccountManagerUserIds(church).includes(profile.id)
+    || getChurchAccountManagerEmails(church).some((email) => samePerson(email, profile.email))
     || profile?.is_account_admin
   );
 const isStaffAccountAdmin = (staffUser, church) =>
   !!staffUser && (
     !!staffUser?.is_account_admin
-    || (church?.account_admin_user_id && church.account_admin_user_id === staffUser.auth_user_id)
-    || (church?.account_admin_email && samePerson(church.account_admin_email, staffUser.email))
+    || getChurchAccountManagerUserIds(church).includes(staffUser.auth_user_id)
+    || getChurchAccountManagerEmails(church).some((email) => samePerson(email, staffUser.email))
   );
 const hasChurchAdminRole = (profile) =>
   ["church_administrator", "admin", "senior_pastor"].includes(profile?.role)
@@ -355,10 +365,15 @@ const hasAdministrativeOversight = (profile, church) =>
     || hasChurchAdminRole(profile)
     || isChurchAccountAdmin(profile, church)
   );
+const getChurchTeamAccessLabel = (user, church) => {
+  if (isStaffAccountAdmin(user, church)) return "Shepherd Account Manager";
+  if (user?.can_see_admin_overview || user?.canSeeAdminOverview) return "Administrative Oversight";
+  return "Standard Access";
+};
 const shouldShowChurchTeam = (profile, church) =>
   canManageChurchTeam(profile, church)
   || canEditChurchTeam(profile, church)
-  || (!church?.account_admin_user_id && !church?.account_admin_email);
+  || (getChurchAccountManagerUserIds(church).length === 0 && getChurchAccountManagerEmails(church).length === 0);
 const canManageChurchTeam = (profile, church) =>
   isChurchAccountAdmin(profile, church);
 const canEditChurchTeam = (profile, church) => hasAdministrativeOversight(profile, church);
@@ -2275,8 +2290,9 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   );
 }
 
-function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, setCalendarEvents, session }) {
+function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
+  const canManageAccountManagers = canManageChurchTeam(profile, church);
   const [settingsBranch, setSettingsBranch] = useState(() => {
     if (typeof window === "undefined") return "account";
     const stored = window.localStorage.getItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY);
@@ -2296,7 +2312,24 @@ function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, s
   const [deleteMessage, setDeleteMessage] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deletingChurch, setDeletingChurch] = useState(false);
+  const [selectedAccountManagerIds, setSelectedAccountManagerIds] = useState(() => getChurchAccountManagerUserIds(church));
+  const [accountManagerMessage, setAccountManagerMessage] = useState("");
+  const [accountManagerError, setAccountManagerError] = useState("");
+  const [accountManagerSaving, setAccountManagerSaving] = useState(false);
   const activeSettingsBranch = !canSeeCalendarSettings && settingsBranch === "calendar" ? "account" : settingsBranch;
+  const currentAccountManagerIds = useMemo(() => (
+    Array.isArray(church?.account_manager_user_ids) && church.account_manager_user_ids.length
+      ? church.account_manager_user_ids
+      : (church?.account_admin_user_id ? [church.account_admin_user_id] : [])
+  ), [church?.account_admin_user_id, church?.account_manager_user_ids]);
+  const currentAccountManagerEmails = Array.isArray(church?.account_manager_emails) && church.account_manager_emails.length
+    ? church.account_manager_emails
+    : (church?.account_admin_email ? [church.account_admin_email] : []);
+  const managerCandidates = (previewUsers || []).filter((user) => user?.auth_user_id || user?.email);
+  const accountManagerSelectionUnchanged =
+    selectedAccountManagerIds.length === currentAccountManagerIds.length
+    && selectedAccountManagerIds.every((id) => currentAccountManagerIds.includes(id))
+    && currentAccountManagerIds.every((id) => selectedAccountManagerIds.includes(id));
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2315,6 +2348,10 @@ function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, s
     };
   }, []);
 
+  useEffect(() => {
+    setSelectedAccountManagerIds(currentAccountManagerIds);
+  }, [currentAccountManagerIds]);
+
   const handlePhotoUpload = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -2328,6 +2365,38 @@ function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, s
       setPhotoMessage("Profile photo updated locally.");
     };
     reader.readAsDataURL(file);
+  };
+
+  const saveAccountManagers = async () => {
+    setAccountManagerError("");
+    setAccountManagerMessage("");
+    if (!church?.id) {
+      setAccountManagerError("We couldn't find this church account yet.");
+      return;
+    }
+    if (!selectedAccountManagerIds.length) {
+      setAccountManagerError("Choose at least one Shepherd Account Manager.");
+      return;
+    }
+    const selected = managerCandidates.filter((user) => selectedAccountManagerIds.includes(user.auth_user_id));
+    const managerEmails = [...new Set(selected.map((user) => String(user.email || "").trim()).filter(Boolean))];
+    setAccountManagerSaving(true);
+    try {
+      const payload = {
+        account_admin_user_id: selectedAccountManagerIds[0] || null,
+        account_admin_email: managerEmails[0] || null,
+        account_manager_user_ids: selectedAccountManagerIds,
+        account_manager_emails: managerEmails,
+      };
+      const { data, error } = await supabase.from("churches").update(payload).eq("id", church.id).select().single();
+      if (error) throw error;
+      if (data) setChurch?.(data);
+      setAccountManagerMessage(`Saved ${selected.length} Shepherd Account Manager${selected.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setAccountManagerError(error?.message || "We couldn't update the Shepherd Account Managers yet.");
+    } finally {
+      setAccountManagerSaving(false);
+    }
   };
 
   const updateEmail = async () => {
@@ -2510,6 +2579,56 @@ function AccountPage({ profile, setProfile, church, setChurch, calendarEvents, s
           ) : (
             <>
               <div className="card" style={{padding:22,textAlign:"left"}}>
+                {canManageAccountManagers && (
+                  <div style={{display:"grid",gap:12,marginBottom:18,paddingBottom:18,borderBottom:`1px solid ${C.border}`}}>
+                    <div>
+                      <h3 style={sectionTitleStyle}>Shepherd Account Managers</h3>
+                      <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                        Choose the one or more people who should retain full Shepherd account management for this church, including calendar connection and protected account-level settings.
+                      </p>
+                    </div>
+                    <div style={{display:"grid",gap:8,padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                      {managerCandidates.length === 0 ? (
+                        <div style={{fontSize:12,color:C.muted}}>No eligible church team members are available yet.</div>
+                      ) : managerCandidates.map((user) => {
+                        const checked = selectedAccountManagerIds.includes(user.auth_user_id);
+                        return (
+                          <label key={user.id} style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,color:C.text,cursor:"pointer"}}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={!user.auth_user_id}
+                              onChange={() => setSelectedAccountManagerIds((current) => (
+                                checked
+                                  ? current.filter((id) => id !== user.auth_user_id)
+                                  : [...current, user.auth_user_id]
+                              ))}
+                            />
+                            <span>
+                              {user.full_name}
+                              {user.email ? <span style={{color:C.muted}}> • {user.email}</span> : ""}
+                              {isStaffAccountAdmin(user, church) ? <span style={{color:C.gold}}> • Current manager</span> : ""}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                      Current managers: {currentAccountManagerEmails.length ? currentAccountManagerEmails.join(", ") : "None selected yet"}
+                    </div>
+                    {accountManagerError && <div style={{fontSize:12,color:C.danger}}>{accountManagerError}</div>}
+                    {accountManagerMessage && <div style={{fontSize:12,color:C.success}}>{accountManagerMessage}</div>}
+                    <div style={{display:"flex",justifyContent:"flex-end"}}>
+                      <button
+                        className="btn-gold"
+                        onClick={saveAccountManagers}
+                        disabled={accountManagerSaving || !selectedAccountManagerIds.length || accountManagerSelectionUnchanged}
+                      >
+                        {accountManagerSaving ? "Saving..." : "Save Shepherd Account Managers"}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <h3 style={sectionTitleStyle}>Email</h3>
                 <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Change the email attached to your Shepherd account. We verify this with your current password first, and the new inbox should still confirm the change.</p>
                 <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
@@ -2682,6 +2801,8 @@ function ChurchTeamPage({ church, profile, setProfile, previewUsers, setPreviewU
   const [form, setForm] = useState(blank);
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [showTeamMemberModal, setShowTeamMemberModal] = useState(false);
+  const editingMember = (previewUsers || []).find((entry) => entry.id === editingMemberId) || null;
+  const editingMemberIsAccountAdmin = isStaffAccountAdmin(editingMember, church);
 
   const applyOversight = (payload, oversight) => {
     if (oversight === "admin") {
@@ -2960,6 +3081,11 @@ function ChurchTeamPage({ church, profile, setProfile, previewUsers, setPreviewU
               <option value="standard">Standard Access</option>
               <option value="admin">Administrative Oversight</option>
             </select>
+            {editingMemberIsAccountAdmin && (
+              <div style={{fontSize:12,color:C.muted,textAlign:"left",lineHeight:1.6}}>
+                This person is also a Shepherd Account Manager, so they will still retain elevated access until the manager list is changed.
+              </div>
+            )}
             {error && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{error}</div>}
             <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:8,flexWrap:"wrap"}}>
               <button className="btn-outline" onClick={()=>{setShowTeamMemberModal(false); setEditingMemberId(null); setForm(blank); setError("");}}>
@@ -2987,7 +3113,7 @@ function ChurchTeamPage({ church, profile, setProfile, previewUsers, setPreviewU
                   <div style={{fontSize:14,fontWeight:600,color:C.text}}>{user.full_name}</div>
                   <div style={{fontSize:12,color:C.muted,marginTop:4}}>{user.title}</div>
                   <div style={{fontSize:11,color:C.muted,marginTop:4}}>
-                    {isStaffAccountAdmin(user, church) || user.can_see_admin_overview ? "Administrative Oversight" : "Standard Access"}
+                    {getChurchTeamAccessLabel(user, church)}
                   </div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
@@ -8534,7 +8660,7 @@ export default function App() {
 
   const pages = {
     dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
-    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} />,
+    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} />,
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,

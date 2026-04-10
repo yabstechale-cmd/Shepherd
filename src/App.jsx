@@ -437,8 +437,10 @@ const isMinistryLedgerLead = (profile) => (profile?.staff_roles || [profile?.rol
 const getBudgetScopeMinistries = (profile) => {
   if (!profile) return [];
   if (isFinanceUser(profile)) return TASK_CATEGORIES;
+  const assignedMinistries = Array.isArray(profile?.ministries) ? [...new Set(profile.ministries.filter(Boolean))] : [];
+  if (assignedMinistries.length > 0) return assignedMinistries;
   if (!isMinistryLedgerLead(profile)) return [];
-  return Array.isArray(profile?.ministries) ? [...new Set(profile.ministries.filter(Boolean))] : [];
+  return assignedMinistries;
 };
 const canViewBudget = (profile) => isFinanceUser(profile) || getBudgetScopeMinistries(profile).length > 0;
 const canApproveEventRequests = (profile, church) => hasAdministrativeOversight(profile, church);
@@ -3166,6 +3168,25 @@ function ChurchTeamPage({ church, profile, setProfile, previewUsers, setPreviewU
       setSaving(false);
       setError(saveError.message || "We couldn't save that team member.");
       return;
+    }
+    if (data?.auth_user_id) {
+      const baseProfilePayload = createProfilePayload(
+        data.auth_user_id,
+        data.church_id,
+        data,
+        data.email || ""
+      );
+      await supabase.from("profiles").upsert({
+        ...baseProfilePayload,
+        full_name: data.full_name,
+        role: data.role,
+        title: data.title,
+        staff_roles: Array.isArray(data.staff_roles) ? data.staff_roles : (data.role ? [data.role] : []),
+        ministries: data.ministries || [],
+        can_see_team_overview: data.can_see_team_overview,
+        can_see_admin_overview: data.can_see_admin_overview,
+        read_only_oversight: data.read_only_oversight,
+      });
     }
     const profileSyncPayload = {
       full_name: data.full_name,
@@ -6518,8 +6539,8 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6,textAlign:"left"}}>
                 <span style={{color:!currentWorkTaskId ? C.gold : C.muted}}>
                   {!currentWorkTaskId
-                    ? "Choose the task that has your attention right now so your dashboard reflects your present focus clearly."
-                    : "Your selected task will stay marked here until you change it."}
+                    ? "What task are you currently working on? Your selected task will stay marked here until you change it and helps your Senior Pastor see what has your attention."
+                    : "Your selected task will stay marked here until you change it and helps your Senior Pastor see what has your attention."}
                 </span>
               </div>
               <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(4, minmax(0,1fr))",gap:10}}>
@@ -8087,6 +8108,23 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       if (!isPreview) {
         await supabase.from("church_staff").update({ ministries: nextMinistries }).eq("id", user.id);
         await supabase.from("profiles").update({ ministries: nextMinistries }).eq("staff_id", user.id);
+        if (user.auth_user_id) {
+          await supabase.from("profiles").upsert({
+            id: user.auth_user_id,
+            church_id: churchId,
+            staff_id: user.id,
+            full_name: user.full_name,
+            role: user.role,
+            title: user.title,
+            email: user.email || null,
+            photo_url: user.photo_url || null,
+            staff_roles: Array.isArray(user.staff_roles) ? user.staff_roles : (user.role ? [user.role] : []),
+            ministries: nextMinistries,
+            can_see_team_overview: user.can_see_team_overview ?? user.canSeeTeamOverview ?? false,
+            can_see_admin_overview: user.can_see_admin_overview ?? user.canSeeAdminOverview ?? false,
+            read_only_oversight: user.read_only_oversight ?? user.readOnlyOversight ?? false,
+          });
+        }
       }
       return normalizeAccessUser({ ...user, ministries: nextMinistries });
     }));

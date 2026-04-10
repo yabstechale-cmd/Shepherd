@@ -8556,7 +8556,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               <input className="input-field" value={budgetForm.ministry} onChange={(e)=>setBudgetForm({...budgetForm,ministry:e.target.value})} placeholder="Ministry name" readOnly={!financeView} />
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Starting Budget</label>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Approved Amount For This Year</label>
               <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={budgetForm.budget} onChange={(e)=>setBudgetForm({...budgetForm,budget:e.target.value})} readOnly={!financeView}/>
             </div>
             {financeView && (
@@ -8639,20 +8639,17 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 <div style={{fontSize:12,color:C.muted,marginTop:4}}>{summary.transactions} transactions</div>
                 <div style={{fontSize:12,color:C.muted,marginTop:2}}>{summary.purchaseOrders} purchase orders</div>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span className={`badge ${getTag(summary.ministry)}`}>{summary.ministry}</span>
-                {financeView && (
-                  <button
-                    className="btn-outline"
-                    onClick={() => openBudgetModal(summary.ministry)}
-                    style={{padding:"7px 9px",minWidth:0}}
-                    aria-label={`Edit ${summary.ministry} budget`}
-                    title={`Edit ${summary.ministry} budget`}
-                  >
-                    <Icons.pen/>
-                  </button>
-                )}
-              </div>
+              {financeView && (
+                <button
+                  className="btn-outline"
+                  onClick={() => openBudgetModal(summary.ministry)}
+                  style={{padding:"7px 9px",minWidth:0}}
+                  aria-label={`Edit ${summary.ministry} budget`}
+                  title={`Edit ${summary.ministry} budget`}
+                >
+                  <Icons.pen/>
+                </button>
+              )}
             </div>
             <div style={{display:"grid",gap:8,marginTop:18}}>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.muted}}>

@@ -140,6 +140,7 @@ const Icons = {
   trash:    () => <Icon d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v6M14 11v6" />,
   settings: () => <Icon d="M12 3l1.8 2.3 2.8-.3.9 2.7 2.6 1.1-1 2.6 1 2.6-2.6 1.1-.9 2.7-2.8-.3L12 21l-1.8-2.3-2.8.3-.9-2.7-2.6-1.1 1-2.6-1-2.6 2.6-1.1.9-2.7 2.8.3L12 3zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
   refresh:  () => <Icon d="M21 12a9 9 0 11-2.64-6.36M21 4v6h-6" />,
+  lock:     () => <Icon d="M7 11V8a5 5 0 0110 0v3M5 11h14v10H5z" />,
 };
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
   <svg
@@ -2382,10 +2383,11 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
 function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
   const canManageAccountManagers = canManageChurchTeam(profile, church);
+  const canSeeChurchAccount = canManageAccountManagers || canDeleteChurchAccount(profile, church);
   const [settingsBranch, setSettingsBranch] = useState(() => {
-    if (typeof window === "undefined") return "account";
+    if (typeof window === "undefined") return "my-account";
     const stored = window.localStorage.getItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY);
-    return stored === "calendar" ? "calendar" : "account";
+    return ["my-account", "church-account", "calendar"].includes(stored) ? stored : "my-account";
   });
   const [photoMessage, setPhotoMessage] = useState("");
   const [photoError, setPhotoError] = useState("");
@@ -2407,7 +2409,11 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   const [accountManagerMessage, setAccountManagerMessage] = useState("");
   const [accountManagerError, setAccountManagerError] = useState("");
   const [accountManagerSaving, setAccountManagerSaving] = useState(false);
-  const activeSettingsBranch = !canSeeCalendarSettings && settingsBranch === "calendar" ? "account" : settingsBranch;
+  const activeSettingsBranch = !canSeeCalendarSettings && settingsBranch === "calendar"
+    ? "my-account"
+    : !canSeeChurchAccount && settingsBranch === "church-account"
+      ? "my-account"
+      : settingsBranch;
   const currentAccountManagerIds = useMemo(() => (
     Array.isArray(church?.account_manager_user_ids) && church.account_manager_user_ids.length
       ? church.account_manager_user_ids
@@ -2720,7 +2726,11 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       <div style={{marginBottom:24,textAlign:"left"}}>
         <h2 style={pageTitleStyle}>Account</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>
-          {activeSettingsBranch === "calendar" ? "Manage the shared church calendar connection and imported Google calendars." : "Manage your profile photo, email, password, and account recovery."}
+          {activeSettingsBranch === "calendar"
+            ? "Manage the shared church calendar connection and imported Google calendars."
+            : activeSettingsBranch === "church-account"
+              ? "Manage church-level account leadership and protected church controls."
+              : "Manage your profile photo, email, password, and account recovery."}
         </p>
       </div>
       <div className="mobile-stack" style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:18,alignItems:"start"}}>
@@ -2749,21 +2759,28 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
           </div>
           <div className="card" style={{padding:18,textAlign:"left",display:"grid",gap:10,alignContent:"start"}}>
             <button
-              className={activeSettingsBranch === "account" ? "btn-gold" : "btn-outline"}
-              onClick={() => setSettingsBranch("account")}
+              className={activeSettingsBranch === "my-account" ? "btn-gold" : "btn-outline"}
+              onClick={() => setSettingsBranch("my-account")}
               style={{justifyContent:"flex-start",textAlign:"left",width:"100%",minHeight:44}}
             >
-              Account Settings
+              My Account
             </button>
-            {canSeeCalendarSettings && (
-              <button
-                className={activeSettingsBranch === "calendar" ? "btn-gold" : "btn-outline"}
-                onClick={() => setSettingsBranch("calendar")}
-                style={{justifyContent:"flex-start",textAlign:"left",width:"100%",minHeight:44}}
-              >
-                Calendar Settings
-              </button>
-            )}
+            <button
+              className={activeSettingsBranch === "church-account" ? "btn-gold" : "btn-outline"}
+              onClick={() => canSeeChurchAccount && setSettingsBranch("church-account")}
+              style={{justifyContent:"space-between",textAlign:"left",width:"100%",minHeight:44}}
+            >
+              <span>Church Account</span>
+              {!canSeeChurchAccount && <Icons.lock />}
+            </button>
+            <button
+              className={activeSettingsBranch === "calendar" ? "btn-gold" : "btn-outline"}
+              onClick={() => canSeeCalendarSettings && setSettingsBranch("calendar")}
+              style={{justifyContent:"space-between",textAlign:"left",width:"100%",minHeight:44}}
+            >
+              <span>Calendar Settings</span>
+              {!canSeeCalendarSettings && <Icons.lock />}
+            </button>
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -2776,11 +2793,11 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               setCalendarEvents={setCalendarEvents}
               session={session}
             />
-          ) : (
+          ) : activeSettingsBranch === "church-account" ? (
             <>
               <div className="card" style={{padding:22,textAlign:"left"}}>
-                {canManageAccountManagers && (
-                  <div style={{display:"grid",gap:12,marginBottom:18,paddingBottom:18,borderBottom:`1px solid ${C.border}`}}>
+                {canManageAccountManagers ? (
+                  <div style={{display:"grid",gap:12}}>
                     <div>
                       <h3 style={sectionTitleStyle}>Shepherd Account Managers</h3>
                       <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
@@ -2801,13 +2818,13 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                         {selectedManagerUsers.length === 0 ? (
                           <div style={{fontSize:12,color:C.muted}}>No managers selected yet.</div>
                         ) : selectedManagerUsers.map((user) => (
-                          <div key={`selected-${user.id}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                            <div style={{fontSize:13,color:C.text,lineHeight:1.6}}>
+                          <div key={`selected-${user.id}`} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",alignItems:"center",gap:12}}>
+                            <div style={{fontSize:13,color:C.text,lineHeight:1.6,minWidth:0}}>
                               {user.full_name}
                               {user.email ? <span style={{color:C.muted}}> • {user.email}</span> : ""}
                               {user.auth_user_id === profile?.id ? <span style={{color:C.gold}}> • You</span> : ""}
                             </div>
-                            <button className="btn-outline" onClick={() => removeAccountManager(user.auth_user_id)} disabled={user.auth_user_id === profile?.id}>
+                            <button className="btn-outline" onClick={() => removeAccountManager(user.auth_user_id)} disabled={user.auth_user_id === profile?.id} style={{whiteSpace:"nowrap",padding:"8px 12px"}}>
                               Remove
                             </button>
                           </div>
@@ -2818,12 +2835,12 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                         {availableManagerCandidates.length === 0 ? (
                           <div style={{fontSize:12,color:C.muted}}>Everyone eligible is already in the manager list.</div>
                         ) : availableManagerCandidates.map((user) => (
-                          <div key={`available-${user.id}`} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                            <div style={{fontSize:13,color:C.text,lineHeight:1.6}}>
+                          <div key={`available-${user.id}`} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",alignItems:"center",gap:12}}>
+                            <div style={{fontSize:13,color:C.text,lineHeight:1.6,minWidth:0}}>
                               {user.full_name}
                               {user.email ? <span style={{color:C.muted}}> • {user.email}</span> : ""}
                             </div>
-                            <button className="btn-outline" onClick={() => addAccountManager(user.auth_user_id)}>
+                            <button className="btn-outline" onClick={() => addAccountManager(user.auth_user_id)} style={{whiteSpace:"nowrap",padding:"8px 12px"}}>
                               Add as Manager
                             </button>
                           </div>
@@ -2845,7 +2862,49 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                       </button>
                     </div>
                   </div>
+                ) : (
+                  <div style={{display:"grid",gap:10}}>
+                    <h3 style={sectionTitleStyle}>Church Account</h3>
+                    <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                      This area holds church-level account controls like Shepherd Account Managers. Your current role does not have access to edit these settings.
+                    </div>
+                  </div>
                 )}
+              </div>
+              {canDeleteChurchAccount(profile, church) && (
+                <div className="card" style={{padding:22,textAlign:"left",border:`1px solid rgba(224,82,82,.35)`}}>
+                  <h3 style={{...sectionTitleStyle,color:C.danger}}>Delete Church Account</h3>
+                  <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                    This permanently removes <span style={{color:C.text,fontWeight:600}}>{church?.name || "this church"}</span> from Shepherd, including staff access, tasks, boards, and stored church data. If you do not remember your password, use Password Recovery above first.
+                  </p>
+                  <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+                    <input
+                      className="input-field"
+                      value={deleteForm.churchName}
+                      onChange={(e)=>setDeleteForm({...deleteForm,churchName:e.target.value})}
+                      placeholder={`Type "${church?.name || "church name"}" to confirm`}
+                    />
+                    <input
+                      className="input-field"
+                      type="password"
+                      value={deleteForm.currentPassword}
+                      onChange={(e)=>setDeleteForm({...deleteForm,currentPassword:e.target.value})}
+                      placeholder="Current password"
+                    />
+                    {deleteError && <div style={{fontSize:12,color:C.danger}}>{deleteError}</div>}
+                    {deleteMessage && <div style={{fontSize:12,color:C.success}}>{deleteMessage}</div>}
+                    <div style={{display:"flex",justifyContent:"flex-end"}}>
+                      <button className="btn-outline" onClick={deleteChurchAccount} disabled={deletingChurch} style={{borderColor:C.danger,color:C.danger}}>
+                        {deletingChurch ? "Deleting..." : "Delete Church Account"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="card" style={{padding:22,textAlign:"left"}}>
                 <h3 style={sectionTitleStyle}>Email</h3>
                 <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Change the email attached to your Shepherd account. We verify this with your current password first, and the new inbox should still confirm the change.</p>
                 <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
@@ -2891,36 +2950,6 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                   {resetMessage && <div style={{fontSize:12,color:C.success}}>{resetMessage}</div>}
                 </div>
               </div>
-              {canDeleteChurchAccount(profile, church) && (
-                <div className="card" style={{padding:22,textAlign:"left",border:`1px solid rgba(224,82,82,.35)`}}>
-                  <h3 style={{...sectionTitleStyle,color:C.danger}}>Delete Church Account</h3>
-                  <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
-                    This permanently removes <span style={{color:C.text,fontWeight:600}}>{church?.name || "this church"}</span> from Shepherd, including staff access, tasks, boards, and stored church data. If you do not remember your password, use Password Recovery above first.
-                  </p>
-                  <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
-                    <input
-                      className="input-field"
-                      value={deleteForm.churchName}
-                      onChange={(e)=>setDeleteForm({...deleteForm,churchName:e.target.value})}
-                      placeholder={`Type "${church?.name || "church name"}" to confirm`}
-                    />
-                    <input
-                      className="input-field"
-                      type="password"
-                      value={deleteForm.currentPassword}
-                      onChange={(e)=>setDeleteForm({...deleteForm,currentPassword:e.target.value})}
-                      placeholder="Current password"
-                    />
-                    {deleteError && <div style={{fontSize:12,color:C.danger}}>{deleteError}</div>}
-                    {deleteMessage && <div style={{fontSize:12,color:C.success}}>{deleteMessage}</div>}
-                    <div style={{display:"flex",justifyContent:"flex-end"}}>
-                      <button className="btn-outline" onClick={deleteChurchAccount} disabled={deletingChurch} style={{borderColor:C.danger,color:C.danger}}>
-                        {deletingChurch ? "Deleting..." : "Delete Church Account"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>

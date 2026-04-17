@@ -84,12 +84,14 @@ const GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-token";
 const GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-refresh-token";
 const GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX = "shepherd-google-calendar-oauth-state";
 const ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY = "shepherd-account-settings-branch";
+const TUTORIAL_COMPLETED_STORAGE_PREFIX = "shepherd-tutorial-completed";
 const NOTIFICATION_RETENTION_MS = 40 * 24 * 60 * 60 * 1000;
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 
 const getGoogleProviderTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 const getGoogleProviderRefreshTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 const getGoogleCalendarOAuthStateStorageKey = (churchId) => `${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:${churchId || "anon"}`;
+const getTutorialCompletedStorageKey = (userId) => `${TUTORIAL_COMPLETED_STORAGE_PREFIX}:${userId || "anon"}`;
 const getChurchAccountManagerUserIds = (church) => (
   Array.isArray(church?.account_manager_user_ids) && church.account_manager_user_ids.length
     ? church.account_manager_user_ids
@@ -112,6 +114,10 @@ const hasStoredGoogleCalendarOAuthState = (state) => {
     return false;
   }
   return false;
+};
+const confirmDestructiveAction = (message = "Are you sure you want to delete this?") => {
+  if (typeof window === "undefined") return true;
+  return window.confirm(message);
 };
 
 const Icon = ({ d, size = 20 }) => (
@@ -141,6 +147,7 @@ const Icons = {
   settings: () => <Icon d="M12 3l1.8 2.3 2.8-.3.9 2.7 2.6 1.1-1 2.6 1 2.6-2.6 1.1-.9 2.7-2.8-.3L12 21l-1.8-2.3-2.8.3-.9-2.7-2.6-1.1 1-2.6-1-2.6 2.6-1.1.9-2.7 2.8.3L12 3zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
   refresh:  () => <Icon d="M21 12a9 9 0 11-2.64-6.36M21 4v6h-6" />,
   lock:     () => <Icon d="M7 11V8a5 5 0 0110 0v3M5 11h14v10H5z" />,
+  help:     () => <Icon d="M9.1 9a3 3 0 115.8 1c-.5 1.7-2.9 2.1-2.9 4M12 18h.01M12 22a10 10 0 110-20 10 10 0 010 20z" />,
 };
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
   <svg
@@ -211,6 +218,12 @@ const GS = () => (
     .btn-gold-compact{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:#0f1117;font-weight:600;border:none;border-radius:10px;padding:6px 12px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 20px rgba(201,168,76,.18)}
     .btn-gold-compact:hover{filter:brightness(1.08)}
     .card{background:${C.card};border:1px solid ${C.border};border-radius:14px}
+    .tutorial-backdrop{position:fixed;inset:0;background:rgba(4,6,12,.74);backdrop-filter:blur(10px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;overflow:auto}
+    .tutorial-card{width:min(960px,100%);max-height:calc(100dvh - 48px);overflow:hidden;display:flex;flex-direction:column;background:radial-gradient(circle at top left,rgba(201,168,76,.18),transparent 32%),${C.card};border:1px solid ${C.goldDim};border-radius:24px;box-shadow:0 28px 80px rgba(0,0,0,.42)}
+    .tutorial-body{min-height:0;overflow:auto}
+    .tutorial-step-card{border:1px solid ${C.border};border-radius:16px;background:rgba(15,17,23,.42);padding:14px;text-align:left;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease}
+    .tutorial-step-card:hover{transform:translateY(-2px);border-color:${C.goldDim};background:${C.goldGlow}}
+    .tutorial-step-card.active{border-color:${C.gold};background:${C.goldGlow}}
     .input-field{background:${C.surface};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;width:100%;max-width:100%;min-width:0;outline:none}
     input.input-field[type="date"],input.input-field[type="time"]{-webkit-appearance:none;appearance:none;display:block}
     .input-field:focus{border-color:${C.gold};box-shadow:0 0 0 3px ${C.goldGlow}}
@@ -256,6 +269,22 @@ const GS = () => (
       .mobile-stack{grid-template-columns:1fr !important}
       .mobile-three-stack{grid-template-columns:1fr !important}
       .mobile-two-stack{grid-template-columns:1fr !important}
+      .frameworks-grid{grid-template-columns:1fr !important}
+      .framework-card{width:100%;max-width:100%;min-width:0}
+      .framework-card-title{font-size:26px !important;overflow-wrap:anywhere}
+      .content-board-shell{padding:16px !important}
+      .content-board-column{min-height:auto !important;width:100%;max-width:100%;min-width:0;overflow:hidden}
+      .content-task-row{grid-template-columns:1fr !important}
+      .content-task-meta{align-items:flex-start !important;text-align:left !important}
+      .tutorial-backdrop{align-items:flex-start;padding:10px 10px 24px}
+      .tutorial-card{max-height:none;min-height:auto;border-radius:18px}
+      .tutorial-layout{grid-template-columns:1fr !important}
+      .tutorial-step-detail{order:1;padding:18px !important}
+      .tutorial-step-list{order:2;border-right:none !important;border-top:1px solid ${C.border};display:flex !important;overflow-x:auto;padding:12px !important;gap:10px !important}
+      .tutorial-step-card{min-width:180px}
+      .tutorial-actions{flex-direction:column;align-items:stretch !important}
+      .tutorial-actions > div{justify-content:stretch !important}
+      .tutorial-actions button{justify-content:center}
       .mobile-calendar-layout{grid-template-columns:1fr !important}
       .dashboard-team-row{grid-template-columns:1fr !important}
       .dashboard-team-row-right{text-align:left !important}
@@ -1690,15 +1719,252 @@ function AuthScreen() {
   );
 }
 
+function getTutorialSteps(profile, church) {
+  const steps = [
+    {
+      id: "dashboard",
+      title: "Start On Your Dashboard",
+      page: "dashboard",
+      eyebrow: "Your daily home base",
+      body: "Begin here when you open Shepherd. Check unread notifications first, confirm who is locking up this week, then use the Focus Bar to show the task that has your attention right now.",
+      tip: "Good rhythm: open Dashboard, clear new alerts, choose your current focus, then move into the board that needs action.",
+      action: "Open Dashboard",
+    },
+    {
+      id: "focus",
+      title: "Choose Your Current Focus",
+      page: "dashboard",
+      eyebrow: "For live team clarity",
+      body: "In the Focus Bar, click the task you are actively working on. Shepherd keeps that task marked until you choose another one or unselect it.",
+      tip: "This is manual on purpose. It helps your Senior Pastor see present focus without guessing from due dates or old activity.",
+      action: "Go To Focus Bar",
+    },
+    {
+      id: "planning",
+      title: "Use Frameworks",
+      page: "workspaces",
+      eyebrow: "Boards and workflows",
+      body: "Use Frameworks when you are not sure which board you need. Choose Event Planning for building an event, Event Requests for approvals, Operations for staff availability and lock-up, or Content/Media for communication work.",
+      tip: "Think of this as the hallway. It does not replace the boards; it helps people enter the right room.",
+      action: "Open Frameworks",
+    },
+    {
+      id: "tasks",
+      title: "Keep Tasks Moving",
+      page: "tasks",
+      eyebrow: "Assignments and reviews",
+      body: "Open Tasks when something needs ownership. Create a task, assign it, set a due date, update the status from the top-right selector, and use comments when decisions need context.",
+      tip: "If a task is connected to an event plan, keep the task title clear and use the event name as context instead of stuffing every detail into the title.",
+      action: "Open Tasks",
+    },
+    {
+      id: "calendar",
+      title: "Check The Shared Calendar",
+      page: "calendar",
+      eyebrow: "Church rhythm",
+      body: "Use Calendar to see the week in motion. Toggle imported Google calendars and My Tasks, move week to week, and click an item when you need to review or edit its details.",
+      tip: "Staff time off appears after approval. Church events can come from approved event requests, direct calendar entries, or imported Google calendars.",
+      action: "Open Calendar",
+    },
+    {
+      id: "operations",
+      title: "Use Operations For Staff Availability",
+      page: "operations-board",
+      eyebrow: "PTO, out of office, sick days, lock-up",
+      body: "Use Operations for practical staff coverage. PTO requests go through review, while Out Of Office and Sick Day entries can be logged directly. Church Lock Up assigns who closes after services for the selected week.",
+      tip: "If a PTO request is approved, Shepherd adds it to the shared calendar automatically so the whole team can plan around it.",
+      action: "Open Operations",
+    },
+  ];
+
+  if (shouldShowChurchTeam(profile, church)) {
+    steps.push({
+      id: "church-team",
+      title: "Manage The Church Team",
+      page: "church-team",
+      eyebrow: "People and access",
+      body: "Use Church Team to keep real staff accounts clean. Edit roles, ministries, contact details, and visibility so access matches what each person actually needs.",
+      tip: "If someone should see finances or manage church settings, make sure their staff record is linked to their real Shepherd login.",
+      action: "Open Church Team",
+    });
+  }
+
+  if (canViewBudget(profile)) {
+    steps.push({
+      id: "finances",
+      title: "Review Finances",
+      page: "budget",
+      eyebrow: "Budgets and purchase orders",
+      body: "Use Finances to view assigned ministry budgets, create purchase orders, and track spending against the approved amount for this year.",
+      tip: "Most staff only see finances for ministries assigned to them, while finance leaders can see the broader church budget picture.",
+      action: "Open Finances",
+    });
+  }
+
+  if (canManageCalendarSettings(profile)) {
+    steps.push({
+      id: "calendar-settings",
+      title: "Maintain Calendar Settings",
+      page: "account",
+      branch: "calendar",
+      eyebrow: "Admin setup",
+      body: "Calendar Settings is where an admin connects Google once for the church, chooses which Google calendars Shepherd imports, refreshes shared calendars, or disconnects Google when needed.",
+      tip: "This is church-level setup. Staff can view the shared calendar, but admins maintain the connection so everyone sees the same source of truth.",
+      action: "Open Calendar Settings",
+    });
+  }
+
+  steps.push({
+    id: "account",
+    title: "Update Your Account",
+    page: "account",
+    branch: "my-account",
+    eyebrow: "Profile and password",
+    body: "Use Account for your profile photo, email, password, and recovery options. You can also reopen this walkthrough from the sidebar whenever someone needs a refresher.",
+    tip: "Admins will also see church-level settings here, including Calendar Settings and Shepherd Account Managers.",
+    action: "Open Account",
+  });
+
+  return steps;
+}
+
+function ShepherdTutorial({ profile, church, onClose }) {
+  const steps = useMemo(() => getTutorialSteps(profile, church), [profile, church]);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const currentStep = steps[stepIndex] || steps[0];
+  const isLastStep = stepIndex >= steps.length - 1;
+
+  const finishTutorial = () => {
+    if (typeof window !== "undefined" && profile?.id) {
+      window.localStorage.setItem(getTutorialCompletedStorageKey(profile.id), "true");
+    }
+    onClose?.();
+  };
+
+  if (!currentStep) return null;
+
+  if (!hasStarted) {
+    return (
+      <div className="tutorial-backdrop" role="dialog" aria-modal="true" aria-label="Shepherd walkthrough prompt">
+        <div className="tutorial-card fadeIn" style={{width:"min(560px,100%)"}}>
+          <div style={{padding:28,display:"grid",gap:18,textAlign:"left"}}>
+            <div style={{display:"inline-flex",alignItems:"center",gap:8,color:C.gold,fontSize:12,fontWeight:700,letterSpacing:".08em",textTransform:"uppercase"}}>
+              <BrandMark size={18} color={C.gold}/>
+              Shepherd Walkthrough
+            </div>
+            <div style={{display:"grid",gap:10}}>
+              <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:34,fontWeight:500,color:C.text,lineHeight:1.1}}>
+                Would You Like A Quick Walkthrough?
+              </h2>
+              <p style={{fontSize:14,color:C.muted,lineHeight:1.8}}>
+                Shepherd can show you where the main tools live in about a minute. You can skip this now and reopen it anytime from the Walkthrough button.
+              </p>
+            </div>
+            <div className="tutorial-actions" style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+              <button className="btn-gold" onClick={() => setHasStarted(true)}>Yes, Show Me</button>
+              <button className="btn-outline" onClick={finishTutorial}>Skip</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tutorial-backdrop" role="dialog" aria-modal="true" aria-label="Shepherd walkthrough">
+      <div className="tutorial-card fadeIn">
+        <div style={{padding:24,borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
+          <div style={{display:"grid",gap:8,textAlign:"left"}}>
+            <div style={{display:"inline-flex",alignItems:"center",gap:8,color:C.gold,fontSize:12,fontWeight:700,letterSpacing:".08em",textTransform:"uppercase"}}>
+              <BrandMark size={16} color={C.gold}/>
+              Shepherd Walkthrough
+            </div>
+            <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:34,fontWeight:500,color:C.text,lineHeight:1.1}}>
+              Welcome To Shepherd
+            </h2>
+            <p style={{fontSize:13,color:C.muted,lineHeight:1.7,maxWidth:640}}>
+              This quick guide shows where the main pieces live. Move through it with Next, skip it when you are ready, or reopen it later from the Walkthrough button.
+            </p>
+          </div>
+          <button className="btn-outline" onClick={finishTutorial} style={{padding:"8px 12px",flexShrink:0}}>Skip</button>
+        </div>
+
+        <div className="tutorial-body tutorial-layout" style={{display:"grid",gridTemplateColumns:"minmax(220px,320px) 1fr",gap:0}}>
+          <div className="tutorial-step-list" style={{padding:18,borderRight:`1px solid ${C.border}`,display:"grid",gap:10,alignContent:"start"}}>
+            {steps.map((step, index) => (
+              <button
+                key={step.id}
+                className={`tutorial-step-card${index === stepIndex ? " active" : ""}`}
+                onClick={() => setStepIndex(index)}
+              >
+                <div style={{fontSize:11,color:index === stepIndex ? C.gold : C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em"}}>
+                  Step {index + 1}
+                </div>
+                <div style={{marginTop:5,fontSize:14,fontWeight:700,color:C.text}}>{step.title}</div>
+                <div style={{marginTop:4,fontSize:12,color:C.muted,lineHeight:1.5}}>{step.eyebrow}</div>
+              </button>
+            ))}
+          </div>
+
+          <div className="tutorial-step-detail" style={{padding:28,display:"grid",gap:22,alignContent:"start",textAlign:"left"}}>
+            <div style={{display:"grid",gap:10}}>
+              <div style={{fontSize:12,color:C.gold,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em"}}>
+                {currentStep.eyebrow}
+              </div>
+              <h3 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:30,fontWeight:500,color:C.text,lineHeight:1.15}}>
+                {currentStep.title}
+              </h3>
+              <p style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:620}}>
+                {currentStep.body}
+              </p>
+              {currentStep.tip && (
+                <div style={{marginTop:6,padding:"12px 14px",border:`1px solid ${C.goldDim}`,borderRadius:14,background:C.goldGlow,fontSize:13,color:C.text,lineHeight:1.7}}>
+                  <span style={{color:C.gold,fontWeight:700}}>Tip: </span>
+                  {currentStep.tip}
+                </div>
+              )}
+            </div>
+
+            <div style={{height:8,borderRadius:999,background:C.surface,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${((stepIndex + 1) / steps.length) * 100}%`,background:`linear-gradient(90deg,${C.goldDim},${C.gold})`,borderRadius:999}} />
+            </div>
+
+            <div className="tutorial-actions" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginTop:4}}>
+              <button
+                className="btn-outline"
+                onClick={() => setStepIndex((current) => Math.max(0, current - 1))}
+                disabled={stepIndex === 0}
+                style={{opacity:stepIndex === 0 ? .55 : 1}}
+              >
+                Back
+              </button>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <button
+                  className="btn-gold"
+                  onClick={() => isLastStep ? finishTutorial() : setStepIndex((current) => Math.min(steps.length - 1, current + 1))}
+                >
+                  {isLastStep ? "Finish Tour" : "Next"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Sidebar ────────────────────────────────────────────────────────────────
-function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount }) {
+function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount, onStartTutorial }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
-    {id:"workspaces",label:"Planning Center",I:Icons.workspace},
+    {id:"workspaces",label:"Frameworks",I:Icons.workspace},
     {id:"tasks",label:"Tasks",I:Icons.tasks},
     {id:"calendar",label:"Calendar",I:Icons.calendar},
     ...(shouldShowChurchTeam(profile, church) ? [{id:"church-team",label:"Church Team",I:Icons.people}] : []),
     ...(canViewBudget(profile) ? [{id:"budget",label:"Finances",I:Icons.budget}] : []),
+    {id:"faq",label:"FAQ",I:Icons.help},
     {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
@@ -1735,6 +2001,33 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
         ))}
       </nav>
       <div className="app-sidebar-footer" style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`}}>
+        <button
+          onClick={onStartTutorial}
+          title="Open Shepherd walkthrough"
+          style={{
+            width:"100%",
+            display:"flex",
+            alignItems:"center",
+            justifyContent:collapsed ? "center" : "flex-start",
+            gap:10,
+            marginBottom:10,
+            padding:collapsed ? 8 : "10px 12px",
+            borderRadius:12,
+            border:`1px solid ${C.goldDim}`,
+            background:C.goldGlow,
+            color:C.text,
+            cursor:"pointer",
+            textAlign:"left",
+          }}
+        >
+          <span style={{width:26,height:26,borderRadius:"50%",background:C.gold,color:"#0f1117",display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:800,flexShrink:0}}>?</span>
+          {!collapsed && (
+            <span style={{display:"grid",gap:2,minWidth:0}}>
+              <span style={{fontSize:12,fontWeight:700,color:C.text,lineHeight:1.2}}>Need a walkthrough?</span>
+              <span style={{fontSize:11,color:C.muted,lineHeight:1.3}}>Start the quick guide</span>
+            </span>
+          )}
+        </button>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10}}>
           <button
             onClick={()=>setActive("account")}
@@ -2183,6 +2476,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
 
   const removeImportedGoogleCalendar = async (calendarId) => {
     if (!church?.id || !canManageSettings) return;
+    if (!confirmDestructiveAction("Remove this imported Google calendar and clear its events from the shared calendar view?")) return;
     const nextIds = officialGoogleCalendarIds.filter((id) => id !== calendarId);
     const nextTitles = officialGoogleCalendarIds
       .map((id, index) => ({ id, title: officialGoogleCalendarTitles[index] || "" }))
@@ -2382,7 +2676,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   );
 }
 
-function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session }) {
+function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
   const canManageAccountManagers = canManageChurchTeam(profile, church);
   const canSeeChurchAccount = canManageAccountManagers || canDeleteChurchAccount(profile, church);
@@ -2757,6 +3051,9 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               </div>
               {photoError && <div style={{marginTop:10,fontSize:12,color:C.danger,textAlign:"center"}}>{photoError}</div>}
               {photoMessage && <div style={{marginTop:10,fontSize:12,color:C.success,textAlign:"center"}}>{photoMessage}</div>}
+              <button className="btn-gold-compact" onClick={onStartTutorial} style={{marginTop:16,justifyContent:"center"}}>
+                Open Walkthrough
+              </button>
             </div>
           </div>
           <div className="card" style={{padding:18,textAlign:"left",display:"grid",gap:10,alignContent:"start"}}>
@@ -3036,6 +3333,142 @@ function TrashPage({ trashItems, clearTrash, restoreTrashItem }) {
               </button>
             </div>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const FAQ_CATEGORY_ORDER = ["Dashboard", "Focus Bar", "Tasks", "Frameworks", "Event Planning", "Calendar", "Calendar Settings", "Google Calendar", "Operations", "Access", "Finances", "Trash", "Account"];
+const FAQ_ITEMS = [
+  { tag: "Dashboard", question: "What should I check first on the Dashboard?", answer: "Start with unread notifications, then check Church Lock Up and your Focus Bar. The Dashboard is meant to show what needs your attention before you jump into a board." },
+  { tag: "Dashboard", question: "Why do some dashboard cards collapse?", answer: "Collapsible cards keep the Dashboard from becoming noisy. Open the sections you need that day and collapse the ones that are not immediately relevant." },
+  { tag: "Dashboard", question: "What is Team Snapshot for?", answer: "Team Snapshot gives senior leadership a quick view of what staff are actively focused on and what else is on their plate. It is designed for clarity, not surveillance." },
+  { tag: "Dashboard", question: "Why do I see Church Lock Up on my Dashboard?", answer: "Everyone benefits from knowing who is assigned to lock up for the current week. The Dashboard card makes that assignment visible without forcing staff into Operations." },
+  { tag: "Dashboard", question: "Why does my Dashboard look different from another staff member's?", answer: "Shepherd adjusts dashboard content based on role, assignments, notifications, and permissions. Admins and senior leaders may see leadership tools that other staff do not need." },
+
+  { tag: "Focus Bar", question: "Why does Shepherd ask me to choose a current focus?", answer: "The Focus Bar is a manual signal, not an automatic tracker. Choose the task that has your attention right now so your dashboard and leadership views reflect your current work." },
+  { tag: "Focus Bar", question: "Who can see what I select in the Focus Bar?", answer: "You can see it on your Dashboard. Senior Pastor and Admin-style leadership views can see staff focus through Team Snapshot so they understand workload without another check-in." },
+  { tag: "Focus Bar", question: "How do I unselect my current focus?", answer: "Click the selected task again or use the unselect option in the Focus Bar. Once unselected, Shepherd should no longer mark that task as what you are working on." },
+  { tag: "Focus Bar", question: "Does Shepherd automatically pick my focus?", answer: "No. Shepherd may show tasks that are available to choose, but the actual focus is intentionally manual so it reflects your real attention in the moment." },
+  { tag: "Focus Bar", question: "Why does a focus item show an event name?", answer: "If the task comes from event planning, Shepherd shows the event name as context. This keeps the task title readable while still showing what event it belongs to." },
+
+  { tag: "Tasks", question: "What happens when a task becomes overdue?", answer: "A task is considered overdue after its due date has passed. Shepherd notifies the assignee and the Senior Pastor so the right people know the item needs attention." },
+  { tag: "Tasks", question: "Where should I change a task's completion status?", answer: "Use the completion status selector on the task card or task detail view. The status should reflect where the task actually is: to do, in progress, in review, or done." },
+  { tag: "Tasks", question: "When should I use comments on a task?", answer: "Use comments when a decision, update, question, or approval context should stay attached to the work. That keeps the conversation from getting lost in text messages." },
+  { tag: "Tasks", question: "Why are some tasks connected to review?", answer: "Some tasks require approval before they are considered complete. Shepherd keeps the task visible through the review workflow so the assignee and reviewer know what is still pending." },
+  { tag: "Tasks", question: "Can I delete a task by accident?", answer: "Delete actions use the trash flow where possible, so deleted items can be restored from Trash. That gives the church a safety net for accidental removals." },
+
+  { tag: "Frameworks", question: "What is Frameworks for?", answer: "Frameworks is the entry point for Shepherd's workflow boards. Use it when you need to decide whether the work belongs in events, operations, content, or another board." },
+  { tag: "Frameworks", question: "Is Frameworks the same as Workspaces?", answer: "Yes. The app was renamed from Workspaces to Frameworks so the purpose is clearer for staff." },
+  { tag: "Frameworks", question: "Which card should I open for a new event?", answer: "Use Event Requests if the event still needs approval. Use Event Planning when you are building the plan, timeline, checklist, and tasks for an event that needs execution." },
+  { tag: "Frameworks", question: "Why are boards separated into cards?", answer: "Cards keep each workflow focused. Staff can enter the exact workflow they need instead of scrolling through unrelated tools." },
+  { tag: "Frameworks", question: "Can more cards be added later?", answer: "Yes. Frameworks is built to grow as the church adds workflows like content, facilities, care, or additional operations processes." },
+
+  { tag: "Event Planning", question: "What is the difference between Event Planning and Event Requests?", answer: "Event Requests are for submitting and approving a proposed church event. Event Planning is for building the actual plan: timeline nodes, checklist items, notes, and linked tasks." },
+  { tag: "Event Planning", question: "Why did a timeline node create a task?", answer: "Timeline nodes can optionally be added to your Tasks list. If selected, Shepherd creates or updates one linked task for that node instead of creating duplicates." },
+  { tag: "Event Planning", question: "What happens if I uncheck 'Also add this step to my Tasks list'?", answer: "Shepherd should remove the linked task from the active task list and avoid creating more copies. The timeline node can still remain in the event plan." },
+  { tag: "Event Planning", question: "Why should timeline nodes be connected to tasks?", answer: "Tasks give specific people ownership and due dates. Timeline nodes give the event plan structure. Connecting them lets the plan and task board work together." },
+  { tag: "Event Planning", question: "Who can see an event plan?", answer: "Shared event plans are visible to the appropriate church staff so planning does not get trapped with one person. Access still depends on the church's roles and permissions." },
+
+  { tag: "Calendar", question: "Where do calendar items come from?", answer: "The Calendar can show imported Google calendar items, My Tasks, approved event requests, direct church calendar entries, and approved staff availability." },
+  { tag: "Calendar", question: "Why is the Calendar weekly instead of monthly?", answer: "The weekly view is easier to read on mobile and gives staff more useful detail inside each day. Month and year controls still let you move around quickly." },
+  { tag: "Calendar", question: "Can I schedule months ahead?", answer: "Yes. The calendar can be navigated ahead within the allowed year range, and events or tasks with future dates can appear when that week is selected." },
+  { tag: "Calendar", question: "Can I look back at past calendar weeks?", answer: "Yes. You can move backward to review past weeks within the allowed calendar range. Older imported data depends on what has been brought into Shepherd." },
+  { tag: "Calendar", question: "Why do filters only show Google calendars and My Tasks?", answer: "The filters were simplified so staff can choose between the imported church calendars and their personal task layer without fighting too many overlapping filter buttons." },
+
+  { tag: "Calendar Settings", question: "Who can manage Calendar Settings?", answer: "Calendar Settings are managed by a church admin from Account > Calendar Settings. This keeps the shared church calendar connection controlled and consistent." },
+  { tag: "Calendar Settings", question: "Where do I connect Google?", answer: "Go to Account, open Calendar Settings, and use Connect Google. Once connected, the admin can select which calendars Shepherd should import." },
+  { tag: "Calendar Settings", question: "Can staff connect their own Google calendars?", answer: "The current design is church-level, not personal. Staff view the shared church calendar feed, while admins manage which Google calendars are imported." },
+  { tag: "Calendar Settings", question: "How do I remove an imported calendar?", answer: "Use Calendar Settings to remove the imported calendar. Removing it should also clear that calendar's imported items from the shared Shepherd calendar view." },
+  { tag: "Calendar Settings", question: "Why are settings under Account?", answer: "Calendar connection is an account-level church setting, so it lives beside other protected account controls instead of crowding the daily Calendar page." },
+
+  { tag: "Google Calendar", question: "If Google Calendar changes, does Shepherd update automatically?", answer: "Shepherd refreshes imported calendars when an authorized admin refreshes them. This controlled import approach helps avoid accidental edits and duplicate records." },
+  { tag: "Google Calendar", question: "Why is Google Calendar not two-way right now?", answer: "One-way import is safer for this stage. It lets Shepherd read the church calendar without risking unexpected changes back into Google." },
+  { tag: "Google Calendar", question: "Why did Shepherd ask to reconnect Google?", answer: "Google access uses tokens. If the live token is missing or expired, an admin may need to reconnect so Shepherd can refresh the shared calendar again." },
+  { tag: "Google Calendar", question: "Can we import multiple Google calendars?", answer: "Yes. The admin can select multiple official Google calendars so staff can filter and view the calendars the church wants to share." },
+  { tag: "Google Calendar", question: "Why did a calendar name look wrong?", answer: "Imported events are tied to Google calendar source IDs. If labels look mismatched, the imported calendar list may need to be refreshed or the old imported records cleared and reimported." },
+
+  { tag: "Operations", question: "Which staff availability items need approval?", answer: "PTO requests go through review. Out Of Office and Sick Day entries are logged directly because they are more immediate status updates." },
+  { tag: "Operations", question: "Who approves PTO requests?", answer: "PTO requests are intended to be reviewed by church leadership, including the Senior Pastor and Church Administrator, before they appear as approved time off." },
+  { tag: "Operations", question: "What happens after PTO is approved?", answer: "Once approved, Shepherd can place that approved time off onto the shared calendar so the staff can plan around the absence." },
+  { tag: "Operations", question: "How does Church Lock Up work?", answer: "Operations includes a weekly lock-up assignment from Monday through Sunday. Authorized users can assign, swap, or edit who is responsible that week." },
+  { tag: "Operations", question: "Why is lock-up shown on everyone's Dashboard?", answer: "Lock-up affects the whole team after services, so Shepherd surfaces the current assignment where staff will actually see it." },
+
+  { tag: "Access", question: "Why can I see some pages but not edit everything?", answer: "Shepherd uses role and assignment-based access. Some pages are visible for clarity, while protected actions depend on role, ministry assignment, budget assignment, or account manager access." },
+  { tag: "Access", question: "What does the lock icon mean?", answer: "A lock means the area exists, but your current account does not have access to open or manage it. This helps staff know the feature is there without exposing controls." },
+  { tag: "Access", question: "Who can manage staff access?", answer: "Church administrators, senior leaders, or Shepherd Account Managers can manage staff access depending on the specific setting." },
+  { tag: "Access", question: "Why does local access sometimes look different from live?", answer: "Local and live can differ if code, database rows, or browser sessions are not in the same state. Refreshing, logging out and back in, or checking the linked staff account often resolves confusion." },
+  { tag: "Access", question: "Why does a real account matter more than a staff draft?", answer: "Permissions work best when the staff database is linked to the person's actual Shepherd login. Draft staff records can display names but may not carry full account access." },
+
+  { tag: "Finances", question: "Why can some staff see Finances and others cannot?", answer: "Finances are tied to ministry budgets and finance access. Staff should see budget areas assigned to their actual Shepherd account, while broader finance roles can see more." },
+  { tag: "Finances", question: "What does Approved Amount For This Year mean?", answer: "It is the amount approved by the board or church leadership for that ministry's yearly budget. Shepherd uses it as the starting reference for budget tracking." },
+  { tag: "Finances", question: "What is a purchase order for?", answer: "Purchase orders help staff request and track spending before money is committed. They create a review trail around planned expenses." },
+  { tag: "Finances", question: "Why should budgets be assigned to staff?", answer: "Assigning a ministry budget connects the right staff member to the right financial view. That keeps finances useful without making every budget visible to everyone." },
+  { tag: "Finances", question: "Why are budget cards simplified?", answer: "The cards focus on the essentials: ministry, approved amount, used amount, and remaining balance. Extra tags were removed to reduce visual noise." },
+
+  { tag: "Trash", question: "What does Trash restore?", answer: "Trash holds supported deleted Shepherd items so accidental deletes are less scary. Items can be restored instead of being gone immediately." },
+  { tag: "Trash", question: "Why use a trash icon instead of a big delete button?", answer: "The trash icon keeps destructive actions quieter and more consistent across the app while still making deletion available where appropriate." },
+  { tag: "Trash", question: "Can everything be restored from Trash?", answer: "Trash supports the main Shepherd item types that have been wired into the restore flow. Some system records or external Google imports may need a refresh or reimport instead." },
+  { tag: "Trash", question: "Who should clear Trash?", answer: "Only someone confident the deleted items are no longer needed should clear Trash. Restoring first is safer when there is any doubt." },
+  { tag: "Trash", question: "Will deleting an imported calendar clear its events?", answer: "Removing an imported Google calendar should clear that calendar's imported events from the shared view. That is separate from deleting normal Shepherd tasks or records." },
+
+  { tag: "Account", question: "What is a Shepherd Account Manager?", answer: "A Shepherd Account Manager has church-level account control, including protected church settings. Churches can keep more than one manager to avoid lockout." },
+  { tag: "Account", question: "Where do I update my profile photo?", answer: "Go to Account > My Account and use the profile photo controls. Your photo helps staff recognize accounts more easily across the app." },
+  { tag: "Account", question: "How do I reset my password?", answer: "Go to Account > My Account and use Password Recovery. Shepherd sends a reset email to the email address on your account." },
+  { tag: "Account", question: "Where are church-level settings?", answer: "Church-level settings live under Account in sections like Church Account and Calendar Settings. Locked sections stay visible so staff understand where those controls live." },
+  { tag: "Account", question: "Can there be more than one account manager?", answer: "Yes. Shepherd supports multiple account managers so responsibility can be shared and the church is not dependent on one person's login." },
+];
+
+function FAQPage({ onStartTutorial }) {
+  const groupedFaqItems = FAQ_CATEGORY_ORDER
+    .map((category) => ({
+      category,
+      items: FAQ_ITEMS.filter((item) => item.tag === category),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  return (
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
+        <div style={{justifySelf:"start",textAlign:"left"}}>
+          <h2 style={pageTitleStyle}>FAQ</h2>
+          <p style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.6,maxWidth:680}}>
+            Practical answers for the parts of Shepherd that need a little more detail than the walkthrough.
+          </p>
+        </div>
+        <div className="page-actions" style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          <button className="btn-gold" onClick={onStartTutorial}>
+            Reopen Walkthrough
+          </button>
+        </div>
+      </div>
+
+      <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:20}}>
+        {groupedFaqItems.map((group) => (
+          <section key={group.category} style={{display:"grid",gap:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{height:1,flex:1,background:C.border}} />
+              <div style={{fontSize:11,color:C.gold,fontWeight:800,textTransform:"uppercase",letterSpacing:".12em",whiteSpace:"nowrap"}}>
+                {group.category}
+              </div>
+              <div style={{height:1,flex:1,background:C.border}} />
+            </div>
+            {group.items.map((item) => (
+              <details
+                key={item.question}
+                style={{border:`1px solid ${C.border}`,borderRadius:14,background:C.surface,overflow:"hidden"}}
+              >
+                <summary style={{cursor:"pointer",padding:"16px 18px",display:"flex",alignItems:"center",gap:12,listStyle:"none"}}>
+                  <span style={{minWidth:10,height:10,borderRadius:"50%",background:C.gold,boxShadow:`0 0 0 4px ${C.goldGlow}`}} />
+                  <span style={{flex:1,minWidth:0,fontSize:15,fontWeight:700,color:C.text,lineHeight:1.4}}>{item.question}</span>
+                </summary>
+                <div style={{padding:"0 18px 18px 40px",fontSize:13,color:C.muted,lineHeight:1.8}}>
+                  {item.answer}
+                </div>
+              </details>
+            ))}
+          </section>
         ))}
       </div>
     </div>
@@ -4151,6 +4584,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     setShowTimelineModal(true);
   };
   const deleteWorkflowTimelineItem = async (workflow, itemId) => {
+    if (!confirmDestructiveAction("Delete this timeline node?")) return;
     const nextItems = (workflow.timeline_items || []).filter((item) => item.id !== itemId);
     await updateWorkflow(workflow, { timeline_items: nextItems });
     setTimelineDraft({ id: null, title: "", date: "", details: "", includeInTasks: false, reviewRequired: false, reviewers: [] });
@@ -4195,6 +4629,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     setChecklistDraft("");
   };
   const deleteWorkflowChecklistItem = async (workflow, itemId) => {
+    if (!confirmDestructiveAction("Delete this checklist item?")) return;
     const nextItems = (workflow.checklist_items || []).filter((item) => item.id !== itemId);
     await updateWorkflow(workflow, { checklist_items: nextItems });
   };
@@ -4214,6 +4649,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   };
   const deleteWorkflow = async (workflow) => {
     if (!workflow?.id) return;
+    if (!confirmDestructiveAction(`Delete ${workflow.event_name || workflow.title || "this event plan"}? You can restore supported items from Trash.`)) return;
     moveItemToTrash?.({
       entity_type: "event_plan",
       entity_label: "Event Plan",
@@ -4230,6 +4666,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   };
   const deleteRequest = async (request) => {
     if (!request?.id) return;
+    if (!confirmDestructiveAction(`Delete ${request.event_name || "this event request"}? You can restore supported items from Trash.`)) return;
     moveItemToTrash?.({
       entity_type: "event_request",
       entity_label: "Event Request",
@@ -4966,21 +5403,21 @@ function Workspaces({ setActive }) {
   return (
     <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
       <div style={{marginBottom:28}}>
-        <h2 style={pageTitleStyle}>Planning Center</h2>
+        <h2 style={pageTitleStyle}>Frameworks</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>
       Open a board to work inside a dedicated ministry framework.
         </p>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:18}}>
+      <div className="frameworks-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,280px),1fr))",gap:18}}>
         {boards.map((board) => (
           <button
             key={board.id}
             onClick={() => setActive(board.id)}
-            className="card"
-            style={{padding:22,textAlign:"left",cursor:"pointer",background:C.card,border:`1px solid ${C.border}`,display:"flex",flexDirection:"column",minHeight:180}}
+            className="card framework-card"
+            style={{padding:22,textAlign:"left",cursor:"pointer",background:C.card,border:`1px solid ${C.border}`,display:"flex",flexDirection:"column",minHeight:180,maxWidth:"100%",minWidth:0,overflow:"hidden"}}
           >
-            <div style={sectionTitleStyle}>{board.name}</div>
-            <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>{board.summary}</div>
+            <div className="framework-card-title" style={{...sectionTitleStyle,overflowWrap:"anywhere"}}>{board.name}</div>
+            <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6,overflowWrap:"break-word"}}>{board.summary}</div>
             <div style={{marginTop:"auto",alignSelf:"flex-end"}}>
               <span className="btn-gold-compact">Open board</span>
             </div>
@@ -5151,8 +5588,8 @@ function ContentMediaBoard({ tasks, setActive }) {
   ];
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
-      <div className="card" style={{padding:22}}>
+    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200,width:"100%",overflowX:"hidden"}}>
+      <div className="card content-board-shell" style={{padding:22,maxWidth:"100%",overflow:"hidden"}}>
         <div className="events-board-header" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div style={{textAlign:"left"}}>
             <h3 style={{...pageTitleStyle,textAlign:"left",fontSize:"clamp(34px, 7vw, 46px)",lineHeight:1.12,maxWidth:680}}>
@@ -5166,17 +5603,21 @@ function ContentMediaBoard({ tasks, setActive }) {
             <button className="btn-outline" onClick={() => setActive("tasks")}>Open Tasks</button>
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:16,width:"100%",maxWidth:"100%"}}>
           {columns.map((column) => {
             const columnTasks = contentTasks.filter((task) => task.status === column.id);
             const statusStyle = STATUS_STYLES[column.id] || STATUS_STYLES.todo;
             return (
               <div
                 key={column.id}
-                className="card"
+                className="card content-board-column"
                 style={{
                   padding:16,
                   minHeight:420,
+                  width:"100%",
+                  maxWidth:"100%",
+                  minWidth:0,
+                  overflow:"hidden",
                   borderTop:`3px solid ${statusStyle.accent}`,
                   background:`linear-gradient(180deg, ${statusStyle.surface} 0%, ${C.card} 24%)`,
                 }}
@@ -5193,6 +5634,7 @@ function ContentMediaBoard({ tasks, setActive }) {
                     <button
                       key={task.id}
                       type="button"
+                      className="content-task-row"
                       style={{
                         padding:16,
                         border:`1px solid ${C.border}`,
@@ -5204,15 +5646,18 @@ function ContentMediaBoard({ tasks, setActive }) {
                         gridTemplateColumns:"1fr auto",
                         gap:16,
                         alignItems:"start",
+                        width:"100%",
+                        maxWidth:"100%",
+                        minWidth:0,
                       }}
                     >
-                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                        <div style={{fontSize:20,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
+                        <div style={{fontSize:20,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none",overflowWrap:"break-word"}}>
                           {task.title}
                         </div>
-                        <div style={{fontSize:11,color:C.muted}}>Assigned to {task.assignee}</div>
+                        <div style={{fontSize:11,color:C.muted,overflowWrap:"break-word"}}>Assigned to {task.assignee}</div>
                       </div>
-                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,textAlign:"right"}}>
+                      <div className="content-task-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,textAlign:"right",minWidth:0}}>
                         <div style={{fontSize:11,color:C.muted}}>Due {fmtDate(task.due_date)}</div>
                         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
                           {task.review_required && (
@@ -6467,6 +6912,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
     setEditingNotepadDraft("");
   };
   const deletePersonalNote = (entryId) => {
+    if (!confirmDestructiveAction("Delete this personal note?")) return;
     setPersonalNotepadEntries((current) => (current || []).filter((entry) => entry.id !== entryId));
     if (editingNotepadId === entryId) {
       setEditingNotepadId(null);
@@ -7258,6 +7704,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
 
   const deleteTaskComment = async (comment) => {
     if (!selectedTask?.id || !canManageComment(comment, profile)) return;
+    if (!confirmDestructiveAction("Delete this task comment?")) return;
     setTaskCommentError("");
     if (!isPreview) {
       const { data, error } = await supabase.rpc("delete_task_comment", {
@@ -7298,6 +7745,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
 
   const del = async (id) => {
     const taskToDelete = tasks.find((task) => task.id === id);
+    if (!confirmDestructiveAction(`Delete ${taskToDelete?.title || "this task"}? You can restore supported items from Trash.`)) return;
     if (taskToDelete) {
       moveItemToTrash?.({
         entity_type: "task",
@@ -8243,6 +8691,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   };
   const deletePurchaseOrder = async (order) => {
     if (!canDeletePurchaseOrder(profile, order) || !order?.id) return;
+    if (!confirmDestructiveAction(`Delete purchase order "${order.title || order.item || "this request"}"?`)) return;
     if (isPreview) {
       setPurchaseOrders((current) => (current || []).filter((entry) => entry.id !== order.id));
       return;
@@ -8316,6 +8765,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   };
   const deletePurchaseOrderComment = async (order, comment) => {
     if (!order?.id || !comment?.id || !canManageComment(comment, profile)) return;
+    if (!confirmDestructiveAction("Delete this purchase order comment?")) return;
     const nextComments = (order.comments || []).filter((entry) => entry.id !== comment.id);
     const saved = await savePurchaseOrderComments(order.id, nextComments);
     if (!saved) return;
@@ -8352,6 +8802,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   };
 
   const removeBudgetItemRow = (index) => {
+    if (!confirmDestructiveAction("Remove this budget line item?")) return;
     setBudgetForm((current) => {
       const nextItems = (current.items || []).filter((_, itemIndex) => itemIndex !== index);
       return {
@@ -8364,6 +8815,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const removeBudgetMinistry = async () => {
     if (!financeView || !budgetForm.id) return;
     const ministryName = budgetForm.ministry;
+    if (!confirmDestructiveAction(`Remove the ${ministryName || "selected"} ministry budget? This also removes that ministry from assigned staff profiles.`)) return;
     if (isPreview) {
       setMinistries?.((current) => (current || []).filter((entry) => entry.id !== budgetForm.id));
       setPreviewUsers?.((current) => (current || []).map((user) => normalizeAccessUser({
@@ -9456,6 +9908,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [archivedNotificationIds, setArchivedNotificationIds] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
   const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
   const shownNotificationIdsRef = useRef(new Set());
 
@@ -9468,6 +9921,7 @@ export default function App() {
     "operations-board",
     "tasks",
     "trash",
+    "faq",
     "members",
     "budget",
     "calendar",
@@ -9538,6 +9992,10 @@ export default function App() {
     setTaskOpenRequest(null);
   }, []);
 
+  const startTutorial = useCallback(() => {
+    setShowTutorial(true);
+  }, []);
+
   const moveItemToTrash = (item) => {
     if (!item) return;
     const record = {
@@ -9549,6 +10007,7 @@ export default function App() {
   };
 
   const clearTrash = () => {
+    if (!confirmDestructiveAction("Permanently clear every item in Trash? This cannot be undone.")) return;
     setTrashItems([]);
   };
   const restoreTrashItem = async (item) => {
@@ -9745,6 +10204,14 @@ export default function App() {
   }, [church?.id, trashItems]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || loading || !session || !profile?.id || isPublicEventRequestRoute) return;
+    const storageKey = getTutorialCompletedStorageKey(profile.id);
+    if (window.localStorage.getItem(storageKey) === "true") return;
+    const timer = window.setTimeout(() => setShowTutorial(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [loading, session, profile?.id, isPublicEventRequestRoute]);
+
+  useEffect(() => {
     if (typeof Notification === "undefined" || browserPermission !== "granted") return;
     const unseen = unreadNotifications
       .slice(0, 3)
@@ -9847,13 +10314,14 @@ export default function App() {
 
   const pages = {
     dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
-    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} />,
+    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} />,
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
     "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} />,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest}/>,
+    faq: <FAQPage onStartTutorial={startTutorial} />,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,
     members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
@@ -9865,9 +10333,16 @@ export default function App() {
     <>
       <GS/>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length}/>
+        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
         <main style={{flex:1,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
       </div>
+      {showTutorial && (
+        <ShepherdTutorial
+          profile={profile}
+          church={church}
+          onClose={() => setShowTutorial(false)}
+        />
+      )}
     </>
   );
 }

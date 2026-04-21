@@ -10533,17 +10533,10 @@ export default function App() {
       setTrashItems([]);
     }
     if (prof?.church_id) {
-      const [ch, t, er, p, tr, po, sar, cla, ce, m, staff, profileRows, notificationRows] = await Promise.all([
+      const [ch, t, cla, staff, profileRows, notificationRows] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
-        supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
-        supabase.from("people").select("*").eq("church_id", prof.church_id).order("full_name"),
-        supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
-        supabase.from("purchase_orders").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
-        supabase.from("staff_availability_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("church_lockup_assignments").select("*").eq("church_id", prof.church_id).order("week_of", { ascending: true }),
-        supabase.from("calendar_events").select("*").eq("church_id", prof.church_id).order("event_date", { ascending: true }),
-        supabase.from("ministries").select("*").eq("church_id", prof.church_id),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
         supabase.from("notifications").select("*").eq("recipient_profile_id", prof.id).order("created_at", { ascending: false }).limit(100),
@@ -10557,14 +10550,7 @@ export default function App() {
       setProfile(enhancedProfile);
       setChurch(ch.data);
       setTasks((t.data || []).map(normalizeTask));
-      setEventRequests(er.data || []);
-      setPeople(p.data || []);
-      setTransactions(tr.data || []);
-      setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
-      setStaffAvailabilityRequests((sar.data || []).map(normalizeStaffAvailabilityRequest));
       setChurchLockupAssignments((cla.data || []).map(normalizeChurchLockupAssignment));
-      setCalendarEvents(ce.data || []);
-      setMinistries(m.data || []);
       setPersistentNotifications(notificationRows.data || []);
       const profileFocusMap = new Map((profileRows.data || []).map((entry) => [entry.staff_id || entry.id || entry.full_name, entry]));
       setPreviewUsers((staff.data || []).map((entry) => {
@@ -10576,6 +10562,26 @@ export default function App() {
           current_focus_updated_at: match?.current_focus_updated_at || null,
         });
       }));
+      setLoading(false);
+
+      Promise.all([
+        supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+        supabase.from("people").select("*").eq("church_id", prof.church_id).order("full_name"),
+        supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
+        supabase.from("purchase_orders").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+        supabase.from("staff_availability_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+        supabase.from("calendar_events").select("*").eq("church_id", prof.church_id).order("event_date", { ascending: true }),
+        supabase.from("ministries").select("*").eq("church_id", prof.church_id),
+      ]).then(([er, p, tr, po, sar, ce, m]) => {
+        setEventRequests(er.data || []);
+        setPeople(p.data || []);
+        setTransactions(tr.data || []);
+        setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
+        setStaffAvailabilityRequests((sar.data || []).map(normalizeStaffAvailabilityRequest));
+        setCalendarEvents(ce.data || []);
+        setMinistries(m.data || []);
+      }).catch(() => {});
+      return;
     } else {
       setProfile(normalizedProfile);
       setChurch(null);

@@ -50,6 +50,18 @@ const fmtShortDate = (d) => {
   const parsed = parseAppDate(d);
   return parsed ? parsed.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) : "—";
 };
+const stripGoogleCalendarMetadata = (notes) => String(notes || "")
+  .split(/\n+/)
+  .filter((line) => {
+    const trimmed = line.trim();
+    return !trimmed.startsWith("google-calendar-id:")
+      && !trimmed.startsWith("google-event-id:")
+      && !trimmed.startsWith("google-calendar-title:")
+      && !trimmed.startsWith("google-calendar:");
+  })
+  .join("\n")
+  .replace(/\n{3,}/g, "\n\n")
+  .trim();
 const startOfWeekMonday = (value) => {
   const parsed = parseAppDate(value) || new Date();
   const base = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
@@ -595,6 +607,7 @@ const sectionTitleStyle = {
   fontSize: 30,
   color: C.text,
 };
+const widePageStyle = { padding: "32px 36px", width: "100%", maxWidth: "none", margin: 0 };
 const STATUS_STYLES = {
   todo: { label: "Not Started", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
   "in-progress": { label: "In Progress", accent: C.blue, surface: "rgba(91,143,232,0.08)" },
@@ -2170,8 +2183,6 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   );
   const churchId = church?.id || profile?.church_id || null;
   const canManageSettings = canManageCalendarSettings(profile);
-  const getGoogleImportMarker = (calendarId, eventId) => `google-calendar-id:${encodeURIComponent(calendarId)}\ngoogle-event-id:${eventId}`;
-  const getGoogleCalendarTitleMarker = (title) => `google-calendar-title:${title}`;
   const getGoogleCalendarIdFromNotes = (notes) => {
     const text = String(notes || "");
     const safeMatch = text.match(/google-calendar-id:([^\n]+)/);
@@ -2491,11 +2502,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
               google_calendar_source_id: calendarId,
               google_calendar_source_title: sourceTitle,
               google_calendar_source_event_id: entry.id,
-              notes: [
-                getGoogleImportMarker(calendarId, entry.id),
-                getGoogleCalendarTitleMarker(sourceTitle),
-                entry.description || "",
-              ].filter(Boolean).join("\n\n"),
+              notes: stripGoogleCalendarMetadata(entry.description || "") || null,
             };
           })
           .filter(Boolean);
@@ -3136,7 +3143,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:980}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:24,textAlign:"left"}}>
         <h2 style={pageTitleStyle}>Account</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>
@@ -3395,7 +3402,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
 
 function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, setActive, browserPermission, enableBrowserNotifications }) {
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={pageTitleStyle}>Notifications</h2>
@@ -3435,7 +3442,7 @@ function TrashPage({ trashItems, clearTrash, restoreTrashItem }) {
   const sortedItems = [...(trashItems || [])].sort((a, b) => new Date(b.deleted_at || 0) - new Date(a.deleted_at || 0));
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={pageTitleStyle}>Trash</h2>
@@ -3565,7 +3572,7 @@ function FAQPage({ onStartTutorial }) {
     .filter((group) => group.items.length > 0);
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={pageTitleStyle}>FAQ</h2>
@@ -3871,7 +3878,7 @@ function ChurchTeamPage({ church, profile, setProfile, previewUsers, setPreviewU
   };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={pageTitleStyle}>Church Team</h2>
@@ -4942,7 +4949,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   }, [showTimelineModal]);
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="card" style={{padding:22}}>
         <div className="events-board-header" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div style={{textAlign:"left"}}>
@@ -5649,7 +5656,7 @@ function Workspaces({ setActive }) {
   ];
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:28}}>
         <h2 style={pageTitleStyle}>Frameworks</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>
@@ -5686,7 +5693,7 @@ function ContentMediaBoard({ tasks, setActive }) {
   ];
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200,width:"100%",overflowX:"hidden"}}>
+    <div className="fadeIn mobile-pad" style={{...widePageStyle,overflowX:"hidden"}}>
       <div className="card content-board-shell" style={{padding:22,maxWidth:"100%",overflow:"hidden"}}>
         <div className="events-board-header" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div style={{textAlign:"left"}}>
@@ -5785,7 +5792,7 @@ function ContentMediaBoard({ tasks, setActive }) {
 
 function PlaceholderBoard({ title, summary, systems }) {
   return (
-    <div className="fadeIn" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn" style={widePageStyle}>
       <div className="card" style={{padding:24}}>
         <h2 style={pageTitleStyle}>{title}</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:6,maxWidth:620}}>{summary}</p>
@@ -6573,7 +6580,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   );
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div
         className="card"
         style={{
@@ -7074,7 +7081,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
   };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1200}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:28}}>
         <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:42,fontWeight:500,color:C.text,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
         <p style={{color:C.muted,marginTop:4,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
@@ -8095,7 +8102,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={{...pageTitleStyle,fontSize:52}}>Tasks</h2>
@@ -8537,7 +8544,7 @@ function Members({ people, setPeople, churchId, church, profile }) {
   };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
         <div>
           <h2 style={pageTitleStyle}>People Care</h2>
@@ -8757,7 +8764,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
 
   if (!canViewBudget(profile)) {
     return (
-      <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+      <div className="fadeIn mobile-pad" style={widePageStyle}>
         <div style={{marginBottom:24}}>
           <h2 style={{...pageTitleStyle,textAlign:"left"}}>Finances</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>Budget visibility is limited to Finance and ministry leaders.</p>
@@ -9223,7 +9230,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100,textAlign:"left"}}>
+    <div className="fadeIn mobile-pad" style={{...widePageStyle,textAlign:"left"}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24,textAlign:"left"}}>
         <div style={{textAlign:"left",justifySelf:"start"}}>
           <h2 style={{...pageTitleStyle,textAlign:"left"}}>{financeView ? "Budget Overview" : "Your Budgets"}</h2>
@@ -9726,7 +9733,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
 // ── Ministries ─────────────────────────────────────────────────────────────
 function Ministries({ ministries }) {
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100}}>
+    <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:24}}>
         <h2 style={pageTitleStyle}>Ministries</h2>
         <p style={{color:C.muted,fontSize:13,marginTop:4}}>Overview of all ministry departments</p>
@@ -9760,6 +9767,14 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const today = new Date();
   const calendarYears = [today.getFullYear(), today.getFullYear() + 1];
+  const clampCalendarCursor = (value) => {
+    const parsed = parseAppDate(value) || today;
+    const min = new Date(calendarYears[0], 0, 1);
+    const max = new Date(calendarYears[1], 11, 31);
+    if (parsed < min) return min;
+    if (parsed > max) return max;
+    return parsed;
+  };
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [calendarFilters, setCalendarFilters] = useState({
     myTasks: true,
@@ -9768,6 +9783,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const [showCalendarItemForm, setShowCalendarItemForm] = useState(false);
   const [editingCalendarEventId, setEditingCalendarEventId] = useState(null);
   const [selectedCalendarItem, setSelectedCalendarItem] = useState(null);
+  const [calendarViewMode, setCalendarViewMode] = useState("list");
   const [calendarItemError, setCalendarItemError] = useState("");
   const [calendarItemForm, setCalendarItemForm] = useState({
     calendar_type: "churchEvents",
@@ -9893,6 +9909,27 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       isToday: toDateKey(date) === toDateKey(today),
     };
   });
+  const monthStart = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1);
+  const monthEnd = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 0);
+  const monthGridStart = new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate() - ((monthStart.getDay() + 6) % 7));
+  const monthGridDays = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(monthGridStart.getFullYear(), monthGridStart.getMonth(), monthGridStart.getDate() + index);
+    const key = toDateKey(date);
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return {
+      key,
+      date,
+      items: calendarItems.filter((item) => item.date === key),
+      isToday: key === toDateKey(today),
+      isPast: date < todayStart,
+      isCurrentMonth: date.getMonth() === calendarCursor.getMonth(),
+    };
+  });
+  const visibleMonthItems = calendarItems.filter((item) => {
+    const parsed = parseAppDate(item.date);
+    if (!parsed) return false;
+    return parsed >= monthStart && parsed <= monthEnd;
+  });
   const filterOptions = [
     { key: "myTasks", label: "My Tasks" },
   ];
@@ -9966,7 +10003,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       start_time: item.source.start_time || "",
       end_time: item.source.end_time || "",
       location: item.source.location || "",
-      notes: item.source.notes || "",
+      notes: stripGoogleCalendarMetadata(item.source.notes),
     });
     setShowCalendarItemForm(true);
     if (typeof window !== "undefined") {
@@ -10002,13 +10039,10 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   };
 
   return (
-    <div className="fadeIn mobile-pad" style={{padding:"32px 36px",maxWidth:1100,textAlign:"left"}}>
+    <div className="fadeIn mobile-pad" style={{...widePageStyle,textAlign:"left"}}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",marginBottom:24,textAlign:"left"}}>
         <div style={{textAlign:"left"}}>
           <h2 style={pageTitleStyle}>Calendar</h2>
-          <p style={{color:C.muted,fontSize:13,marginTop:4}}>
-            {fmtDate(weekStart)} - {fmtDate(weekEnd)}
-          </p>
         </div>
         <div className="page-actions" style={{display:"flex",justifyContent:"flex-end"}}>
           <button className="btn-gold" onClick={() => showCalendarItemForm ? closeCalendarItemForm() : setShowCalendarItemForm(true)}>
@@ -10064,54 +10098,74 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
           </div>
         </div>
       )}
-      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:18}}>
-        {officialGoogleCalendarIds.map((id, index) => {
-          const active = resolvedGoogleCalendarFilters[id] !== false;
-          const label = officialGoogleCalendarTitleMap[id] || `Calendar ${index + 1}`;
-          return (
-            <button
-              key={id}
-              type="button"
-              className={active ? "btn-gold-compact" : "btn-outline"}
-              onClick={() => setGoogleCalendarFilters((current) => ({ ...current, [id]: !active }))}
-              style={active
-                ? { boxShadow:`0 0 0 1px ${C.goldDim}, 0 10px 24px rgba(201,168,76,.24)`, display:"inline-flex", alignItems:"center", gap:8 }
-                : { padding:"6px 12px", fontSize:12, opacity:.78 }}
-            >
-              {active ? (
-                <>
-                  <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:4,background:"rgba(13,18,31,.24)",border:`1px solid ${C.goldText}`,fontSize:11,lineHeight:1,color:C.goldText}}>✓</span>
-                  <span>{label}</span>
-                </>
-              ) : label}
-            </button>
-          );
-        })}
-        {filterOptions.map((option) => (
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
+        {[
+          { key: "list", label: "List View" },
+          { key: "month", label: "Month View" },
+        ].map((option) => (
           <button
             key={option.key}
             type="button"
-            className={calendarFilters[option.key] ? "btn-gold-compact" : "btn-outline"}
-            onClick={() => setCalendarFilters((current) => ({ ...current, [option.key]: !current[option.key] }))}
-            style={calendarFilters[option.key]
-              ? { boxShadow:`0 0 0 1px ${C.goldDim}, 0 10px 24px rgba(201,168,76,.24)`, display:"inline-flex", alignItems:"center", gap:8 }
-              : { padding:"6px 12px", fontSize:12, opacity:.78 }}
+            className={calendarViewMode === option.key ? "btn-gold-compact" : "btn-outline"}
+            onClick={() => setCalendarViewMode(option.key)}
+            style={calendarViewMode === option.key ? {padding:"7px 13px",fontSize:12} : {padding:"7px 13px",fontSize:12,opacity:.78}}
           >
-            {calendarFilters[option.key] ? (
-              <>
-                <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:4,background:"rgba(13,18,31,.24)",border:`1px solid ${C.goldText}`,fontSize:11,lineHeight:1,color:C.goldText}}>✓</span>
-                <span>{option.label}</span>
-              </>
-            ) : option.label}
+            {option.label}
           </button>
         ))}
       </div>
       <div className="card" style={{padding:20,textAlign:"left"}}>
         <div style={{display:"grid",gap:12,marginBottom:18,textAlign:"left"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
-            <h3 style={{...sectionTitleStyle,margin:0}}>Weekly Calendar</h3>
+            <h3 style={{...sectionTitleStyle,margin:0}}>{calendarViewMode === "month" ? "Monthly Calendar" : "Weekly Calendar"}</h3>
           </div>
-          <p style={{color:C.muted,fontSize:13,lineHeight:1.6,margin:0}}>View this week at a glance across the calendars you have turned on.</p>
+          <p style={{color:C.muted,fontSize:13,lineHeight:1.6,margin:0}}>
+            {calendarViewMode === "month"
+              ? "See the full month across the calendars you have turned on."
+              : "View this week at a glance across the calendars you have turned on."}
+          </p>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            {officialGoogleCalendarIds.map((id, index) => {
+              const active = resolvedGoogleCalendarFilters[id] !== false;
+              const label = officialGoogleCalendarTitleMap[id] || `Calendar ${index + 1}`;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={active ? "btn-gold-compact" : "btn-outline"}
+                  onClick={() => setGoogleCalendarFilters((current) => ({ ...current, [id]: !active }))}
+                  style={active
+                    ? { boxShadow:`0 0 0 1px ${C.goldDim}, 0 10px 24px rgba(201,168,76,.24)`, display:"inline-flex", alignItems:"center", gap:8 }
+                    : { padding:"6px 12px", fontSize:12, opacity:.78 }}
+                >
+                  {active ? (
+                    <>
+                      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:4,background:"rgba(13,18,31,.24)",border:`1px solid ${C.gold}`,fontSize:11,lineHeight:1,color:C.gold}}>✓</span>
+                      <span>{label}</span>
+                    </>
+                  ) : label}
+                </button>
+              );
+            })}
+            {filterOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={calendarFilters[option.key] ? "btn-gold-compact" : "btn-outline"}
+                onClick={() => setCalendarFilters((current) => ({ ...current, [option.key]: !current[option.key] }))}
+                style={calendarFilters[option.key]
+                  ? { boxShadow:`0 0 0 1px ${C.goldDim}, 0 10px 24px rgba(201,168,76,.24)`, display:"inline-flex", alignItems:"center", gap:8 }
+                  : { padding:"6px 12px", fontSize:12, opacity:.78 }}
+              >
+                {calendarFilters[option.key] ? (
+                  <>
+                    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:4,background:"rgba(13,18,31,.24)",border:`1px solid ${C.gold}`,fontSize:11,lineHeight:1,color:C.gold}}>✓</span>
+                    <span>{option.label}</span>
+                  </>
+                ) : option.label}
+              </button>
+            ))}
+          </div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,width:"100%",maxWidth:320}}>
               <div style={{display:"grid",gap:6}}>
@@ -10119,7 +10173,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                 <select
                   className="input-field"
                   value={calendarCursor.getMonth()}
-                  onChange={(e) => setCalendarCursor((current) => new Date(current.getFullYear(), Number(e.target.value), 1))}
+                  onChange={(e) => setCalendarCursor((current) => clampCalendarCursor(new Date(current.getFullYear(), Number(e.target.value), 1)))}
                   style={{background:C.surface,padding:"10px 12px",fontSize:13}}
                 >
                   {months.map((month, index) => (
@@ -10132,7 +10186,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                 <select
                   className="input-field"
                   value={calendarCursor.getFullYear()}
-                  onChange={(e) => setCalendarCursor((current) => new Date(Number(e.target.value), current.getMonth(), 1))}
+                  onChange={(e) => setCalendarCursor((current) => clampCalendarCursor(new Date(Number(e.target.value), current.getMonth(), 1)))}
                   style={{background:C.surface,padding:"10px 12px",fontSize:13}}
                 >
                   {calendarYears.map((year) => (
@@ -10145,27 +10199,33 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
               <button
                 type="button"
                 className="btn-gold-compact"
-                onClick={() => setCalendarCursor((current) => new Date(current.getFullYear(), current.getMonth(), current.getDate() - 7))}
+                onClick={() => setCalendarCursor((current) => calendarViewMode === "month"
+                  ? clampCalendarCursor(new Date(current.getFullYear(), current.getMonth() - 1, 1))
+                  : clampCalendarCursor(new Date(current.getFullYear(), current.getMonth(), current.getDate() - 7)))}
               >
                 ←
               </button>
               <div style={{fontSize:12,color:C.text,minWidth:112,textAlign:"center",alignSelf:"center",flex:"0 1 auto"}}>
-                {fmtShortDate(weekStart)}-{fmtShortDate(weekEnd)}
+                {calendarViewMode === "month"
+                  ? calendarCursor.toLocaleDateString("en-US", { month: "short", year: "numeric" })
+                  : `${fmtShortDate(weekStart)}-${fmtShortDate(weekEnd)}`}
               </div>
               <button
                 type="button"
                 className="btn-gold-compact"
-                onClick={() => setCalendarCursor((current) => new Date(current.getFullYear(), current.getMonth(), current.getDate() + 7))}
+                onClick={() => setCalendarCursor((current) => calendarViewMode === "month"
+                  ? clampCalendarCursor(new Date(current.getFullYear(), current.getMonth() + 1, 1))
+                  : clampCalendarCursor(new Date(current.getFullYear(), current.getMonth(), current.getDate() + 7)))}
               >
                 →
               </button>
               <button
                 type="button"
                 className="btn-gold-compact"
-                onClick={() => setCalendarCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate()))}
+                onClick={() => setCalendarCursor(clampCalendarCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())))}
                 style={{padding:"6px 12px",fontSize:12}}
               >
-                This Week
+                {calendarViewMode === "month" ? "Go To This Month" : "Go To This Week"}
               </button>
             </div>
           </div>
@@ -10193,71 +10253,161 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
             </div>
           </div>
         )}
-        {!visibleCalendarItems.length && (
-          <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected this week.</p>
-        )}
-        <div style={{display:"grid",gap:12}}>
-          {weekDays.map((day, index) => (
-            <div
-              key={day.key}
-              className="card"
-              style={{
-                padding:"12px 14px",
-                display:"grid",
-                gap:10,
-                background:C.card,
-                border:day.isToday ? `1px solid ${C.goldDim}` : `1px solid ${C.border}`,
-              }}
-            >
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <div>
-                  <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:4}}>
-                    {weekdayLabels[index]}
+        {calendarViewMode === "list" ? (
+          <>
+            {!visibleCalendarItems.length && (
+              <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected this week.</p>
+            )}
+            <div style={{display:"grid",gap:12}}>
+              {weekDays.map((day, index) => (
+                <div
+                  key={day.key}
+                  className="card"
+                  style={{
+                    padding:"12px 14px",
+                    display:"grid",
+                    gap:10,
+                    background:C.card,
+                    border:day.isToday ? `1px solid ${C.goldDim}` : `1px solid ${C.border}`,
+                  }}
+                >
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:4}}>
+                        {weekdayLabels[index]}
+                      </div>
+                      <div style={{fontSize:18,fontWeight:700,color:day.isToday ? C.gold : C.text,fontFamily:"'Young Serif Medium', Georgia, serif",lineHeight:1.1}}>
+                        {fmtDate(day.date)}
+                      </div>
+                    </div>
+                    {day.isToday && (
+                      <span style={{fontSize:9,color:C.gold,textTransform:"uppercase",letterSpacing:".08em"}}>Today</span>
+                    )}
                   </div>
-                  <div style={{fontSize:18,fontWeight:700,color:day.isToday ? C.gold : C.text,fontFamily:"'Young Serif Medium', Georgia, serif",lineHeight:1.1}}>
-                    {fmtDate(day.date)}
+                  <div style={{display:"grid",gap:8}}>
+                    {day.items.length === 0 && (
+                      <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>Nothing scheduled.</div>
+                    )}
+                    {day.items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => openCalendarItem(item)}
+                        style={{display:"grid",gap:4,padding:"8px 10px",border:`1px solid ${item.tone}33`,borderRadius:10,background:`${item.tone}12`,textAlign:"left",minWidth:0,cursor:"pointer"}}
+                      >
+                        <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
+                          <div style={{fontSize:12,fontWeight:600,color:C.text,lineHeight:1.4,minWidth:0}}>{item.title}</div>
+                          {item.editable && (
+                            <button
+                              type="button"
+                              className="btn-outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openCalendarEventEditor(item);
+                              }}
+                              style={{padding:4,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}
+                              aria-label={`Edit ${item.title}`}
+                              title="Edit calendar event"
+                            >
+                              <Icons.pen />
+                            </button>
+                          )}
+                        </div>
+                        <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>{item.detail || item.tag}</div>
+                      </button>
+                    ))}
                   </div>
                 </div>
-                {day.isToday && (
-                  <span style={{fontSize:9,color:C.gold,textTransform:"uppercase",letterSpacing:".08em"}}>Today</span>
-                )}
-              </div>
-              <div style={{display:"grid",gap:8}}>
-                {day.items.length === 0 && (
-                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>Nothing scheduled.</div>
-                )}
-                {day.items.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => openCalendarItem(item)}
-                    style={{display:"grid",gap:4,padding:"8px 10px",border:`1px solid ${item.tone}33`,borderRadius:10,background:`${item.tone}12`,textAlign:"left",minWidth:0,cursor:"pointer"}}
-                  >
-                    <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
-                      <div style={{fontSize:12,fontWeight:600,color:C.text,lineHeight:1.4,minWidth:0}}>{item.title}</div>
-                      {item.editable && (
-                        <button
-                          type="button"
-                          className="btn-outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openCalendarEventEditor(item);
-                          }}
-                          style={{padding:4,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}
-                          aria-label={`Edit ${item.title}`}
-                          title="Edit calendar event"
-                        >
-                          <Icons.pen />
-                        </button>
-                      )}
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            {!visibleMonthItems.length && (
+              <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected this month.</p>
+            )}
+            <div style={{overflowX:"auto",paddingBottom:4}}>
+              <div style={{minWidth:760}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6,marginBottom:8}}>
+                  {weekdayLabels.map((label) => (
+                    <div key={label} style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"center"}}>
+                      {label.slice(0, 3)}
                     </div>
-                    <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>{item.detail || item.tag}</div>
-                  </button>
-                ))}
+                  ))}
+                </div>
+                <div className="calendar-month-grid" style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6}}>
+                  {monthGridDays.map((day) => {
+                    const visibleItems = day.items.slice(0, 3);
+                    const hiddenCount = Math.max(0, day.items.length - visibleItems.length);
+                    return (
+                      <div
+                        key={day.key}
+                        style={{
+                          minHeight:112,
+                          padding:8,
+                          borderRadius:12,
+                          border:day.isToday ? `1px solid ${C.goldDim}` : `1px solid ${C.border}`,
+                          background:day.isPast
+                            ? "linear-gradient(135deg, rgba(255,255,255,.025), rgba(255,255,255,.01))"
+                            : day.isCurrentMonth ? C.card : "rgba(255,255,255,.025)",
+                          opacity:day.isCurrentMonth ? (day.isPast ? .62 : 1) : .45,
+                          display:"grid",
+                          alignContent:"start",
+                          gap:6,
+                          minWidth:0,
+                        }}
+                      >
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:12,fontWeight:700,color:day.isToday ? C.gold : day.isPast ? C.muted : C.text}}>
+                            {day.date.getDate()}
+                          </span>
+                          {day.isToday && <span style={{fontSize:8,color:C.gold,textTransform:"uppercase",letterSpacing:".08em"}}>Today</span>}
+                          {!day.isToday && day.isPast && day.isCurrentMonth && <span style={{fontSize:8,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>Past</span>}
+                        </div>
+                        <div style={{display:"grid",gap:4,minWidth:0}}>
+                          {visibleItems.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => openCalendarItem(item)}
+                              title={item.title}
+                              style={{
+                                border:`1px solid ${item.tone}33`,
+                                borderRadius:8,
+                                background:day.isPast ? "rgba(255,255,255,.035)" : `${item.tone}12`,
+                                color:day.isPast ? C.muted : C.text,
+                                cursor:"pointer",
+                                fontSize:10,
+                                lineHeight:1.25,
+                                padding:"5px 6px",
+                                textAlign:"left",
+                                whiteSpace:"nowrap",
+                                overflow:"hidden",
+                                textOverflow:"ellipsis",
+                                minWidth:0,
+                              }}
+                            >
+                              {item.title}
+                            </button>
+                          ))}
+                          {hiddenCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCalendarItem(day.items[3])}
+                              style={{border:"none",background:"transparent",color:C.gold,fontSize:10,textAlign:"left",padding:0,cursor:"pointer"}}
+                            >
+                              +{hiddenCount} more
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -10852,7 +11002,7 @@ export default function App() {
       <GS/>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
         <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
-        <main style={{flex:1,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
+        <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
       </div>
       {showTutorial && (
         <ShepherdTutorial

@@ -125,6 +125,62 @@ create unique index if not exists profiles_staff_id_key on public.profiles (staf
 alter table public.profiles
   enable row level security;
 
+create or replace function public.enforce_profile_staff_name()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  staff_name text;
+begin
+  if new.staff_id is not null then
+    select full_name
+    into staff_name
+    from public.church_staff
+    where id = new.staff_id
+      and church_id = new.church_id;
+
+    if staff_name is not null then
+      new.full_name := staff_name;
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_profile_staff_name_trigger on public.profiles;
+create trigger enforce_profile_staff_name_trigger
+before insert or update of full_name, staff_id, church_id
+on public.profiles
+for each row
+execute function public.enforce_profile_staff_name();
+
+create or replace function public.sync_profile_staff_name()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.profiles
+  set full_name = new.full_name
+  where staff_id = new.id
+    and church_id = new.church_id
+    and full_name is distinct from new.full_name;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_profile_staff_name_trigger on public.church_staff;
+create trigger sync_profile_staff_name_trigger
+after update of full_name
+on public.church_staff
+for each row
+execute function public.sync_profile_staff_name();
+
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -157,6 +213,48 @@ alter table public.tasks add column if not exists notes text;
 alter table public.tasks add column if not exists created_at timestamptz not null default now();
 
 alter table public.tasks
+  enable row level security;
+
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  recipient_profile_id uuid not null references public.profiles(id) on delete cascade,
+  actor_profile_id uuid references public.profiles(id) on delete set null,
+  type text not null,
+  title text not null,
+  detail text not null,
+  target text not null default 'dashboard',
+  task_id uuid references public.tasks(id) on delete cascade,
+  source_key text,
+  data jsonb not null default '{}'::jsonb,
+  read_at timestamptz,
+  archived_at timestamptz,
+  emailed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.notifications add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.notifications add column if not exists recipient_profile_id uuid references public.profiles(id) on delete cascade;
+alter table public.notifications add column if not exists actor_profile_id uuid references public.profiles(id) on delete set null;
+alter table public.notifications add column if not exists type text;
+alter table public.notifications add column if not exists title text;
+alter table public.notifications add column if not exists detail text;
+alter table public.notifications add column if not exists target text not null default 'dashboard';
+alter table public.notifications add column if not exists task_id uuid references public.tasks(id) on delete cascade;
+alter table public.notifications add column if not exists source_key text;
+alter table public.notifications add column if not exists data jsonb not null default '{}'::jsonb;
+alter table public.notifications add column if not exists read_at timestamptz;
+alter table public.notifications add column if not exists archived_at timestamptz;
+alter table public.notifications add column if not exists emailed_at timestamptz;
+alter table public.notifications add column if not exists created_at timestamptz not null default now();
+
+create unique index if not exists notifications_task_assignment_key
+  on public.notifications (recipient_profile_id, type, task_id);
+
+create unique index if not exists notifications_recipient_type_source_key
+  on public.notifications (recipient_profile_id, type, source_key);
+
+alter table public.notifications
   enable row level security;
 
 create table if not exists public.automations (
@@ -1268,6 +1366,35 @@ with check (
       )
   )
 );
+
+drop policy if exists "notifications recipient read" on public.notifications;
+create policy "notifications recipient read"
+on public.notifications
+for select
+using (recipient_profile_id = auth.uid());
+
+drop policy if exists "notifications same church insert" on public.notifications;
+create policy "notifications same church insert"
+on public.notifications
+for insert
+with check (
+  actor_profile_id = auth.uid()
+  and exists (
+    select 1
+    from public.profiles actor
+    join public.profiles recipient on recipient.id = notifications.recipient_profile_id
+    where actor.id = auth.uid()
+      and actor.church_id = notifications.church_id
+      and recipient.church_id = notifications.church_id
+  )
+);
+
+drop policy if exists "notifications recipient update" on public.notifications;
+create policy "notifications recipient update"
+on public.notifications
+for update
+using (recipient_profile_id = auth.uid())
+with check (recipient_profile_id = auth.uid());
 
 drop policy if exists "event requests public submit" on public.event_requests;
 create policy "event requests public submit"

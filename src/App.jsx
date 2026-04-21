@@ -80,6 +80,7 @@ const DASHBOARD_SECTION_STATE_STORAGE_PREFIX = "shepherd-dashboard-sections";
 const TASK_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-task-discussion-sections";
 const PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-po-discussion-sections";
 const CURRENT_WORK_FOCUS_STORAGE_PREFIX = "shepherd-current-work-focus";
+const FORM_DRAFT_STORAGE_PREFIX = "shepherd-form-draft";
 const GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-token";
 const GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-refresh-token";
 const GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX = "shepherd-google-calendar-oauth-state";
@@ -616,9 +617,61 @@ const getDashboardSectionStateStorageKey = (profileId) => `${DASHBOARD_SECTION_S
 const getTaskDiscussionStateStorageKey = (profileId) => `${TASK_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getPurchaseOrderDiscussionStateStorageKey = (profileId) => `${PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getCurrentWorkFocusStorageKey = (profileId) => `${CURRENT_WORK_FOCUS_STORAGE_PREFIX}:${profileId || "anonymous"}`;
+const getFormDraftStorageKey = (profileId, draftName) => `${FORM_DRAFT_STORAGE_PREFIX}:${profileId || "anonymous"}:${draftName}`;
+const readStoredFormDraft = (storageKey, fallback) => {
+  if (typeof window === "undefined" || !storageKey) return fallback;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
+  }
+};
+const writeStoredFormDraft = (storageKey, value) => {
+  if (typeof window === "undefined" || !storageKey) return;
+  window.localStorage.setItem(storageKey, JSON.stringify(value));
+};
+const clearStoredFormDraft = (storageKey) => {
+  if (typeof window === "undefined" || !storageKey) return;
+  window.localStorage.removeItem(storageKey);
+};
+const hasMeaningfulDraftValue = (value) => {
+  if (Array.isArray(value)) return value.some(hasMeaningfulDraftValue);
+  if (value && typeof value === "object") return Object.values(value).some(hasMeaningfulDraftValue);
+  if (typeof value === "boolean") return value;
+  return String(value ?? "").trim().length > 0;
+};
+const hasMeaningfulFormDraft = (value, ignoredKeys = []) => Object.entries(value || {})
+  .filter(([key]) => !ignoredKeys.includes(key))
+  .some(([, entry]) => hasMeaningfulDraftValue(entry));
+const PAGE_PATHS = {
+  dashboard: "/dashboard",
+  workspaces: "/frameworks",
+  tasks: "/tasks",
+  calendar: "/calendar",
+  "church-team": "/church-team",
+  budget: "/finances",
+  faq: "/faq",
+  trash: "/trash",
+  account: "/account",
+  "events-board": "/events",
+  "content-media-board": "/content-media",
+  "operations-board": "/operations",
+  members: "/members",
+  ministries: "/ministries",
+};
+const PATH_PAGES = Object.entries(PAGE_PATHS).reduce((accumulator, [page, path]) => {
+  accumulator[path] = page;
+  return accumulator;
+}, {});
+const getPageFromPath = () => {
+  if (typeof window === "undefined") return "";
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  return PATH_PAGES[path] || "";
+};
 const getStoredActivePage = () => {
   if (typeof window === "undefined") return "dashboard";
-  return window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
+  return getPageFromPath() || window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
 };
 const formatAutomationTrigger = (automation) => {
   if (!automation) return "Trigger not configured";
@@ -1131,6 +1184,105 @@ const canDeletePurchaseOrder = (profile, order) =>
     (order.requester_id === profile?.id && ["pending", "in-review"].includes(order.status || "pending"))
     || canReviewPurchaseOrders(profile)
   );
+const getNotificationTone = (type) => {
+  if (String(type || "").includes("approved")) return C.success;
+  if (String(type || "").includes("denied") || String(type || "").includes("overdue")) return C.danger;
+  if (String(type || "").includes("comment") || String(type || "").includes("assigned") || String(type || "").includes("mention")) return C.blue;
+  return C.gold;
+};
+const normalizePersistentNotification = (notification) => ({
+  id: notification?.source_key
+    ? `${notification.type}-${notification.source_key}`
+    : notification?.type === "task_assigned" && notification?.task_id
+      ? `assigned-${notification.task_id}`
+      : notification?.id,
+  rowId: notification?.id,
+  persistent: true,
+  tone: getNotificationTone(notification?.type),
+  title: notification?.title || "Shepherd notification",
+  detail: notification?.detail || "",
+  target: notification?.target || "dashboard",
+  taskId: notification?.task_id || notification?.data?.taskId || null,
+  createdAt: notification?.created_at ? new Date(notification.created_at).getTime() : Date.now(),
+  readAt: notification?.read_at || null,
+  archivedAt: notification?.archived_at || null,
+});
+const getStaffProfileId = (user) => user?.auth_user_id || user?.profile_id || null;
+const findStaffByName = (users, name) => (users || []).find((user) => samePerson(user?.full_name, name));
+const getMentionedStaffNames = (body, users = []) => {
+  const text = String(body || "");
+  return [...new Set((users || [])
+    .filter((user) => {
+      const token = getStaffMentionToken(user?.full_name);
+      if (!token) return false;
+      return new RegExp(`@${escapeRegExp(token)}(?=$|[^a-zA-Z])`, "i").test(text);
+    })
+    .map((user) => user.full_name)
+    .filter(Boolean))];
+};
+const createPersistentNotification = async ({
+  churchId,
+  actorProfile,
+  recipientProfileId,
+  type,
+  title,
+  detail,
+  target = "dashboard",
+  taskId = null,
+  sourceKey = "",
+  data = {},
+  sendEmail = true,
+}) => {
+  if (!churchId || !actorProfile?.id || !recipientProfileId || !type || !title || !detail) return null;
+  if (recipientProfileId === actorProfile.id && !["task_due_soon", "task_overdue", "team_task_due_soon", "team_task_overdue"].includes(type)) return null;
+  const payload = {
+    church_id: churchId,
+    recipient_profile_id: recipientProfileId,
+    actor_profile_id: actorProfile.id,
+    type,
+    title,
+    detail,
+    target,
+    task_id: taskId,
+    source_key: sourceKey || null,
+    data,
+    read_at: null,
+    archived_at: null,
+  };
+  const query = sourceKey
+    ? supabase.from("notifications").upsert(payload, { onConflict: "recipient_profile_id,type,source_key", ignoreDuplicates: true })
+    : supabase.from("notifications").insert(payload);
+  const { data: saved, error } = await query.select().maybeSingle();
+  if (error) return null;
+  if (sendEmail && saved?.id) {
+    supabase.functions.invoke("send-notification-email", {
+      body: { notificationId: saved.id },
+    }).then(() => {});
+  }
+  return saved || null;
+};
+const createNotificationsForNames = async ({ users, names, actorProfile, churchId, ...notification }) => {
+  const recipients = [...new Map((names || [])
+    .map((name) => findStaffByName(users, name))
+    .filter((user) => getStaffProfileId(user))
+    .map((user) => [getStaffProfileId(user), user])).values()];
+  await Promise.all(recipients.map((user) => createPersistentNotification({
+    ...notification,
+    churchId,
+    actorProfile,
+    recipientProfileId: getStaffProfileId(user),
+  })));
+};
+const dedupeNotifications = (items) => {
+  const seen = new Set();
+  return (items || [])
+    .filter((item) => {
+      if (!item?.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    })
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+};
 const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile) => {
   if (!profile?.full_name) return [];
   const fullName = profile.full_name;
@@ -2696,6 +2848,9 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   const [passwordError, setPasswordError] = useState("");
   const [resetMessage, setResetMessage] = useState("");
   const [resetError, setResetError] = useState("");
+  const [emailPreviewMessage, setEmailPreviewMessage] = useState("");
+  const [emailPreviewError, setEmailPreviewError] = useState("");
+  const [emailPreviewSending, setEmailPreviewSending] = useState(false);
   const [authEmail, setAuthEmail] = useState(profile?.email || "");
   const [deleteForm, setDeleteForm] = useState({ churchName: "", currentPassword: "" });
   const [deleteMessage, setDeleteMessage] = useState("");
@@ -2890,6 +3045,33 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       setAccountManagerError(error?.message || "We couldn't update the Shepherd Account Managers yet.");
     } finally {
       setAccountManagerSaving(false);
+    }
+  };
+
+  const sendNotificationPreviewEmails = async () => {
+    setEmailPreviewMessage("");
+    setEmailPreviewError("");
+    setEmailPreviewSending(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) throw new Error("Please log in again before sending preview emails.");
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-notification-preview`, {
+        method: "POST",
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || `Preview sender failed with status ${response.status}.`);
+      setEmailPreviewMessage(`Sent ${data?.sent?.length || 0} preview emails to ${data?.recipientEmail || profile?.email || "your Shepherd profile email"}.`);
+    } catch (error) {
+      setEmailPreviewError(error?.message || "We couldn't send the preview emails yet.");
+    } finally {
+      setEmailPreviewSending(false);
     }
   };
 
@@ -3247,6 +3429,24 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                   </div>
                   {resetError && <div style={{fontSize:12,color:C.danger}}>{resetError}</div>}
                   {resetMessage && <div style={{fontSize:12,color:C.success}}>{resetMessage}</div>}
+                </div>
+              </div>
+              <div className="card" style={{padding:22,textAlign:"left"}}>
+                <h3 style={sectionTitleStyle}>Notification Email Preview</h3>
+                <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                  Send yourself one sample of each Shepherd notification email so you can judge the inbox layout before the team relies on it.
+                </p>
+                <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+                  <div style={{fontSize:12,color:C.muted}}>
+                    Preview emails will be sent to <span style={{color:C.text,fontWeight:600}}>{profile?.email || authEmail || "your Shepherd profile email"}</span>.
+                  </div>
+                  <div style={{display:"flex",justifyContent:"flex-end"}}>
+                    <button className="btn-gold" onClick={sendNotificationPreviewEmails} disabled={emailPreviewSending} style={{opacity:emailPreviewSending ? 0.75 : 1}}>
+                      {emailPreviewSending ? "Sending Previews..." : "Send Preview Emails"}
+                    </button>
+                  </div>
+                  {emailPreviewError && <div style={{fontSize:12,color:C.danger}}>{emailPreviewError}</div>}
+                  {emailPreviewMessage && <div style={{fontSize:12,color:C.success}}>{emailPreviewMessage}</div>}
                 </div>
               </div>
             </>
@@ -4163,6 +4363,8 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   const [planningFilter, setPlanningFilter] = useState("mine");
   const [checklistDraft, setChecklistDraft] = useState("");
   const [planningNoteDraft, setPlanningNoteDraft] = useState("");
+  const eventRequestDraftKey = getFormDraftStorageKey(profile?.id, "event-request");
+  const eventPlanDraftKey = getFormDraftStorageKey(profile?.id, "event-plan");
   const timelineEditorRef = useRef(null);
   const eventColumns = [
     { id: "new", title: "New Event Requests", detail: "Incoming ministry requests waiting for admin review and scheduling.", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
@@ -4245,6 +4447,21 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       return;
     }
     setEventRequests((current) => [data, ...(current || [])]);
+    await createNotificationsForNames({
+      users: previewUsers,
+      names: (previewUsers || [])
+        .filter((user) => hasAdministrativeOversight(user, church) || isSeniorPastor(user))
+        .map((user) => user.full_name),
+      churchId: church.id,
+      actorProfile: profile,
+      type: "event_request_submitted",
+      title: "New Event Request Submitted",
+      detail: `${data.contact_name || "A requester"} submitted ${data.event_name}.`,
+      target: "events-board",
+      sourceKey: data.id,
+      data: { eventRequestId: data.id, eventName: data.event_name },
+    });
+    clearStoredFormDraft(eventRequestDraftKey);
     setShowEventForm(false);
     setEventForm(createEventRequestBlank(profile));
   };
@@ -4264,6 +4481,23 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
           decisionPayload.graphics_task_created = true;
           decisionPayload.graphics_task_id = createdTasks[0]?.id || null;
           setTasks((current) => [...createdTasks.map(normalizeTask), ...(current || [])]);
+          await Promise.all(createdTasks.map((task) => {
+            const recipient = findStaffByName(previewUsers, task.assignee);
+            const recipientProfileId = getStaffProfileId(recipient);
+            if (!recipientProfileId) return null;
+            return createPersistentNotification({
+              churchId: church?.id,
+              actorProfile: profile,
+              recipientProfileId,
+              type: "task_assigned",
+              title: "New Task Assigned",
+              detail: `${task.title} was created from the approved event request ${existingRequest.event_name}.`,
+              target: "tasks",
+              taskId: task.id,
+              sourceKey: task.id,
+              data: { taskTitle: task.title, eventRequestId: existingRequest.id, eventName: existingRequest.event_name },
+            });
+          }));
         }
       }
     }
@@ -4304,9 +4538,23 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
         linkedRequestId: workflow.linked_event_request_id || "",
       });
     } else {
-      setWorkflowForm(createEventPlanningBlank(profile));
+      setWorkflowForm(readStoredFormDraft(eventPlanDraftKey, createEventPlanningBlank(profile)));
     }
     setShowWorkflowModal(true);
+  };
+  const openEventRequestForm = () => {
+    setEventForm(readStoredFormDraft(eventRequestDraftKey, createEventRequestBlank(profile)));
+    setFormError("");
+    setShowEventForm(true);
+  };
+  const closeEventRequestForm = () => {
+    clearStoredFormDraft(eventRequestDraftKey);
+    setShowEventForm(false);
+    setEventForm(createEventRequestBlank(profile));
+  };
+  const closeWorkflowForm = () => {
+    if (!workflowForm.id) clearStoredFormDraft(eventPlanDraftKey);
+    setShowWorkflowModal(false);
   };
   const saveWorkflow = async () => {
     if (!church?.id) {
@@ -4369,9 +4617,43 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       const normalized = normalizeEventWorkflow(data);
       setEventWorkflows((current) => [normalized, ...(current || [])]);
       setSelectedWorkflow(normalized);
+      clearStoredFormDraft(eventPlanDraftKey);
     }
     setShowWorkflowModal(false);
   };
+
+  useEffect(() => {
+    if (showEventForm || showWorkflowModal || selectedWorkflow || selectedRequest) return;
+    const restoredEventRequest = readStoredFormDraft(eventRequestDraftKey, null);
+    if (restoredEventRequest && hasMeaningfulFormDraft(restoredEventRequest, ["event_format", "location_areas", "av_request", "kitchen_use", "white_linen_agreement", "metal_folding_chairs_requested", "submitted_on"])) {
+      const timer = window.setTimeout(() => {
+        setEventForm(restoredEventRequest);
+        setShowEventForm(true);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    const restoredEventPlan = readStoredFormDraft(eventPlanDraftKey, null);
+    if (restoredEventPlan && hasMeaningfulFormDraft(restoredEventPlan, ["linkedRequestId"])) {
+      const timer = window.setTimeout(() => {
+        setWorkflowForm(restoredEventPlan);
+        setShowWorkflowModal(true);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [eventRequestDraftKey, eventPlanDraftKey, showEventForm, showWorkflowModal, selectedWorkflow, selectedRequest]);
+
+  useEffect(() => {
+    if (!showEventForm) return;
+    if (!hasMeaningfulFormDraft(eventForm, ["event_format", "location_areas", "av_request", "kitchen_use", "white_linen_agreement", "metal_folding_chairs_requested", "submitted_on"])) return;
+    writeStoredFormDraft(eventRequestDraftKey, eventForm);
+  }, [showEventForm, eventForm, eventRequestDraftKey]);
+
+  useEffect(() => {
+    if (!showWorkflowModal || workflowForm.id) return;
+    if (!hasMeaningfulFormDraft(workflowForm, ["linkedRequestId"])) return;
+    writeStoredFormDraft(eventPlanDraftKey, workflowForm);
+  }, [showWorkflowModal, workflowForm, eventPlanDraftKey]);
   const openWorkflow = (workflow) => {
     setSelectedWorkflow(workflow);
     setTimelineDraft({ id: null, title: "", date: "", details: "", includeInTasks: false, reviewRequired: false, reviewers: [] });
@@ -4459,7 +4741,24 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
         }
         linkedTaskId = createdTask?.id || null;
         if (createdTask) {
-          setTasks((current) => [normalizeTask(createdTask), ...(current || [])]);
+          const normalizedCreatedTask = normalizeTask(createdTask);
+          setTasks((current) => [normalizedCreatedTask, ...(current || [])]);
+          const recipient = findStaffByName(previewUsers, normalizedCreatedTask.assignee);
+          const recipientProfileId = getStaffProfileId(recipient);
+          if (recipientProfileId) {
+            await createPersistentNotification({
+              churchId: church?.id,
+              actorProfile: profile,
+              recipientProfileId,
+              type: "task_assigned",
+              title: "New Event Planning Task",
+              detail: `${normalizedCreatedTask.title} was added from ${workflow.event_name || workflow.title}.`,
+              target: "tasks",
+              taskId: normalizedCreatedTask.id,
+              sourceKey: normalizedCreatedTask.id,
+              data: { taskTitle: normalizedCreatedTask.title, eventPlanId: workflow.id, eventName: workflow.event_name || workflow.title },
+            });
+          }
         }
       } else if (linkedTaskId) {
         const taskPayload = {
@@ -4541,7 +4840,24 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       }
       linkedTaskId = createdTask?.id || null;
       if (createdTask) {
-        setTasks((current) => [normalizeTask(createdTask), ...(current || [])]);
+        const normalizedCreatedTask = normalizeTask(createdTask);
+        setTasks((current) => [normalizedCreatedTask, ...(current || [])]);
+        const recipient = findStaffByName(previewUsers, normalizedCreatedTask.assignee);
+        const recipientProfileId = getStaffProfileId(recipient);
+        if (recipientProfileId) {
+          await createPersistentNotification({
+            churchId: church?.id,
+            actorProfile: profile,
+            recipientProfileId,
+            type: "task_assigned",
+            title: "New Event Planning Task",
+            detail: `${normalizedCreatedTask.title} was added from ${workflow.event_name || workflow.title}.`,
+            target: "tasks",
+            taskId: normalizedCreatedTask.id,
+            sourceKey: normalizedCreatedTask.id,
+            data: { taskTitle: normalizedCreatedTask.title, eventPlanId: workflow.id, eventName: workflow.event_name || workflow.title },
+          });
+        }
       }
     }
     const nextItems = [
@@ -4744,7 +5060,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
               <div style={{display:"grid",gap:18}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
                   <div style={{textAlign:"left"}}>
-                    <button className="btn-outline" onClick={() => setShowWorkflowModal(false)} style={{marginBottom:14}}>
+                    <button className="btn-outline" onClick={closeWorkflowForm} style={{marginBottom:14}}>
                       Back to Event Planning
                     </button>
                     <h3 style={{...pageTitleStyle,textAlign:"left"}}>{workflowForm.id ? "Edit Event Plan" : "New Event Plan"}</h3>
@@ -4808,7 +5124,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                   </div>
                   {workflowError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{workflowError}</div>}
                   <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",paddingTop:8}}>
-                    <button className="btn-outline" onClick={() => setShowWorkflowModal(false)}>Cancel</button>
+                    <button className="btn-outline" onClick={closeWorkflowForm}>Cancel</button>
                     <button className="btn-gold" onClick={saveWorkflow}>Save Event Plan</button>
                   </div>
                 </div>
@@ -5209,14 +5525,14 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
           {showEventForm ? (
             <div style={{display:"grid",gap:18}}>
               <div style={{textAlign:"left"}}>
-                <button className="btn-outline" onClick={()=>setShowEventForm(false)} style={{marginBottom:14}}>Back to Event Requests</button>
+                <button className="btn-outline" onClick={closeEventRequestForm} style={{marginBottom:14}}>Back to Event Requests</button>
                 <h3 style={sectionTitleStyle}>New Event Request</h3>
               </div>
               <div className="card" style={{padding:20,textAlign:"left"}}>
                 <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
                 {formError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{formError}</div>}
                 <div style={{display:"flex",gap:10,marginTop:22,justifyContent:"flex-end",flexWrap:"wrap"}}>
-                  <button className="btn-outline" onClick={()=>setShowEventForm(false)}>Cancel</button>
+                  <button className="btn-outline" onClick={closeEventRequestForm}>Cancel</button>
                   <button className="btn-gold" onClick={saveEventRequest}>Submit Request</button>
                 </div>
               </div>
@@ -5314,11 +5630,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
               <button className="btn-outline" onClick={copyPublicEventRequestLink}>
                 Copy Public Form Link
               </button>
-              <button className="btn-gold" onClick={() => {
-                setEventForm(createEventRequestBlank(profile));
-                setFormError("");
-                setShowEventForm(true);
-              }}>
+              <button className="btn-gold" onClick={openEventRequestForm}>
                 New Event Request
               </button>
             </div>
@@ -5950,6 +6262,20 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         }
       }
       setStaffAvailabilityRequests((current) => [saved, ...(current || []).filter((entry) => entry.id !== saved.id)]);
+      if (timeOffMode === "pto") {
+        await createNotificationsForNames({
+          users: previewUsers,
+          names: ptoApproverNames.filter((name) => !samePerson(name, profile?.full_name)),
+          churchId: church.id,
+          actorProfile: profile,
+          type: "pto_review_requested",
+          title: "PTO Request Needs Review",
+          detail: `${profile.full_name || "A staff member"} submitted a PTO request for ${fmtDate(saved.from_date)}-${fmtDate(saved.to_date)}.`,
+          target: "operations-board",
+          sourceKey: saved.id,
+          data: { availabilityRequestId: saved.id, requestedBy: profile.full_name || "", requestType: saved.request_type },
+        });
+      }
       setOperationsMessage(
         timeOffMode === "pto"
           ? "PTO request submitted for review. The Senior Pastor and Church Administrator have both been notified."
@@ -6019,6 +6345,23 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     }
     const saved = normalizeStaffAvailabilityRequest(data);
     setStaffAvailabilityRequests((current) => (current || []).map((entry) => entry.id === saved.id ? saved : entry));
+    if (request.requester_id) {
+      await createPersistentNotification({
+        churchId: church?.id,
+        actorProfile: profile,
+        recipientProfileId: request.requester_id,
+        type: status === "denied" ? "pto_denied" : fullyApproved ? "pto_approved" : "pto_review_progress",
+        title: status === "denied" ? "PTO Request Denied" : fullyApproved ? "PTO Request Approved" : "PTO Review Updated",
+        detail: status === "denied"
+          ? `${request.request_type} was denied${profile?.full_name ? ` by ${profile.full_name}` : ""}.`
+          : fullyApproved
+            ? `${request.request_type} was fully approved and added to the calendar.`
+            : `${profile?.full_name || "A reviewer"} approved your PTO request. One more approval may still be needed.`,
+        target: "operations-board",
+        sourceKey: `${request.id}:${status}:${profile?.id || "reviewer"}`,
+        data: { availabilityRequestId: request.id, requestType: request.request_type },
+      });
+    }
     setOperationsMessage(
       status === "denied"
         ? "PTO request denied."
@@ -6099,6 +6442,18 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       setChurchLockupAssignments((current) => {
         const next = [...(current || []).filter((assignment) => assignment.id !== saved.id && assignment.week_of !== saved.week_of), saved];
         return next.sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
+      });
+      await createNotificationsForNames({
+        users: previewUsers,
+        names: saved.assignee_names.filter((name) => !samePerson(name, profile?.full_name)),
+        churchId: church.id,
+        actorProfile: profile,
+        type: "lockup_assigned",
+        title: "Church Lock-Up Assigned",
+        detail: `You are assigned to lock up for ${fmtWeekRange(saved.week_of)}.`,
+        target: "operations-board",
+        sourceKey: `${saved.id || saved.week_of}:lockup`,
+        data: { lockupAssignmentId: saved.id, weekOf: saved.week_of },
       });
       setOperationsMessage("Church lock-up assignment saved.");
       setLockupMode("home");
@@ -7406,6 +7761,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const taskCommentRefs = useRef({});
   const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:"",share_link:"",review_required:false,reviewers:[],review_approvals:[],comments:[]};
   const [form, setForm] = useState(blank);
+  const taskDraftKey = getFormDraftStorageKey(profile?.id, "new-task");
   const [orderedCategories, setOrderedCategories] = useState(() => getStoredCategoryOrder());
   const [collapsedColumns, setCollapsedColumns] = useState(() => {
     if (typeof window === "undefined") return {};
@@ -7443,10 +7799,15 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const openNew = () => {
     setEditing(null);
     setTaskFormError("");
-    setForm({ ...blank, ministry: orderedCategories[0] || "Admin", assignee: profile?.full_name || blank.assignee });
+    const fallback = { ...blank, ministry: orderedCategories[0] || "Admin", assignee: profile?.full_name || blank.assignee };
+    setForm(readStoredFormDraft(taskDraftKey, fallback));
     setShowModal(true);
   };
   const openEdit = (t) => { setEditing(t); setTaskFormError(""); setForm(normalizeTask(t)); setShowModal(true); setSelectedTask(null); };
+  const closeTaskForm = () => {
+    if (!editing) clearStoredFormDraft(taskDraftKey);
+    setShowModal(false);
+  };
   const openTask = (task) => {
     setSelectedTask(normalizeTask(task));
     setCommentDraft("");
@@ -7454,6 +7815,103 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     setEditingCommentId(null);
     setEditingCommentDraft("");
     setHighlightedTaskCommentId(null);
+  };
+
+  const notifyTaskAssignment = async (task, previousAssignee = "") => {
+    if (!task?.id || !task?.assignee || !churchId || isPreview) return;
+    if (previousAssignee && samePerson(previousAssignee, task.assignee)) return;
+    if (samePerson(task.assignee, profile?.full_name)) return;
+    const recipient = (previewUsers || []).find((user) => samePerson(user.full_name, task.assignee));
+    const recipientProfileId = recipient?.auth_user_id;
+    if (!recipientProfileId) return;
+
+    await createPersistentNotification({
+      churchId,
+      actorProfile: profile,
+      recipientProfileId,
+      type: "task_assigned",
+      title: "New Task Assigned",
+      detail: `${task.title} was assigned to you${profile?.full_name ? ` by ${profile.full_name}` : ""}.`,
+      target: "tasks",
+      taskId: task.id,
+      sourceKey: task.id,
+      data: {
+        taskTitle: task.title,
+        ministry: task.ministry,
+        assignedBy: profile?.full_name || "",
+      },
+    });
+  };
+
+  const notifyTaskReviewRequested = async (task) => {
+    if (!task?.id || isPreview) return;
+    await createNotificationsForNames({
+      users: previewUsers,
+      names: (task.reviewers || []).filter((name) => !samePerson(name, profile?.full_name)),
+      churchId,
+      actorProfile: profile,
+      type: "task_review_requested",
+      title: "Review Requested",
+      detail: `${task.title} is ready for your review.`,
+      target: "tasks",
+      taskId: task.id,
+      sourceKey: `${task.id}:review-request:${task.review_history?.length || 0}`,
+      data: { taskTitle: task.title, requestedBy: profile?.full_name || "" },
+    });
+  };
+
+  const notifyTaskReviewDecision = async (task, status, decisionKey) => {
+    if (!task?.id || isPreview) return;
+    const recipient = findStaffByName(previewUsers, task.assignee);
+    const recipientProfileId = getStaffProfileId(recipient);
+    if (!recipientProfileId) return;
+    await createPersistentNotification({
+      churchId,
+      actorProfile: profile,
+      recipientProfileId,
+      type: status === "approved" ? "task_review_approved" : "task_review_denied",
+      title: status === "approved" ? "Task Review Approved" : "Task Review Needs Changes",
+      detail: `${profile?.full_name || "A reviewer"} ${status === "approved" ? "approved" : "sent back"} ${task.title}.`,
+      target: "tasks",
+      taskId: task.id,
+      sourceKey: `${task.id}:review:${status}:${decisionKey || "latest"}`,
+      data: { taskTitle: task.title, reviewedBy: profile?.full_name || "" },
+    });
+  };
+
+  const notifyTaskComment = async (task, comment) => {
+    if (!task?.id || !comment?.id || isPreview) return;
+    const mentionedNames = getMentionedStaffNames(comment.body, previewUsers);
+    const generalNames = [
+      task.assignee,
+      ...(task.reviewers || []),
+    ].filter(Boolean);
+    await createNotificationsForNames({
+      users: previewUsers,
+      names: generalNames.filter((name) => !samePerson(name, profile?.full_name)),
+      churchId,
+      actorProfile: profile,
+      type: "task_comment",
+      title: "New Comment On A Task",
+      detail: `${comment.author || profile?.full_name || "A staff member"} commented on ${task.title}.`,
+      target: "tasks",
+      taskId: task.id,
+      sourceKey: `${task.id}:comment:${comment.id}`,
+      data: { taskTitle: task.title, commentId: comment.id },
+    });
+    await createNotificationsForNames({
+      users: previewUsers,
+      names: mentionedNames.filter((name) => !samePerson(name, profile?.full_name)),
+      churchId,
+      actorProfile: profile,
+      type: "task_comment_mention",
+      title: "You Were Mentioned In A Task",
+      detail: `${comment.author || profile?.full_name || "A staff member"} mentioned you in ${task.title}.`,
+      target: "tasks",
+      taskId: task.id,
+      sourceKey: `${task.id}:mention:${comment.id}`,
+      data: { taskTitle: task.title, commentId: comment.id },
+    });
   };
 
   const syncTaskInView = (updatedTask) => {
@@ -7479,6 +7937,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
         ? { ...editing, ...safeForm }
         : { ...safeForm, id: `task-${Date.now()}`, church_id: churchId };
       setTasks(editing ? tasks.map((t) => t.id === editing.id ? normalizeTask(record) : t) : [...tasks, normalizeTask(record)]);
+      if (!editing) clearStoredFormDraft(taskDraftKey);
       setShowModal(false);
       return;
     }
@@ -7512,7 +7971,11 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
         setTaskFormError(result.error.message || "We couldn't save that task.");
         return;
       }
-      if (result.data) setTasks(tasks.map(t=>t.id===editing.id?normalizeTask(result.data):t));
+      if (result.data) {
+        const normalized = normalizeTask(result.data);
+        setTasks(tasks.map(t=>t.id===editing.id?normalized:t));
+        await notifyTaskAssignment(normalized, editing.assignee);
+      }
     } else {
       let result = await supabase.from("tasks").insert(dbPayload).select().single();
       if (result.error && /review_required|reviewers|review_approvals|review_history|share_link/i.test(result.error.message || "")) {
@@ -7531,10 +7994,32 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
         setTaskFormError(result.error.message || "We couldn't save that task.");
         return;
       }
-      if (result.data) setTasks([...tasks,normalizeTask(result.data)]);
+      if (result.data) {
+        const normalized = normalizeTask(result.data);
+        setTasks([...tasks, normalized]);
+        await notifyTaskAssignment(normalized);
+      }
     }
+    if (!editing) clearStoredFormDraft(taskDraftKey);
     setShowModal(false);
   };
+
+  useEffect(() => {
+    if (showModal || editing || selectedTask) return;
+    const restoredTask = readStoredFormDraft(taskDraftKey, null);
+    if (!restoredTask || !hasMeaningfulFormDraft(restoredTask, ["assignee", "ministry", "status", "review_required", "reviewers", "review_approvals", "comments"])) return;
+    const timer = window.setTimeout(() => {
+      setForm(restoredTask);
+      setShowModal(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [taskDraftKey, showModal, editing, selectedTask]);
+
+  useEffect(() => {
+    if (!showModal || editing) return;
+    if (!hasMeaningfulFormDraft(form, ["assignee", "ministry", "status", "review_required", "reviewers", "review_approvals", "comments"])) return;
+    writeStoredFormDraft(taskDraftKey, form);
+  }, [showModal, editing, form, taskDraftKey]);
 
   const setTaskStatus = async (task, nextStatus) => {
     if (nextStatus === "done" && task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))) {
@@ -7554,8 +8039,10 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       result = await supabase.from("tasks").update({ status: nextStatus, review_approvals: changes.review_approvals || [] }).eq("id", task.id).select().single();
     }
     const { data } = result;
-    setTasks(tasks.map(t=>t.id===task.id?normalizeTask(data):t));
-    syncTaskInView(data);
+    const updated = normalizeTask(data);
+    setTasks(tasks.map(t=>t.id===task.id?updated:t));
+    syncTaskInView(updated);
+    if (nextStatus === "in-review" && task.status !== "in-review") await notifyTaskReviewRequested(updated);
   };
 
   const toggleReviewer = (name) => {
@@ -7606,8 +8093,10 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       result = await supabase.from("tasks").update({ review_approvals: changes.review_approvals, status: changes.status }).eq("id", task.id).select().single();
     }
     const { data } = result;
-    setTasks(tasks.map((entry) => entry.id === task.id ? normalizeTask(data) : entry));
-    syncTaskInView(data);
+    const updated = normalizeTask(data);
+    setTasks(tasks.map((entry) => entry.id === task.id ? updated : entry));
+    syncTaskInView(updated);
+    await notifyTaskReviewDecision(updated, status, nowIso);
   };
 
   const addComment = async () => {
@@ -7627,9 +8116,10 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       setCommentCursor(0);
       return;
     }
+    const commentId = crypto.randomUUID();
     const { data, error } = await supabase.rpc("add_task_comment", {
       p_task_id: selectedTask.id,
-      p_comment_id: crypto.randomUUID(),
+      p_comment_id: commentId,
       p_body: commentDraft.trim(),
     });
     if (error) {
@@ -7640,6 +8130,8 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     setTaskCommentError("");
     setTasks((current) => current.map((task) => task.id === selectedTask.id ? normalizeTask({ ...task, comments: nextComments }) : task));
     setSelectedTask((current) => current?.id === selectedTask.id ? normalizeTask({ ...current, comments: nextComments }) : current);
+    const savedComment = nextComments.find((comment) => comment.id === commentId);
+    if (savedComment) await notifyTaskComment(selectedTask, savedComment);
     setCommentDraft("");
     setCommentCursor(0);
   };
@@ -7854,7 +8346,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       {showModal && (
         <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:18,marginBottom:18}}>
           <div>
-            <button className="btn-outline" onClick={()=>setShowModal(false)} style={{marginBottom:14}}>Back to Tasks</button>
+            <button className="btn-outline" onClick={closeTaskForm} style={{marginBottom:14}}>Back to Tasks</button>
             <h3 style={sectionTitleStyle}>{editing?"Edit Task":"New Task"}</h3>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -7918,7 +8410,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
           </div>
           {taskFormError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{taskFormError}</div>}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
-            <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
+            <button className="btn-outline" onClick={closeTaskForm}>Cancel</button>
             <button className="btn-gold" onClick={save}>Save Task</button>
           </div>
         </div>
@@ -8365,6 +8857,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     includedInBudget: "yes",
     notes: "",
   });
+  const budgetDraftKey = getFormDraftStorageKey(profile?.id, "new-budget");
+  const purchaseOrderDraftKey = getFormDraftStorageKey(profile?.id, "new-purchase-order");
   const ledgerMinistryNames = [...new Set([
     ...((ministries || []).map((entry) => entry.name).filter(Boolean)),
     ...(financeView ? [] : visibleMinistries),
@@ -8406,19 +8900,20 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     const existingMinistry = (ministries || []).find((entry) => entry.name === ministry) || null;
     const assignedUser = (previewUsers || []).find((user) => (user.ministries || []).includes(ministry));
     const normalizedItems = normalizeBudgetItems(existingMinistry?.budget_items);
-    setBudgetForm({
+    const nextBudgetForm = {
       id: existingMinistry?.id || null,
       ministry: ministry || "",
       budget: existingMinistry?.budget !== undefined && existingMinistry?.budget !== null ? String(existingMinistry.budget) : "",
       assignedStaffId: assignedUser?.id || "",
       items: normalizedItems.length > 0 ? normalizedItems.map((item) => ({ label: item.label, amount: String(item.amount) })) : [{ label: "", amount: "" }],
-    });
+    };
+    setBudgetForm(existingMinistry ? nextBudgetForm : readStoredFormDraft(budgetDraftKey, nextBudgetForm));
     setShowBudgetModal(true);
   };
   const openPurchaseOrderModal = (ministry = defaultMinistry) => {
     setSelectedLedgerMinistry(ministry);
     setPurchaseOrderError("");
-    setPurchaseOrderForm({
+    const nextPurchaseOrderForm = {
       title: "",
       amount: "",
       ministry,
@@ -8427,9 +8922,52 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       purchaseLink: "",
       includedInBudget: "yes",
       notes: "",
-    });
+    };
+    setPurchaseOrderForm(readStoredFormDraft(purchaseOrderDraftKey, nextPurchaseOrderForm));
     setShowPurchaseOrderModal(true);
   };
+  const closeBudgetModal = () => {
+    if (!budgetForm.id) clearStoredFormDraft(budgetDraftKey);
+    setShowBudgetModal(false);
+  };
+  const closePurchaseOrderModal = () => {
+    clearStoredFormDraft(purchaseOrderDraftKey);
+    setShowPurchaseOrderModal(false);
+  };
+
+  useEffect(() => {
+    if (showBudgetModal || showPurchaseOrderModal || showModal) return undefined;
+    const restoredBudget = readStoredFormDraft(budgetDraftKey, null);
+    if (restoredBudget && hasMeaningfulFormDraft(restoredBudget, ["id", "ministry", "items"])) {
+      const timer = window.setTimeout(() => {
+        setBudgetForm(restoredBudget);
+        setShowBudgetModal(true);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    const restoredPurchaseOrder = readStoredFormDraft(purchaseOrderDraftKey, null);
+    if (restoredPurchaseOrder && hasMeaningfulFormDraft(restoredPurchaseOrder, ["ministry", "includedInBudget"])) {
+      const timer = window.setTimeout(() => {
+        setPurchaseOrderForm(restoredPurchaseOrder);
+        setSelectedLedgerMinistry(restoredPurchaseOrder.ministry || defaultMinistry);
+        setShowPurchaseOrderModal(true);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [budgetDraftKey, purchaseOrderDraftKey, showBudgetModal, showPurchaseOrderModal, showModal, defaultMinistry]);
+
+  useEffect(() => {
+    if (!showBudgetModal || budgetForm.id) return;
+    if (!hasMeaningfulFormDraft(budgetForm, ["id", "ministry", "items"])) return;
+    writeStoredFormDraft(budgetDraftKey, budgetForm);
+  }, [showBudgetModal, budgetForm, budgetDraftKey]);
+
+  useEffect(() => {
+    if (!showPurchaseOrderModal) return;
+    if (!hasMeaningfulFormDraft(purchaseOrderForm, ["ministry", "includedInBudget"])) return;
+    writeStoredFormDraft(purchaseOrderDraftKey, purchaseOrderForm);
+  }, [showPurchaseOrderModal, purchaseOrderForm, purchaseOrderDraftKey]);
 
   if (!canViewBudget(profile)) {
     return (
@@ -8533,6 +9071,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         const others = (current || []).filter((entry) => entry.id !== budgetForm.id && entry.name !== previousName);
         return [...others, { ...payload, id: budgetForm.id || `ministry-${trimmedMinistry}` }].sort((left, right) => left.name.localeCompare(right.name));
       });
+      if (!budgetForm.id) clearStoredFormDraft(budgetDraftKey);
       setShowBudgetModal(false);
       return;
     }
@@ -8587,6 +9126,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       const others = (current || []).filter((entry) => entry.id !== data.id && entry.name !== data.name);
       return [...others, data].sort((left, right) => left.name.localeCompare(right.name));
     });
+    if (!budgetForm.id) clearStoredFormDraft(budgetDraftKey);
     setShowBudgetModal(false);
   };
   const savePurchaseOrder = async () => {
@@ -8634,6 +9174,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     if (isPreview) {
       setPurchaseOrders((current) => [normalizePurchaseOrder({ ...payload, id: `po-${Date.now()}`, created_at: new Date().toISOString() }), ...(current || [])]);
       setPurchaseOrderSubmitting(false);
+      clearStoredFormDraft(purchaseOrderDraftKey);
       setShowPurchaseOrderModal(false);
       return;
     }
@@ -8643,10 +9184,25 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       setPurchaseOrderError(error.message || "This purchase order could not be submitted yet.");
       return;
     }
-    setPurchaseOrders((current) => [normalizePurchaseOrder(data), ...(current || [])]);
+    const savedOrder = normalizePurchaseOrder(data);
+    setPurchaseOrders((current) => [savedOrder, ...(current || [])]);
+    await createNotificationsForNames({
+      users: previewUsers,
+      names: requiredApprovers.filter((name) => !samePerson(name, profile?.full_name)),
+      churchId,
+      actorProfile: profile,
+      type: "purchase_order_review_requested",
+      title: "Purchase Order Needs Review",
+      detail: `${profile?.full_name || "A staff member"} submitted ${savedOrder.title} for ${fmt(savedOrder.amount)}.`,
+      target: "budget",
+      sourceKey: savedOrder.id,
+      data: { purchaseOrderId: savedOrder.id, purchaseOrderTitle: savedOrder.title },
+    });
     setPurchaseOrderSubmitting(false);
+    clearStoredFormDraft(purchaseOrderDraftKey);
     setShowPurchaseOrderModal(false);
   };
+
   const updatePurchaseOrderStatus = async (order, status) => {
     if (!order?.id) return;
     const nowIso = new Date().toISOString();
@@ -8688,6 +9244,24 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     const { error } = await supabase.from("purchase_orders").update(changes).eq("id", order.id);
     if (error) return;
     setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
+    const requesterProfileId = order.requester_id || getStaffProfileId(findStaffByName(previewUsers, order.requested_by));
+    if (requesterProfileId) {
+      await createPersistentNotification({
+        churchId,
+        actorProfile: profile,
+        recipientProfileId: requesterProfileId,
+        type: status === "denied" ? "purchase_order_denied" : fullyApproved ? "purchase_order_approved" : "purchase_order_review_progress",
+        title: status === "denied" ? "Purchase Order Denied" : fullyApproved ? "Purchase Order Approved" : "Purchase Order Review Updated",
+        detail: status === "denied"
+          ? `${order.title} was denied${profile?.full_name ? ` by ${profile.full_name}` : ""}.`
+          : fullyApproved
+            ? `${order.title} was fully approved.`
+            : `${profile?.full_name || "A reviewer"} approved ${order.title}. Another approval may still be needed.`,
+        target: "budget",
+        sourceKey: `${order.id}:${status}:${profile?.id || "reviewer"}`,
+        data: { purchaseOrderId: order.id, purchaseOrderTitle: order.title },
+      });
+    }
   };
   const deletePurchaseOrder = async (order) => {
     if (!canDeletePurchaseOrder(profile, order) || !order?.id) return;
@@ -8723,6 +9297,24 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     const { error } = await supabase.from("purchase_orders").update(changes).eq("id", order.id);
     if (error) return;
     setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
+    const mentionedNames = getMentionedStaffNames(commentEntry.body, previewUsers);
+    const discussionNames = [
+      order.requested_by,
+      ...(order.required_approvers || []),
+      ...mentionedNames,
+    ].filter((name) => !samePerson(name, profile?.full_name));
+    await createNotificationsForNames({
+      users: previewUsers,
+      names: discussionNames,
+      churchId,
+      actorProfile: profile,
+      type: "purchase_order_comment",
+      title: "New Purchase Order Comment",
+      detail: `${commentEntry.author} commented on ${order.title}.`,
+      target: "budget",
+      sourceKey: `${order.id}:comment:${commentEntry.id}`,
+      data: { purchaseOrderId: order.id, purchaseOrderTitle: order.title, commentId: commentEntry.id },
+    });
     setPurchaseOrderCommentDrafts((current) => ({ ...current, [order.id]: "" }));
     setPurchaseOrderCommentCursor((current) => ({ ...current, [order.id]: 0 }));
   };
@@ -8919,7 +9511,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       {showPurchaseOrderModal && (
         <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:16,marginBottom:22}}>
           <div>
-            <button className="btn-outline" onClick={()=>setShowPurchaseOrderModal(false)} style={{marginBottom:14}}>Back to Finances</button>
+            <button className="btn-outline" onClick={closePurchaseOrderModal} style={{marginBottom:14}}>Back to Finances</button>
             <h3 style={sectionTitleStyle}>New Purchase Order</h3>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -8989,7 +9581,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             </div>
           )}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
-            <button className="btn-outline" onClick={()=>setShowPurchaseOrderModal(false)}>Cancel</button>
+            <button className="btn-outline" onClick={closePurchaseOrderModal}>Cancel</button>
             <button className="btn-gold" onClick={savePurchaseOrder} disabled={purchaseOrderSubmitting} style={{opacity:purchaseOrderSubmitting ? 0.8 : 1}}>
               {purchaseOrderSubmitting ? "Submitting..." : "Submit Request"}
             </button>
@@ -8999,7 +9591,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       {showBudgetModal && canManageBudgetLinesForMinistry(budgetForm.ministry || defaultMinistry) && (
         <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:16,marginBottom:22}}>
           <div>
-            <button className="btn-outline" onClick={()=>setShowBudgetModal(false)} style={{marginBottom:14}}>Back to Finances</button>
+            <button className="btn-outline" onClick={closeBudgetModal} style={{marginBottom:14}}>Back to Finances</button>
             <h3 style={sectionTitleStyle}>{financeView ? "Set Ministry Budget" : "Edit Budget Line Items"}</h3>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -9065,7 +9657,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               </button>
             ) : <div />}
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            <button className="btn-outline" onClick={()=>setShowBudgetModal(false)}>Cancel</button>
+            <button className="btn-outline" onClick={closeBudgetModal}>Cancel</button>
             <button className="btn-gold" onClick={saveBudget}>Save Budget</button>
             </div>
           </div>
@@ -9908,9 +10500,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [archivedNotificationIds, setArchivedNotificationIds] = useState([]);
+  const [persistentNotifications, setPersistentNotifications] = useState([]);
   const [showTutorial, setShowTutorial] = useState(false);
   const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
   const shownNotificationIdsRef = useRef(new Set());
+  const deadlineNotificationKeysRef = useRef(new Set());
 
   const allowedPages = new Set([
     "dashboard",
@@ -9930,20 +10524,29 @@ export default function App() {
   const safeActive = allowedPages.has(active) ? active : "dashboard";
 
   const notifications = useMemo(
-    () => buildNotifications(tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile),
-    [tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile]
+    () => dedupeNotifications([
+      ...persistentNotifications.map(normalizePersistentNotification),
+      ...buildNotifications(tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile),
+    ]),
+    [persistentNotifications, tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile]
   );
   const validNotificationIds = useMemo(
     () => new Set(notifications.map((item) => item.id)),
     [notifications]
   );
   const cleanedReadNotificationIds = useMemo(
-    () => readNotificationIds.filter((id) => validNotificationIds.has(id)),
-    [readNotificationIds, validNotificationIds]
+    () => [...new Set([
+      ...readNotificationIds,
+      ...notifications.filter((item) => item.readAt).map((item) => item.id),
+    ])].filter((id) => validNotificationIds.has(id)),
+    [readNotificationIds, notifications, validNotificationIds]
   );
   const cleanedArchivedNotificationIds = useMemo(
-    () => archivedNotificationIds.filter((id) => validNotificationIds.has(id)),
-    [archivedNotificationIds, validNotificationIds]
+    () => [...new Set([
+      ...archivedNotificationIds,
+      ...notifications.filter((item) => item.archivedAt).map((item) => item.id),
+    ])].filter((id) => validNotificationIds.has(id)),
+    [archivedNotificationIds, notifications, validNotificationIds]
   );
   const unreadNotifications = useMemo(
     () => notifications.filter((item) => !cleanedReadNotificationIds.includes(item.id)),
@@ -9961,17 +10564,35 @@ export default function App() {
   const markNotificationRead = (id) => {
     if (!id) return;
     setReadNotificationIds((current) => current.includes(id) ? current : [...current, id]);
+    const persistent = notifications.find((item) => item.id === id && item.rowId);
+    if (persistent?.rowId && !persistent.readAt) {
+      const readAt = new Date().toISOString();
+      setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, read_at: readAt } : item));
+      supabase.from("notifications").update({ read_at: readAt }).eq("id", persistent.rowId).then(() => {});
+    }
   };
   const archiveNotification = (id) => {
     if (!id) return;
     setArchivedNotificationIds((current) => current.includes(id) ? current : [...current, id]);
+    const persistent = notifications.find((item) => item.id === id && item.rowId);
+    if (persistent?.rowId && !persistent.archivedAt) {
+      const archivedAt = new Date().toISOString();
+      const readAt = persistent.readAt || archivedAt;
+      setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, archived_at: archivedAt, read_at: item.read_at || readAt } : item));
+      supabase.from("notifications").update({ archived_at: archivedAt, read_at: readAt }).eq("id", persistent.rowId).then(() => {});
+    }
   };
   const restoreNotification = (id) => {
     if (!id) return;
     setArchivedNotificationIds((current) => current.filter((entry) => entry !== id));
+    const persistent = notifications.find((item) => item.id === id && item.rowId);
+    if (persistent?.rowId) {
+      setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, archived_at: null } : item));
+      supabase.from("notifications").update({ archived_at: null }).eq("id", persistent.rowId).then(() => {});
+    }
   };
 
-  const openNotificationTarget = useCallback((item) => {
+  const openNotificationTarget = (item) => {
     if (!item) return;
     markNotificationRead(item.id);
     if (item.target === "tasks") {
@@ -9986,7 +10607,7 @@ export default function App() {
       return;
     }
     setActive(item.target || "dashboard");
-  }, []);
+  };
 
   const clearTaskOpenRequest = useCallback(() => {
     setTaskOpenRequest(null);
@@ -10122,10 +10743,11 @@ export default function App() {
     } else {
       setReadNotificationIds([]);
       setArchivedNotificationIds([]);
+      setPersistentNotifications([]);
       setTrashItems([]);
     }
     if (prof?.church_id) {
-      const [ch, t, er, p, tr, po, sar, cla, ce, m, staff, profileRows] = await Promise.all([
+      const [ch, t, er, p, tr, po, sar, cla, ce, m, staff, profileRows, notificationRows] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
@@ -10138,6 +10760,7 @@ export default function App() {
         supabase.from("ministries").select("*").eq("church_id", prof.church_id),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
+        supabase.from("notifications").select("*").eq("recipient_profile_id", prof.id).order("created_at", { ascending: false }).limit(100),
       ]);
       const enhancedProfile = normalizedProfile
         ? {
@@ -10156,6 +10779,7 @@ export default function App() {
       setChurchLockupAssignments((cla.data || []).map(normalizeChurchLockupAssignment));
       setCalendarEvents(ce.data || []);
       setMinistries(m.data || []);
+      setPersistentNotifications(notificationRows.data || []);
       const profileFocusMap = new Map((profileRows.data || []).map((entry) => [entry.staff_id || entry.id || entry.full_name, entry]));
       setPreviewUsers((staff.data || []).map((entry) => {
         const match = profileFocusMap.get(entry.id)
@@ -10179,6 +10803,7 @@ export default function App() {
       setCalendarEvents([]);
       setMinistries([]);
       setPreviewUsers([]);
+      setPersistentNotifications([]);
     }
     setLoading(false);
   };
@@ -10195,13 +10820,113 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isPublicEventRequestRoute) return;
     window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, safeActive);
-  }, [safeActive]);
+    const nextPath = PAGE_PATHS[safeActive] || "/dashboard";
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({ shepherdPage: safeActive }, "", nextPath);
+    }
+  }, [safeActive, isPublicEventRequestRoute]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handlePopState = () => {
+      const pageFromPath = getPageFromPath();
+      if (pageFromPath) setActive(pageFromPath);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !church?.id) return;
     window.localStorage.setItem(getTrashStorageKey(church.id), JSON.stringify(trashItems));
   }, [church?.id, trashItems]);
+
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    const channel = supabase
+      .channel(`notifications-${profile.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notifications", filter: `recipient_profile_id=eq.${profile.id}` },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            setPersistentNotifications((current) => (current || []).filter((item) => item.id !== payload.old?.id));
+            return;
+          }
+          if (payload.new?.id) {
+            setPersistentNotifications((current) => {
+              const others = (current || []).filter((item) => item.id !== payload.new.id);
+              return [payload.new, ...others].sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
+            });
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile?.id || !church?.id || !tasks.length) return;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfTomorrow = new Date(today);
+    endOfTomorrow.setDate(endOfTomorrow.getDate() + 2);
+    const isSeniorPastorViewer = isSeniorPastor(profile) || samePerson(profile?.title, "Senior Pastor");
+
+    tasks.forEach((task) => {
+      if (!task?.id || task.status === "done" || !task.due_date) return;
+      const dueDate = parseAppDate(task.due_date);
+      if (!dueDate) return;
+      const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+      const assignedToMe = samePerson(task.assignee, profile.full_name);
+      const taskIsOverdue = isAfterDueDate(task.due_date, now);
+      const taskDueSoon = dueDay.getTime() >= today.getTime() && dueDay.getTime() < endOfTomorrow.getTime();
+
+      if (assignedToMe && (taskIsOverdue || taskDueSoon)) {
+        const type = taskIsOverdue ? "task_overdue" : "task_due_soon";
+        const sourceKey = `${task.id}:${type}:${task.due_date}`;
+        if (!deadlineNotificationKeysRef.current.has(sourceKey)) {
+          deadlineNotificationKeysRef.current.add(sourceKey);
+          createPersistentNotification({
+            churchId: church.id,
+            actorProfile: profile,
+            recipientProfileId: profile.id,
+            type,
+            title: taskIsOverdue ? "Task Overdue" : getRelativeDueLabel(task.due_date),
+            detail: taskIsOverdue ? `${task.title} is overdue.` : `${task.title} needs attention soon.`,
+            target: "tasks",
+            taskId: task.id,
+            sourceKey,
+            data: { taskTitle: task.title, dueDate: task.due_date },
+          });
+        }
+      }
+
+      if (isSeniorPastorViewer && !assignedToMe && (taskIsOverdue || taskDueSoon)) {
+        const type = taskIsOverdue ? "team_task_overdue" : "team_task_due_soon";
+        const sourceKey = `${task.id}:${type}:${task.due_date}`;
+        if (!deadlineNotificationKeysRef.current.has(sourceKey)) {
+          deadlineNotificationKeysRef.current.add(sourceKey);
+          createPersistentNotification({
+            churchId: church.id,
+            actorProfile: profile,
+            recipientProfileId: profile.id,
+            type,
+            title: taskIsOverdue ? "Team Task Needs Attention" : "Team Task Due Soon",
+            detail: `${task.title} assigned to ${task.assignee || "a team member"} is ${taskIsOverdue ? "overdue" : getRelativeDueLabel(task.due_date).toLowerCase()}.`,
+            target: "tasks",
+            taskId: task.id,
+            sourceKey,
+            data: { taskTitle: task.title, assignee: task.assignee || "", dueDate: task.due_date },
+          });
+        }
+      }
+    });
+  }, [tasks, profile, church]);
 
   useEffect(() => {
     if (typeof window === "undefined" || loading || !session || !profile?.id || isPublicEventRequestRoute) return;
@@ -10273,6 +10998,7 @@ export default function App() {
         setPurchaseOrders([]);
         setMinistries([]);
         setPreviewUsers([]);
+        setPersistentNotifications([]);
         setLoading(false);
       }
     });

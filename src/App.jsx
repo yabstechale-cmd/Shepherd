@@ -278,7 +278,17 @@ const GS = () => (
       .dashboard-note-row .btn-outline{margin-left:0 !important;width:100%;justify-content:center}
       .dashboard-followup-row{flex-wrap:wrap}
       .page-header{grid-template-columns:1fr !important}
+      .calendar-page-header{grid-template-columns:minmax(0,1fr) auto !important;align-items:center !important;gap:10px !important}
       .page-actions{justify-content:flex-start !important}
+      .calendar-page-header .page-actions{justify-content:flex-end !important}
+      .calendar-add-button{padding:9px 11px !important;font-size:11px !important;white-space:nowrap}
+      .calendar-add-button svg{width:14px;height:14px}
+      .calendar-card-heading{flex-wrap:nowrap !important;align-items:center !important;gap:8px !important}
+      .calendar-card-heading h3{font-size:25px !important;line-height:1.05 !important;min-width:0;letter-spacing:-.03em;white-space:nowrap}
+      .calendar-jump-controls{gap:4px !important;flex-wrap:nowrap !important;flex-shrink:0}
+      .calendar-jump-label{display:none !important}
+      .calendar-jump-selects{width:148px !important;grid-template-columns:82px 62px !important;gap:4px !important}
+      .calendar-jump-selects select{padding:7px 6px !important;font-size:11px !important;border-radius:10px !important}
       .mobile-stack{grid-template-columns:1fr !important}
       .mobile-three-stack{grid-template-columns:1fr !important}
       .mobile-two-stack{grid-template-columns:1fr !important}
@@ -3515,7 +3525,7 @@ const FAQ_ITEMS = [
   { tag: "Event Planning", question: "Who can see an event plan?", answer: "Shared event plans are visible to the appropriate church staff so planning does not get trapped with one person. Access still depends on the church's roles and permissions." },
 
   { tag: "Calendar", question: "Where do calendar items come from?", answer: "The Calendar can show imported Google calendar items, My Tasks, approved event requests, direct church calendar entries, and approved staff availability." },
-  { tag: "Calendar", question: "Why is the Calendar weekly instead of monthly?", answer: "The weekly view is easier to read on mobile and gives staff more useful detail inside each day. Month and year controls still let you move around quickly." },
+  { tag: "Calendar", question: "How do I move around the Calendar?", answer: "Use the month and year controls at the top of the Calendar card to jump to the month you want to review. The calendar keeps the shared church view focused on this year and next year." },
   { tag: "Calendar", question: "Can I schedule months ahead?", answer: "Yes. The calendar can be navigated ahead within the allowed year range, and events or tasks with future dates can appear when that week is selected." },
   { tag: "Calendar", question: "Can I look back at past calendar weeks?", answer: "Yes. You can move backward to review past weeks within the allowed calendar range. Older imported data depends on what has been brought into Shepherd." },
   { tag: "Calendar", question: "Why do filters only show Google calendars and My Tasks?", answer: "The filters were simplified so staff can choose between the imported church calendars and their personal task layer without fighting too many overlapping filter buttons." },
@@ -9783,7 +9793,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const [showCalendarItemForm, setShowCalendarItemForm] = useState(false);
   const [editingCalendarEventId, setEditingCalendarEventId] = useState(null);
   const [selectedCalendarItem, setSelectedCalendarItem] = useState(null);
-  const [calendarViewMode, setCalendarViewMode] = useState("list");
   const [calendarItemError, setCalendarItemError] = useState("");
   const [calendarItemForm, setCalendarItemForm] = useState({
     calendar_type: "churchEvents",
@@ -9885,30 +9894,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     .sort((a, b) => getDateSortValue(a.date) - getDateSortValue(b.date));
   const weekdayLabels = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
   const toDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  const mondayOffset = (calendarCursor.getDay() + 6) % 7;
-  const weekStart = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), calendarCursor.getDate() - mondayOffset);
-  const weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
-  const visibleCalendarItems = calendarItems.filter((item) => {
-    const parsed = parseAppDate(item.date);
-    if (!parsed) return false;
-    return parsed >= new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()) && parsed <= new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
-  });
-  const groupedCalendarItems = visibleCalendarItems.reduce((accumulator, item) => {
-    const key = item.date;
-    if (!accumulator[key]) accumulator[key] = [];
-    accumulator[key].push(item);
-    return accumulator;
-  }, {});
-  const weekDays = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
-    const key = toDateKey(date);
-    return {
-      key,
-      date,
-      items: groupedCalendarItems[key] || [],
-      isToday: toDateKey(date) === toDateKey(today),
-    };
-  });
   const monthStart = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1);
   const monthEnd = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 0);
   const monthGridStart = new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate() - ((monthStart.getDay() + 6) % 7));
@@ -9933,6 +9918,34 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const filterOptions = [
     { key: "myTasks", label: "My Tasks" },
   ];
+  const activeCalendarFilterStyle = {
+    background:`linear-gradient(135deg, ${C.gold}, #d8bc63)`,
+    border:`1px solid ${C.gold}`,
+    color:"#121622",
+    boxShadow:`0 0 0 1px ${C.goldDim}, 0 12px 26px rgba(201,168,76,.26)`,
+    display:"inline-flex",
+    alignItems:"center",
+    gap:8,
+    fontWeight:800,
+  };
+  const inactiveCalendarFilterStyle = {
+    padding:"6px 12px",
+    fontSize:12,
+    opacity:.76,
+  };
+  const activeCalendarCheckStyle = {
+    display:"inline-flex",
+    alignItems:"center",
+    justifyContent:"center",
+    width:17,
+    height:17,
+    borderRadius:5,
+    background:"#111622",
+    border:"1px solid rgba(255,255,255,.28)",
+    fontSize:12,
+    lineHeight:1,
+    color:C.gold,
+  };
   const saveCalendarItem = async () => {
     if (!churchId || !profile?.id || !calendarItemForm.title.trim() || !calendarItemForm.event_date) {
       setCalendarItemError("Add at least a title and date before saving.");
@@ -10040,12 +10053,12 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 
   return (
     <div className="fadeIn mobile-pad" style={{...widePageStyle,textAlign:"left"}}>
-      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",marginBottom:24,textAlign:"left"}}>
+      <div className="page-header calendar-page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"center",marginBottom:24,textAlign:"left"}}>
         <div style={{textAlign:"left"}}>
           <h2 style={pageTitleStyle}>Calendar</h2>
         </div>
         <div className="page-actions" style={{display:"flex",justifyContent:"flex-end"}}>
-          <button className="btn-gold" onClick={() => showCalendarItemForm ? closeCalendarItemForm() : setShowCalendarItemForm(true)}>
+          <button className="btn-gold calendar-add-button" onClick={() => showCalendarItemForm ? closeCalendarItemForm() : setShowCalendarItemForm(true)}>
             <Icons.plus /> {showCalendarItemForm ? "Close Form" : "Add To Calendar"}
           </button>
         </div>
@@ -10098,32 +10111,39 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
           </div>
         </div>
       )}
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
-        {[
-          { key: "list", label: "List View" },
-          { key: "month", label: "Month View" },
-        ].map((option) => (
-          <button
-            key={option.key}
-            type="button"
-            className={calendarViewMode === option.key ? "btn-gold-compact" : "btn-outline"}
-            onClick={() => setCalendarViewMode(option.key)}
-            style={calendarViewMode === option.key ? {padding:"7px 13px",fontSize:12} : {padding:"7px 13px",fontSize:12,opacity:.78}}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
       <div className="card" style={{padding:20,textAlign:"left"}}>
         <div style={{display:"grid",gap:12,marginBottom:18,textAlign:"left"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
-            <h3 style={{...sectionTitleStyle,margin:0}}>{calendarViewMode === "month" ? "Monthly Calendar" : "Weekly Calendar"}</h3>
+          <div className="calendar-card-heading" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+            <h3 style={{...sectionTitleStyle,margin:0}}>
+              {calendarCursor.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+            </h3>
+            <div className="calendar-jump-controls" style={{display:"flex",gap:8,alignItems:"center",justifyContent:"flex-end",flexWrap:"wrap"}}>
+              <span className="calendar-jump-label" style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>Jump To</span>
+              <div className="calendar-jump-selects" style={{display:"grid",gridTemplateColumns:"minmax(92px,1fr) 78px",gap:6,width:180}}>
+                <select
+                  className="input-field"
+                  value={calendarCursor.getMonth()}
+                  onChange={(e) => setCalendarCursor((current) => clampCalendarCursor(new Date(current.getFullYear(), Number(e.target.value), 1)))}
+                  style={{background:C.surface,padding:"7px 9px",fontSize:12,borderRadius:10,fontWeight:700,color:C.text}}
+                >
+                  {months.map((month, index) => (
+                    <option key={month} value={index}>{month}</option>
+                  ))}
+                </select>
+                <select
+                  className="input-field"
+                  value={calendarCursor.getFullYear()}
+                  onChange={(e) => setCalendarCursor((current) => clampCalendarCursor(new Date(Number(e.target.value), current.getMonth(), 1)))}
+                  style={{background:C.surface,padding:"7px 9px",fontSize:12,borderRadius:10,fontWeight:700,color:C.text}}
+                >
+                  {calendarYears.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
-          <p style={{color:C.muted,fontSize:13,lineHeight:1.6,margin:0}}>
-            {calendarViewMode === "month"
-              ? "See the full month across the calendars you have turned on."
-              : "View this week at a glance across the calendars you have turned on."}
-          </p>
+          <p style={{color:C.muted,fontSize:13,lineHeight:1.6,margin:0}}>See the full month across the calendars you have turned on.</p>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             {officialGoogleCalendarIds.map((id, index) => {
               const active = resolvedGoogleCalendarFilters[id] !== false;
@@ -10134,13 +10154,11 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                   type="button"
                   className={active ? "btn-gold-compact" : "btn-outline"}
                   onClick={() => setGoogleCalendarFilters((current) => ({ ...current, [id]: !active }))}
-                  style={active
-                    ? { boxShadow:`0 0 0 1px ${C.goldDim}, 0 10px 24px rgba(201,168,76,.24)`, display:"inline-flex", alignItems:"center", gap:8 }
-                    : { padding:"6px 12px", fontSize:12, opacity:.78 }}
+                  style={active ? activeCalendarFilterStyle : inactiveCalendarFilterStyle}
                 >
                   {active ? (
                     <>
-                      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:4,background:"rgba(13,18,31,.24)",border:`1px solid ${C.gold}`,fontSize:11,lineHeight:1,color:C.gold}}>✓</span>
+                      <span style={activeCalendarCheckStyle}>✓</span>
                       <span>{label}</span>
                     </>
                   ) : label}
@@ -10153,81 +10171,16 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                 type="button"
                 className={calendarFilters[option.key] ? "btn-gold-compact" : "btn-outline"}
                 onClick={() => setCalendarFilters((current) => ({ ...current, [option.key]: !current[option.key] }))}
-                style={calendarFilters[option.key]
-                  ? { boxShadow:`0 0 0 1px ${C.goldDim}, 0 10px 24px rgba(201,168,76,.24)`, display:"inline-flex", alignItems:"center", gap:8 }
-                  : { padding:"6px 12px", fontSize:12, opacity:.78 }}
+                style={calendarFilters[option.key] ? activeCalendarFilterStyle : inactiveCalendarFilterStyle}
               >
                 {calendarFilters[option.key] ? (
                   <>
-                    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:4,background:"rgba(13,18,31,.24)",border:`1px solid ${C.gold}`,fontSize:11,lineHeight:1,color:C.gold}}>✓</span>
+                    <span style={activeCalendarCheckStyle}>✓</span>
                     <span>{option.label}</span>
                   </>
                 ) : option.label}
               </button>
             ))}
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,width:"100%",maxWidth:320}}>
-              <div style={{display:"grid",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Month</label>
-                <select
-                  className="input-field"
-                  value={calendarCursor.getMonth()}
-                  onChange={(e) => setCalendarCursor((current) => clampCalendarCursor(new Date(current.getFullYear(), Number(e.target.value), 1)))}
-                  style={{background:C.surface,padding:"10px 12px",fontSize:13}}
-                >
-                  {months.map((month, index) => (
-                    <option key={month} value={index}>{month}</option>
-                  ))}
-                </select>
-              </div>
-              <div style={{display:"grid",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Year</label>
-                <select
-                  className="input-field"
-                  value={calendarCursor.getFullYear()}
-                  onChange={(e) => setCalendarCursor((current) => clampCalendarCursor(new Date(Number(e.target.value), current.getMonth(), 1)))}
-                  style={{background:C.surface,padding:"10px 12px",fontSize:13}}
-                >
-                  {calendarYears.map((year) => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",alignItems:"center",marginLeft:"auto"}}>
-              <button
-                type="button"
-                className="btn-gold-compact"
-                onClick={() => setCalendarCursor((current) => calendarViewMode === "month"
-                  ? clampCalendarCursor(new Date(current.getFullYear(), current.getMonth() - 1, 1))
-                  : clampCalendarCursor(new Date(current.getFullYear(), current.getMonth(), current.getDate() - 7)))}
-              >
-                ←
-              </button>
-              <div style={{fontSize:12,color:C.text,minWidth:112,textAlign:"center",alignSelf:"center",flex:"0 1 auto"}}>
-                {calendarViewMode === "month"
-                  ? calendarCursor.toLocaleDateString("en-US", { month: "short", year: "numeric" })
-                  : `${fmtShortDate(weekStart)}-${fmtShortDate(weekEnd)}`}
-              </div>
-              <button
-                type="button"
-                className="btn-gold-compact"
-                onClick={() => setCalendarCursor((current) => calendarViewMode === "month"
-                  ? clampCalendarCursor(new Date(current.getFullYear(), current.getMonth() + 1, 1))
-                  : clampCalendarCursor(new Date(current.getFullYear(), current.getMonth(), current.getDate() + 7)))}
-              >
-                →
-              </button>
-              <button
-                type="button"
-                className="btn-gold-compact"
-                onClick={() => setCalendarCursor(clampCalendarCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())))}
-                style={{padding:"6px 12px",fontSize:12}}
-              >
-                {calendarViewMode === "month" ? "Go To This Month" : "Go To This Week"}
-              </button>
-            </div>
           </div>
         </div>
         <div style={{display:"grid",gap:12,marginBottom:18,paddingBottom:18,borderBottom:`1px solid ${C.border}`}} />
@@ -10253,79 +10206,9 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
             </div>
           </div>
         )}
-        {calendarViewMode === "list" ? (
-          <>
-            {!visibleCalendarItems.length && (
-              <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected this week.</p>
-            )}
-            <div style={{display:"grid",gap:12}}>
-              {weekDays.map((day, index) => (
-                <div
-                  key={day.key}
-                  className="card"
-                  style={{
-                    padding:"12px 14px",
-                    display:"grid",
-                    gap:10,
-                    background:C.card,
-                    border:day.isToday ? `1px solid ${C.goldDim}` : `1px solid ${C.border}`,
-                  }}
-                >
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <div>
-                      <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:4}}>
-                        {weekdayLabels[index]}
-                      </div>
-                      <div style={{fontSize:18,fontWeight:700,color:day.isToday ? C.gold : C.text,fontFamily:"'Young Serif Medium', Georgia, serif",lineHeight:1.1}}>
-                        {fmtDate(day.date)}
-                      </div>
-                    </div>
-                    {day.isToday && (
-                      <span style={{fontSize:9,color:C.gold,textTransform:"uppercase",letterSpacing:".08em"}}>Today</span>
-                    )}
-                  </div>
-                  <div style={{display:"grid",gap:8}}>
-                    {day.items.length === 0 && (
-                      <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>Nothing scheduled.</div>
-                    )}
-                    {day.items.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => openCalendarItem(item)}
-                        style={{display:"grid",gap:4,padding:"8px 10px",border:`1px solid ${item.tone}33`,borderRadius:10,background:`${item.tone}12`,textAlign:"left",minWidth:0,cursor:"pointer"}}
-                      >
-                        <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
-                          <div style={{fontSize:12,fontWeight:600,color:C.text,lineHeight:1.4,minWidth:0}}>{item.title}</div>
-                          {item.editable && (
-                            <button
-                              type="button"
-                              className="btn-outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openCalendarEventEditor(item);
-                              }}
-                              style={{padding:4,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}
-                              aria-label={`Edit ${item.title}`}
-                              title="Edit calendar event"
-                            >
-                              <Icons.pen />
-                            </button>
-                          )}
-                        </div>
-                        <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>{item.detail || item.tag}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            {!visibleMonthItems.length && (
-              <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected this month.</p>
-            )}
+        {!visibleMonthItems.length && (
+          <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected this month.</p>
+        )}
             <div style={{overflowX:"auto",paddingBottom:4}}>
               <div style={{minWidth:760}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6,marginBottom:8}}>
@@ -10406,8 +10289,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                 </div>
               </div>
             </div>
-          </>
-        )}
       </div>
     </div>
   );

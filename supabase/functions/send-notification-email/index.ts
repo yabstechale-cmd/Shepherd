@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
       return jsonResponse(200, { skipped: true, reason: "Email provider is not configured yet." });
     }
 
-    const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-mauve.vercel.app").replace(/\/+$/, "");
+    const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-s.com").replace(/\/+$/, "");
     const targetRoute = routeByTarget[notification.target || "dashboard"] || "/dashboard";
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",

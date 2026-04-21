@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
       return jsonResponse(500, { error: "Email provider is not configured yet." });
     }
 
-    const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-mauve.vercel.app").replace(/\/+$/, "");
+    const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-s.com").replace(/\/+$/, "");
     const sent = [];
 
     for (const notification of previewNotifications) {

@@ -1,5 +1,2 @@
-[functions.generate-automation-draft]
-verify_jwt = false
-
 [functions.google-calendar-sync]
 verify_jwt = false

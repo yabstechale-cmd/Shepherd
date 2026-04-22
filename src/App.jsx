@@ -3255,20 +3255,10 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     setEmailPreviewError("");
     setEmailPreviewSending(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-      if (!accessToken) throw new Error("Please log in again before sending preview emails.");
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-notification-preview`, {
-        method: "POST",
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({}),
+      const { data, error } = await supabase.functions.invoke("send-notification-preview", {
+        body: {},
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error || `Preview sender failed with status ${response.status}.`);
+      if (error) throw error;
       setEmailPreviewMessage(`Sent ${data?.sent?.length || 0} preview emails to ${data?.recipientEmail || profile?.email || "your Shepherd profile email"}.`);
     } catch (error) {
       setEmailPreviewError(error?.message || "We couldn't send the preview emails yet.");

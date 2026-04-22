@@ -63,11 +63,20 @@ function cleanBoolean(value: unknown) {
   return value === true || value === "true";
 }
 
+function createPublicAccessToken() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function buildEventRequestPayload(churchId: string, form: Record<string, unknown>, eventTiming: string, tablesNeeded: string) {
   const payload = {
     church_id: churchId,
     status: "new",
     requested_by: cleanString(form.contact_name, 160),
+    public_access_token: createPublicAccessToken(),
+    public_access_enabled: true,
+    public_comments: [],
     event_name: cleanString(form.event_name, 200),
     event_format: cleanString(form.event_format, 80),
     event_timing: cleanString(eventTiming, 500),
@@ -170,7 +179,11 @@ Deno.serve(async (req) => {
     }
 
     const payload = buildEventRequestPayload(church.id, form, eventTiming, tablesNeeded);
-    const { error: insertError } = await adminClient.from("event_requests").insert(payload);
+    const { data: insertedRequest, error: insertError } = await adminClient
+      .from("event_requests")
+      .insert(payload)
+      .select("public_access_token")
+      .single();
     if (insertError) throw insertError;
 
     await adminClient.from("event_request_rate_limits").insert({
@@ -178,7 +191,11 @@ Deno.serve(async (req) => {
       requester_key: requesterKey,
     });
 
-    return jsonResponse(200, { submitted: true, churchName: church.name });
+    return jsonResponse(200, {
+      submitted: true,
+      churchName: church.name,
+      publicAccessToken: insertedRequest?.public_access_token || null,
+    });
   } catch (error) {
     return jsonResponse(500, { error: error instanceof Error ? error.message : "We couldn't submit that request." });
   }

@@ -797,6 +797,26 @@ const createEventRequestBlank = (profile = null) => ({
   submitted_on: new Date().toISOString().split("T")[0],
   signature: profile?.full_name || "",
 });
+const eventRequestToForm = (request = {}) => ({
+  ...createEventRequestBlank(),
+  ...Object.fromEntries(Object.keys(createEventRequestBlank()).map((key) => [key, request?.[key] ?? createEventRequestBlank()[key]])),
+  location_areas: Array.isArray(request?.location_areas) ? request.location_areas : [],
+  av_request: !!request?.av_request,
+  white_linen_agreement: !!request?.white_linen_agreement,
+  metal_folding_chairs_requested: !!request?.metal_folding_chairs_requested,
+  kitchen_use: !!request?.kitchen_use,
+  drip_coffee_only: !!request?.drip_coffee_only,
+  espresso_drinks: !!request?.espresso_drinks,
+  tables_6ft_rectangular: String(request?.tables_6ft_rectangular ?? "0"),
+  tables_8ft_rectangular: String(request?.tables_8ft_rectangular ?? "0"),
+  tables_5ft_round: String(request?.tables_5ft_round ?? "0"),
+  metal_folding_chairs: request?.metal_folding_chairs ? String(request.metal_folding_chairs) : "",
+});
+const createPublicAccessToken = () => {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+};
 const buildEventTimingSummary = (form) => {
   if (form.event_format === "single") {
     if (!form.single_date || !form.single_start_time || !form.single_end_time) return "";
@@ -4673,6 +4693,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   const [formError, setFormError] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [requestCommentDraft, setRequestCommentDraft] = useState("");
   const [eventWorkflows, setEventWorkflows] = useState([]);
   const [workflowLoading, setWorkflowLoading] = useState(false);
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
@@ -4855,6 +4876,10 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
 
   const loadingRequests = !!church?.id && eventRequests === null;
   const publicEventRequestLink = typeof window !== "undefined" ? `${window.location.origin}/event-request` : "/event-request";
+  const getEventRequestShareLink = (request) => {
+    if (!request?.public_access_token) return "";
+    return typeof window !== "undefined" ? `${window.location.origin}/event-request/${request.public_access_token}` : `/event-request/${request.public_access_token}`;
+  };
   const copyPublicEventRequestLink = async () => {
     try {
       await navigator.clipboard.writeText(publicEventRequestLink);
@@ -4863,6 +4888,34 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     } catch {
       setCopyMessage("Couldn't copy automatically. Use /event-request.");
       window.setTimeout(() => setCopyMessage(""), 3000);
+    }
+  };
+  const copyRequesterEventRequestLink = async (request) => {
+    if (!request?.id) return;
+    setFormError("");
+    let targetRequest = request;
+    if (!targetRequest.public_access_token) {
+      const token = createPublicAccessToken();
+      const { data, error } = await supabase
+        .from("event_requests")
+        .update({ public_access_token: token, public_access_enabled: true })
+        .eq("id", request.id)
+        .select()
+        .single();
+      if (error) {
+        setFormError(error.message || "We couldn't create that requester link.");
+        return;
+      }
+      targetRequest = data;
+      setEventRequests((current) => (current || []).map((entry) => entry.id === data.id ? data : entry));
+      setSelectedRequest(data);
+    }
+    const link = getEventRequestShareLink(targetRequest);
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopyMessage("Requester share link copied.");
+    } catch {
+      setCopyMessage(`Requester link: ${link}`);
     }
   };
 
@@ -5354,7 +5407,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       summary: `${profile?.full_name || "A staff member"} deleted event plan "${workflow.event_name || workflow.title}".`,
     });
   };
-  const deleteRequest = async (request) => {
+	  const deleteRequest = async (request) => {
     if (!request?.id) return;
     if (!confirmDestructiveAction(`Delete ${request.event_name || "this event request"}? You can restore supported items from Trash.`)) return;
     moveItemToTrash?.({
@@ -5374,12 +5427,46 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     setFormError("");
     setEventRequests((current) => (current || []).filter((entry) => entry.id !== request.id));
     setSelectedRequest(null);
+	    await recordActivity?.({
+	      action: "deleted",
+	      entityType: "event_request",
+	      entityId: request.id,
+	      entityTitle: request.event_name,
+	      summary: `${profile?.full_name || "A staff member"} deleted event request "${request.event_name}".`,
+	    });
+	  };
+  const addEventRequestComment = async (request) => {
+    const body = requestCommentDraft.trim();
+    if (!body || !request?.id) return;
+    setFormError("");
+    const nextComment = {
+      id: crypto.randomUUID(),
+      author: profile?.full_name || "Staff",
+      email: profile?.email || "",
+      role: "staff",
+      body,
+      created_at: new Date().toISOString(),
+    };
+    const nextComments = [...(Array.isArray(request.public_comments) ? request.public_comments : []), nextComment];
+    const { data, error } = await supabase
+      .from("event_requests")
+      .update({ public_comments: nextComments })
+      .eq("id", request.id)
+      .select()
+      .single();
+    if (error) {
+      setFormError(error.message || "We couldn't add that comment.");
+      return;
+    }
+    setEventRequests((current) => (current || []).map((entry) => entry.id === data.id ? data : entry));
+    setSelectedRequest(data);
+    setRequestCommentDraft("");
     await recordActivity?.({
-      action: "deleted",
+      action: "commented",
       entityType: "event_request",
       entityId: request.id,
       entityTitle: request.event_name,
-      summary: `${profile?.full_name || "A staff member"} deleted event request "${request.event_name}".`,
+      summary: `${profile?.full_name || "A staff member"} commented on event request "${request.event_name}".`,
     });
   };
 
@@ -5920,12 +6007,17 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                 </div>
               </div>
             </div>
-          ) : requestDetails ? (
-            <div style={{display:"grid",gap:18}}>
-              <div style={{textAlign:"left"}}>
-                <button className="btn-outline" onClick={()=>setSelectedRequest(null)} style={{marginBottom:14}}>Back to Event Requests</button>
-                <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{requestDetails.event_name}</h3>
-              </div>
+	          ) : requestDetails ? (
+	            <div style={{display:"grid",gap:18}}>
+	              <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+	                <div style={{textAlign:"left"}}>
+	                  <button className="btn-outline" onClick={()=>setSelectedRequest(null)} style={{marginBottom:14}}>Back to Event Requests</button>
+	                  <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{requestDetails.event_name}</h3>
+	                </div>
+	                <button className="btn-outline" onClick={() => copyRequesterEventRequestLink(requestDetails)}>
+	                  Copy Requester Share Link
+	                </button>
+	              </div>
               <div style={{display:"grid",gap:14,textAlign:"left"}}>
                 <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <div>
@@ -5981,11 +6073,42 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                     ].filter(Boolean).join("\n") || "No additional resources requested."}
                   </div>
                 </div>
-                <div>
-                  <div style={{fontSize:12,color:C.muted}}>Additional Information</div>
-                  <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.additional_information || "—"}</div>
-                </div>
-              </div>
+	                <div>
+	                  <div style={{fontSize:12,color:C.muted}}>Additional Information</div>
+	                  <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.additional_information || "—"}</div>
+	                </div>
+	                <div className="card" style={{padding:16,textAlign:"left",display:"grid",gap:12,background:C.surface}}>
+	                  <div>
+	                    <div style={sectionTitleStyle}>Requester Conversation</div>
+	                    <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+	                      Comments here are visible to anyone using this requester's share link.
+	                    </div>
+	                  </div>
+	                  <div style={{display:"grid",gap:10}}>
+	                    {(requestDetails.public_comments || []).length === 0 ? (
+	                      <div style={{padding:"16px 14px",border:`1px dashed ${C.border}`,borderRadius:12,fontSize:12,color:C.muted,textAlign:"center"}}>
+	                        No requester comments yet.
+	                      </div>
+	                    ) : (requestDetails.public_comments || []).map((comment) => (
+	                      <div key={comment.id} style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
+	                        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
+	                          <div style={{fontSize:13,color:C.text,fontWeight:700}}>
+	                            {comment.author || "Guest"}{comment.role === "staff" ? <span style={{color:C.gold}}> • Staff</span> : ""}
+	                          </div>
+	                          <div style={{fontSize:11,color:C.muted}}>{fmtActivityDate(comment.created_at)}</div>
+	                        </div>
+	                        <div style={{fontSize:13,color:C.text,lineHeight:1.6,whiteSpace:"pre-line",marginTop:6}}>{comment.body}</div>
+	                      </div>
+	                    ))}
+	                  </div>
+	                  <textarea className="input-field" rows={3} placeholder="Reply or ask a follow-up question" value={requestCommentDraft} onChange={(e)=>setRequestCommentDraft(e.target.value)} style={{resize:"vertical"}} />
+	                  <div style={{display:"flex",justifyContent:"flex-end"}}>
+	                    <button className="btn-outline" onClick={() => addEventRequestComment(requestDetails)} disabled={!requestCommentDraft.trim()}>
+	                      Add Comment
+	                    </button>
+	                  </div>
+	                </div>
+	              </div>
               {formError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{formError}</div>}
               <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
                 {canApproveEventRequests(profile, church) && requestDetails.status !== "approved" && (
@@ -7224,6 +7347,182 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   );
 }
 
+function PublicEventRequestSharePage({ token }) {
+  const [request, setRequest] = useState(null);
+  const [eventForm, setEventForm] = useState(() => createEventRequestBlank());
+  const [commentDraft, setCommentDraft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const loadSharedRequest = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    const { data, error: loadError } = await supabase.functions.invoke("event-request-share", {
+      body: { action: "get", token },
+    });
+    setLoading(false);
+    if (loadError) {
+      setError(loadError.message || "We couldn't load that event request.");
+      return;
+    }
+    setRequest(data?.request || null);
+    setEventForm(eventRequestToForm(data?.request || {}));
+  }, [token]);
+
+  useEffect(() => {
+    loadSharedRequest();
+  }, [loadSharedRequest]);
+
+  const saveSharedRequest = async () => {
+    const eventTiming = buildEventTimingSummary(eventForm);
+    if (!eventTiming) {
+      setError("Complete the event timing before saving updates.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const { data, error: saveError } = await supabase.functions.invoke("event-request-share", {
+      body: {
+        action: "update",
+        token,
+        eventForm: {
+          ...eventForm,
+          event_timing: eventTiming,
+          tables_needed: buildTablesSummary(eventForm),
+        },
+      },
+    });
+    setSaving(false);
+    if (saveError) {
+      setError(saveError.message || "We couldn't save those updates.");
+      return;
+    }
+    setRequest(data?.request || null);
+    setEventForm(eventRequestToForm(data?.request || {}));
+    setMessage("Request details updated.");
+  };
+
+  const addSharedComment = async () => {
+    if (!commentDraft.trim()) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const { data, error: commentError } = await supabase.functions.invoke("event-request-share", {
+      body: {
+        action: "comment",
+        token,
+        authorName: eventForm.contact_name,
+        authorEmail: eventForm.email,
+        body: commentDraft,
+      },
+    });
+    setSaving(false);
+    if (commentError) {
+      setError(commentError.message || "We couldn't add that comment.");
+      return;
+    }
+    setRequest(data?.request || null);
+    setEventForm(eventRequestToForm(data?.request || {}));
+    setCommentDraft("");
+    setMessage("Comment added.");
+  };
+
+  const canEditDetails = request?.status === "new";
+
+  return (
+    <div style={{minHeight:"100vh",background:C.bg,padding:"32px 16px"}}>
+      <div className="fadeIn" style={{maxWidth:920,margin:"0 auto"}}>
+        <div className="card" style={{padding:28,textAlign:"left",display:"grid",gap:18}}>
+          <div>
+            <h1 style={pageTitleStyle}>Event Request</h1>
+            <p style={{color:C.muted,fontSize:13,marginTop:6,lineHeight:1.6}}>
+              Use this secure request link to check status, update event details while the request is still new, and answer follow-up questions from staff.
+            </p>
+          </div>
+          {loading ? (
+            <div style={{padding:"24px 14px",border:`1px dashed ${C.border}`,borderRadius:12,color:C.muted,fontSize:12,textAlign:"center"}}>
+              Loading request...
+            </div>
+          ) : error && !request ? (
+            <div style={{padding:"16px 14px",border:`1px solid rgba(224,82,82,.35)`,borderRadius:12,color:C.danger,fontSize:13}}>
+              {error}
+            </div>
+          ) : (
+            <>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
+                <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                  <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Status</div>
+                  <div style={{fontSize:15,color:C.gold,fontWeight:700,marginTop:4,textTransform:"capitalize"}}>{request?.status || "new"}</div>
+                </div>
+                <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                  <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Submitted By</div>
+                  <div style={{fontSize:15,color:C.text,fontWeight:700,marginTop:4}}>{request?.contact_name || "Requester"}</div>
+                </div>
+                <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                  <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Submitted On</div>
+                  <div style={{fontSize:15,color:C.text,fontWeight:700,marginTop:4}}>{fmtDate(request?.submitted_on || request?.created_at)}</div>
+                </div>
+              </div>
+
+              {!canEditDetails && (
+                <div style={{padding:"12px 14px",border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.goldGlow,color:C.text,fontSize:12,lineHeight:1.6}}>
+                  This request has already been reviewed, so details are locked. You can still leave comments or answers below.
+                </div>
+              )}
+
+              {canEditDetails && (
+                <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:14}}>
+                  <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
+                  <div style={{display:"flex",justifyContent:"flex-end"}}>
+                    <button className="btn-gold" onClick={saveSharedRequest} disabled={saving}>
+                      {saving ? "Saving..." : "Save Request Updates"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:12}}>
+                <div>
+                  <h3 style={sectionTitleStyle}>Follow-Up Conversation</h3>
+                  <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                    Use this area to answer staff questions or add important updates.
+                  </p>
+                </div>
+                {(request?.public_comments || []).length === 0 ? (
+                  <div style={{padding:"18px 14px",border:`1px dashed ${C.border}`,borderRadius:12,color:C.muted,fontSize:12,textAlign:"center"}}>
+                    No comments yet.
+                  </div>
+                ) : (request?.public_comments || []).map((comment) => (
+                  <div key={comment.id} style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
+                      <div style={{fontSize:13,color:C.text,fontWeight:700}}>
+                        {comment.author || "Guest"}{comment.role === "staff" ? <span style={{color:C.gold}}> • Staff</span> : ""}
+                      </div>
+                      <div style={{fontSize:11,color:C.muted}}>{fmtActivityDate(comment.created_at)}</div>
+                    </div>
+                    <div style={{fontSize:13,color:C.text,lineHeight:1.6,whiteSpace:"pre-line",marginTop:6}}>{comment.body}</div>
+                  </div>
+                ))}
+                <textarea className="input-field" rows={4} placeholder="Add a comment or answer a staff question" value={commentDraft} onChange={(e)=>setCommentDraft(e.target.value)} style={{resize:"vertical"}} />
+                <div style={{display:"flex",justifyContent:"flex-end"}}>
+                  <button className="btn-outline" onClick={addSharedComment} disabled={saving || !commentDraft.trim()}>
+                    Add Comment
+                  </button>
+                </div>
+              </div>
+              {error && <div style={{fontSize:12,color:C.danger}}>{error}</div>}
+              {message && <div style={{fontSize:12,color:C.success}}>{message}</div>}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PublicEventRequestPage() {
   const [churchCode, setChurchCode] = useState("");
   const [churchRecord, setChurchRecord] = useState(null);
@@ -7232,6 +7531,7 @@ function PublicEventRequestPage() {
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank());
   const [submitError, setSubmitError] = useState("");
   const [submitMessage, setSubmitMessage] = useState("");
+  const [submittedShareLink, setSubmittedShareLink] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -7291,7 +7591,7 @@ function PublicEventRequestPage() {
     setSubmitting(true);
     setSubmitError("");
     setSubmitMessage("");
-    const { error } = await supabase.functions.invoke("submit-public-event-request", {
+    const { data, error } = await supabase.functions.invoke("submit-public-event-request", {
       body: {
         churchCode: churchCode.trim(),
         eventForm,
@@ -7304,7 +7604,11 @@ function PublicEventRequestPage() {
       setSubmitting(false);
       return;
     }
-    setSubmitMessage("Your event request has been submitted. The Administrator will follow up within one week.");
+    const shareLink = data?.publicAccessToken && typeof window !== "undefined"
+      ? `${window.location.origin}/event-request/${data.publicAccessToken}`
+      : "";
+    setSubmittedShareLink(shareLink);
+    setSubmitMessage("Your event request has been submitted. The Administrator will follow up within one week. Save the request link below so you can check status, update details, or answer follow-up questions.");
     setEventForm(createEventRequestBlank());
     setSubmitting(false);
   };
@@ -7346,6 +7650,15 @@ function PublicEventRequestPage() {
               <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
               {submitError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{submitError}</div>}
               {submitMessage && <div style={{marginTop:14,fontSize:12,color:C.success,textAlign:"left"}}>{submitMessage}</div>}
+              {submittedShareLink && (
+                <div style={{marginTop:14,padding:"12px 14px",border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.goldGlow,textAlign:"left",display:"grid",gap:8}}>
+                  <div style={{fontSize:12,color:C.text,fontWeight:700}}>Your request link</div>
+                  <a href={submittedShareLink} style={{fontSize:12,color:C.gold,wordBreak:"break-all"}}>{submittedShareLink}</a>
+                  <button className="btn-outline" onClick={() => navigator.clipboard?.writeText(submittedShareLink)} style={{justifySelf:"start",fontSize:12,padding:"7px 10px"}}>
+                    Copy Link
+                  </button>
+                </div>
+              )}
               <div style={{display:"flex",justifyContent:"flex-end",marginTop:22}}>
                 <button className="btn-gold" onClick={submitEventRequest} disabled={submitting} style={{opacity:submitting ? 0.8 : 1}}>
                   {submitting ? "Submitting..." : "Submit Request"}
@@ -11028,7 +11341,9 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
-  const isPublicEventRequestRoute = typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "") === "/event-request";
+  const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
+  const publicEventRequestToken = currentPath.startsWith("/event-request/") ? currentPath.split("/").filter(Boolean)[1] || "" : "";
+  const isPublicEventRequestRoute = currentPath === "/event-request" || !!publicEventRequestToken;
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [church, setChurch] = useState(null);
@@ -11672,7 +11987,7 @@ export default function App() {
     return (
       <>
         <GS/>
-        <PublicEventRequestPage/>
+        {publicEventRequestToken ? <PublicEventRequestSharePage token={publicEventRequestToken} /> : <PublicEventRequestPage/>}
       </>
     );
   }

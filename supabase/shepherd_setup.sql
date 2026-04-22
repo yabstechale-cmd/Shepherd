@@ -400,6 +400,13 @@ alter table public.event_requests add column if not exists graphics_task_id uuid
 alter table public.event_requests add column if not exists submitted_on date not null default current_date;
 alter table public.event_requests add column if not exists signature text;
 alter table public.event_requests add column if not exists created_at timestamptz not null default now();
+alter table public.event_requests add column if not exists public_access_token text;
+alter table public.event_requests add column if not exists public_access_enabled boolean not null default true;
+alter table public.event_requests add column if not exists public_comments jsonb not null default '[]'::jsonb;
+
+create unique index if not exists event_requests_public_access_token_key
+  on public.event_requests (public_access_token)
+  where public_access_token is not null;
 
 alter table public.event_requests
   enable row level security;

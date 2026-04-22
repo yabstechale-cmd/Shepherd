@@ -4875,7 +4875,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   };
 
   const loadingRequests = !!church?.id && eventRequests === null;
-  const publicEventRequestLink = typeof window !== "undefined" ? `${window.location.origin}/event-request` : "/event-request";
+  const publicEventRequestLink = (() => {
+    const code = church?.code ? encodeURIComponent(church.code) : "";
+    const path = code ? `/event-request/new/${code}` : "/event-request";
+    return typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+  })();
   const getEventRequestShareLink = (request) => {
     if (!request?.public_access_token) return "";
     return typeof window !== "undefined" ? `${window.location.origin}/event-request/${request.public_access_token}` : `/event-request/${request.public_access_token}`;
@@ -7523,54 +7527,15 @@ function PublicEventRequestSharePage({ token }) {
   );
 }
 
-function PublicEventRequestPage() {
-  const [churchCode, setChurchCode] = useState("");
-  const [churchRecord, setChurchRecord] = useState(null);
-  const [lookupError, setLookupError] = useState("");
-  const [lookupLoading, setLookupLoading] = useState(false);
+function PublicEventRequestPage({ churchCode = "" }) {
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank());
   const [submitError, setSubmitError] = useState("");
   const [submitMessage, setSubmitMessage] = useState("");
   const [submittedShareLink, setSubmittedShareLink] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    const code = churchCode.trim();
-
-    if (code.length < AUTH_CODE_LENGTH) {
-      return () => {
-        active = false;
-      };
-    }
-
-    setLookupLoading(true);
-    fetchChurchByCode(code)
-      .then((church) => {
-        if (!active) return;
-        setChurchRecord(church);
-      })
-      .catch((err) => {
-        if (!active) return;
-        setChurchRecord(null);
-        setLookupError(err.message || "We couldn't find that church code.");
-      })
-      .finally(() => {
-        if (!active) return;
-        setLookupLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [churchCode]);
-
   const submitEventRequest = async () => {
     const eventTiming = buildEventTimingSummary(eventForm);
-    if (!churchRecord?.id) {
-      setSubmitError("Enter a valid church code before submitting the form.");
-      return;
-    }
     if (!eventForm.event_name || !eventTiming || !eventForm.setup_datetime || !eventForm.description || !eventForm.contact_name || !eventForm.phone || !eventForm.email || !eventForm.location_scope || !eventForm.signature) {
       setSubmitError("Please complete the required fields before submitting this request.");
       return;
@@ -7593,7 +7558,7 @@ function PublicEventRequestPage() {
     setSubmitMessage("");
     const { data, error } = await supabase.functions.invoke("submit-public-event-request", {
       body: {
-        churchCode: churchCode.trim(),
+        churchCode,
         eventForm,
         eventTiming,
         tablesNeeded: buildTablesSummary(eventForm),
@@ -7620,52 +7585,33 @@ function PublicEventRequestPage() {
           <div style={{marginBottom:22,textAlign:"left"}}>
             <h1 style={pageTitleStyle}>Event Request Form</h1>
             <p style={{color:C.muted,fontSize:13,marginTop:6}}>
-              Enter your church code to submit an event request. Once submitted, it will automatically appear in the church's Events board for review.
+              Submit an event request for review. Once submitted, it will automatically appear in the church's Events board.
             </p>
           </div>
 
-          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:22,textAlign:"left"}}>
-            <label style={{fontSize:14,fontWeight:600,color:C.text}}>Church Code <span style={{color:C.danger}}>*</span></label>
-            <input className="input-field" value={churchCode} onChange={(e)=>{
-              const next = e.target.value;
-              setChurchCode(next);
-              if (next.trim().length < AUTH_CODE_LENGTH) {
-                setChurchRecord(null);
-                setLookupError("");
-                setLookupLoading(false);
-                setSubmitError("");
-                setSubmitMessage("");
-              } else {
-                setLookupLoading(true);
-                setLookupError("");
-              }
-            }} maxLength={AUTH_CODE_LENGTH} placeholder="Enter your church code" />
-            {lookupLoading && <div style={{fontSize:12,color:C.muted}}>Looking up church...</div>}
-            {churchRecord && <div style={{fontSize:12,color:C.success}}>Submitting for {churchRecord.name}</div>}
-            {lookupError && <div style={{fontSize:12,color:C.danger}}>{lookupError}</div>}
-          </div>
-
-          {churchRecord && (
-            <>
-              <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
-              {submitError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{submitError}</div>}
-              {submitMessage && <div style={{marginTop:14,fontSize:12,color:C.success,textAlign:"left"}}>{submitMessage}</div>}
-              {submittedShareLink && (
-                <div style={{marginTop:14,padding:"12px 14px",border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.goldGlow,textAlign:"left",display:"grid",gap:8}}>
-                  <div style={{fontSize:12,color:C.text,fontWeight:700}}>Your request link</div>
-                  <a href={submittedShareLink} style={{fontSize:12,color:C.gold,wordBreak:"break-all"}}>{submittedShareLink}</a>
-                  <button className="btn-outline" onClick={() => navigator.clipboard?.writeText(submittedShareLink)} style={{justifySelf:"start",fontSize:12,padding:"7px 10px"}}>
-                    Copy Link
-                  </button>
-                </div>
-              )}
-              <div style={{display:"flex",justifyContent:"flex-end",marginTop:22}}>
-                <button className="btn-gold" onClick={submitEventRequest} disabled={submitting} style={{opacity:submitting ? 0.8 : 1}}>
-                  {submitting ? "Submitting..." : "Submit Request"}
-                </button>
-              </div>
-            </>
+          {!churchCode && (
+            <div style={{marginBottom:16,padding:"12px 14px",border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.goldGlow,color:C.text,fontSize:13,lineHeight:1.55,textAlign:"left"}}>
+              This form needs to be opened from the church's shared request link so Shepherd knows where to send it.
+            </div>
           )}
+
+          <EventRequestFormFields eventForm={eventForm} setEventForm={setEventForm} />
+          {submitError && <div style={{marginTop:14,fontSize:12,color:C.danger,textAlign:"left"}}>{submitError}</div>}
+          {submitMessage && <div style={{marginTop:14,fontSize:12,color:C.success,textAlign:"left"}}>{submitMessage}</div>}
+          {submittedShareLink && (
+            <div style={{marginTop:14,padding:"12px 14px",border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.goldGlow,textAlign:"left",display:"grid",gap:8}}>
+              <div style={{fontSize:12,color:C.text,fontWeight:700}}>Your request link</div>
+              <a href={submittedShareLink} style={{fontSize:12,color:C.gold,wordBreak:"break-all"}}>{submittedShareLink}</a>
+              <button className="btn-outline" onClick={() => navigator.clipboard?.writeText(submittedShareLink)} style={{justifySelf:"start",fontSize:12,padding:"7px 10px"}}>
+                Copy Link
+              </button>
+            </div>
+          )}
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:22}}>
+            <button className="btn-gold" onClick={submitEventRequest} disabled={submitting || !churchCode} style={{opacity:submitting || !churchCode ? 0.8 : 1}}>
+              {submitting ? "Submitting..." : "Submit Request"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -11342,8 +11288,11 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
   const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
-  const publicEventRequestToken = currentPath.startsWith("/event-request/") ? currentPath.split("/").filter(Boolean)[1] || "" : "";
-  const isPublicEventRequestRoute = currentPath === "/event-request" || !!publicEventRequestToken;
+  const pathSegments = currentPath.split("/").filter(Boolean);
+  const isNewPublicEventRequestRoute = pathSegments[0] === "event-request" && pathSegments[1] === "new";
+  const publicEventRequestChurchCode = isNewPublicEventRequestRoute ? pathSegments[2] || "" : "";
+  const publicEventRequestToken = pathSegments[0] === "event-request" && !isNewPublicEventRequestRoute ? pathSegments[1] || "" : "";
+  const isPublicEventRequestRoute = currentPath === "/event-request" || isNewPublicEventRequestRoute || !!publicEventRequestToken;
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [church, setChurch] = useState(null);
@@ -11987,7 +11936,11 @@ export default function App() {
     return (
       <>
         <GS/>
-        {publicEventRequestToken ? <PublicEventRequestSharePage token={publicEventRequestToken} /> : <PublicEventRequestPage/>}
+        {publicEventRequestToken ? (
+          <PublicEventRequestSharePage token={publicEventRequestToken} />
+        ) : (
+          <PublicEventRequestPage churchCode={publicEventRequestChurchCode} />
+        )}
       </>
     );
   }

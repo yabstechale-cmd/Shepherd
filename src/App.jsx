@@ -2829,7 +2829,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   const canReviewChurchDeletion = isChurchDeletionPending(church)
     && Array.isArray(church?.deletion_reviewer_user_ids)
     && church.deletion_reviewer_user_ids.includes(profile?.id);
-  const canSeeChurchAccount = canManageAccountManagers || canDeleteChurchAccount(profile, church) || canReviewChurchDeletion;
+  const canSeeChurchAccount = canManageAccountManagers || canDeleteChurchAccount(profile, church) || canReviewChurchDeletion || canSeeActivityLog;
   const [settingsBranch, setSettingsBranch] = useState(() => {
     if (typeof window === "undefined") return "my-account";
     const stored = window.localStorage.getItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY);

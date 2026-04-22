@@ -10322,6 +10322,7 @@ export default function App() {
   const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
   const shownNotificationIdsRef = useRef(new Set());
   const deadlineNotificationKeysRef = useRef(new Set());
+  const loadedUserIdRef = useRef(null);
 
   const allowedPages = new Set([
     "dashboard",
@@ -10504,6 +10505,7 @@ export default function App() {
   };
 
   const loadData = async (uid) => {
+    loadedUserIdRef.current = uid || null;
     setLoading(true);
     const { data: authState } = await supabase.auth.getUser();
     const authUser = authState?.user || null;
@@ -10808,11 +10810,19 @@ export default function App() {
       else setLoading(false);
     };
     initializeSession();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       persistProviderTokens(session);
       setSession(session);
+      const nextUserId = session?.user?.id || null;
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+        return;
+      }
+      if (event === "SIGNED_IN" && nextUserId && loadedUserIdRef.current === nextUserId) {
+        return;
+      }
       if (session) loadData(session.user.id);
       else {
+        loadedUserIdRef.current = null;
         setProfile(null);
         setChurch(null);
         setTasks([]);

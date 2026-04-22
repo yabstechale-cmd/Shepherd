@@ -3255,10 +3255,21 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     setEmailPreviewError("");
     setEmailPreviewSending(true);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) throw new Error("Please log in again before sending preview emails.");
       const { data, error } = await supabase.functions.invoke("send-notification-preview", {
+        headers: { Authorization: `Bearer ${accessToken}` },
         body: {},
       });
-      if (error) throw error;
+      if (error) {
+        let functionMessage = "";
+        if (error.context && typeof error.context.json === "function") {
+          const payload = await error.context.json().catch(() => null);
+          functionMessage = payload?.error || payload?.reason || "";
+        }
+        throw new Error(functionMessage || error.message || "Preview sender failed.");
+      }
       setEmailPreviewMessage(`Sent ${data?.sent?.length || 0} preview emails to ${data?.recipientEmail || profile?.email || "your Shepherd profile email"}.`);
     } catch (error) {
       setEmailPreviewError(error?.message || "We couldn't send the preview emails yet.");

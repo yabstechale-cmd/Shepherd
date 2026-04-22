@@ -474,7 +474,6 @@ const canApproveTaskReview = (profile, task) =>
   canReviewTask(profile, task)
   && !listIncludesPerson(task?.review_approvals, profile?.full_name)
   && ["in-review"].includes(task?.status || "todo");
-const canManagePeople = (profile, church) => hasAdministrativeOversight(profile, church);
 const isFinanceUser = (profile) => profileHasMinistry(profile, "Finances") || (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
 const isFinanceDirector = (profile) => (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
 const isSeniorPastor = (profile) => (profile?.staff_roles || []).includes("senior_pastor") || profile?.role === "senior_pastor";
@@ -673,7 +672,6 @@ const PAGE_PATHS = {
   "events-board": "/events",
   "content-media-board": "/content-media",
   "operations-board": "/operations",
-  members: "/members",
   ministries: "/ministries",
 };
 const PATH_PAGES = Object.entries(PAGE_PATHS).reduce((accumulator, [page, path]) => {
@@ -4429,7 +4427,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     if (status === "approved" && existingRequest && !existingRequest.graphics_task_created) {
       const taskPayloads = buildApprovedEventTaskChain(existingRequest, church?.id, previewUsers);
       if (taskPayloads.length > 0) {
-        const { data: createdTasks } = await supabase.from("tasks").insert(taskPayloads).select();
+        const { data: createdTasks, error: taskChainError } = await supabase.from("tasks").insert(taskPayloads).select();
+        if (taskChainError) {
+          setFormError(taskChainError.message || "We couldn't create the event follow-up tasks.");
+          return;
+        }
         if (createdTasks?.length) {
           decisionPayload.graphics_task_created = true;
           decisionPayload.graphics_task_id = createdTasks[0]?.id || null;
@@ -4456,7 +4458,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     }
 
     const { data, error } = await supabase.from("event_requests").update(decisionPayload).eq("id", requestId).select().single();
-    if (error) return;
+    if (error) {
+      setFormError(error.message || "We couldn't update that event request.");
+      return;
+    }
+    setFormError("");
     setEventRequests((current) => current.map((request) => request.id === requestId ? data : request));
     setSelectedRequest((current) => current?.id === requestId ? data : current);
   };
@@ -4628,10 +4634,14 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   };
   const updateWorkflow = async (workflow, changes) => {
     const { data, error } = await supabase.from("event_workflows").update(changes).eq("id", workflow.id).select().maybeSingle();
-    if (error || !data) return;
+    if (error || !data) {
+      setWorkflowError(error?.message || "We couldn't update that event plan.");
+      return null;
+    }
     const normalized = normalizeEventWorkflow(data);
     setEventWorkflows((current) => (current || []).map((entry) => entry.id === normalized.id ? normalized : entry));
     setSelectedWorkflow((current) => current?.id === normalized.id ? normalized : current);
+    return normalized;
   };
   const updateWorkflowChecklistItem = async (workflow, itemId) => {
     const nextItems = (workflow.checklist_items || []).map((item) => item.id === itemId ? { ...item, done: !item.done } : item);
@@ -4929,7 +4939,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       payload: workflow,
     });
     const { error } = await supabase.from("event_workflows").delete().eq("id", workflow.id);
-    if (error) return;
+    if (error) {
+      setWorkflowError(error.message || "We couldn't delete that event plan.");
+      return;
+    }
+    setWorkflowError("");
     setEventWorkflows((current) => (current || []).filter((entry) => entry.id !== workflow.id));
     setSelectedWorkflow((current) => current?.id === workflow.id ? null : current);
   };
@@ -4947,8 +4961,10 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     });
     const { error } = await supabase.from("event_requests").delete().eq("id", request.id);
     if (error) {
+      setFormError(error.message || "We couldn't delete that event request.");
       return;
     }
+    setFormError("");
     setEventRequests((current) => (current || []).filter((entry) => entry.id !== request.id));
     setSelectedRequest(null);
   };
@@ -5556,6 +5572,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                   <div style={{fontSize:13,color:C.text,marginTop:4,lineHeight:1.6}}>{requestDetails.additional_information || "—"}</div>
                 </div>
               </div>
+              {formError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{formError}</div>}
               <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
                 {canApproveEventRequests(profile, church) && requestDetails.status !== "approved" && (
                   <button className="btn-outline" onClick={() => setEventRequestStatus(requestDetails.id, "approved")}>Approve</button>
@@ -5693,7 +5710,11 @@ function Workspaces({ setActive }) {
   );
 }
 
-function ContentMediaBoard({ tasks, setActive }) {
+function ContentMediaBoard({ tasks, setTasks, setActive, churchId }) {
+  const isPreview = churchId === "preview";
+  const [draggingTaskId, setDraggingTaskId] = useState(null);
+  const [dragOverStatus, setDragOverStatus] = useState("");
+  const [contentBoardError, setContentBoardError] = useState("");
   const contentTasks = tasks.filter(isContentTask);
   const columns = [
     { id: "todo", title: "Not Started", detail: "New asks, fresh requests, and creative work that has not started yet." },
@@ -5701,6 +5722,42 @@ function ContentMediaBoard({ tasks, setActive }) {
     { id: "in-review", title: "In Review", detail: "Drafts and deliverables waiting on approvals, edits, or final sign-off." },
     { id: "done", title: "Published / Delivered", detail: "Approved content that has been delivered, posted, or completed." },
   ];
+
+  const updateContentTaskStatus = async (task, nextStatus) => {
+    setContentBoardError("");
+    if (nextStatus === "done" && task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))) {
+      setContentBoardError("This item still needs its review approvals before it can be marked done.");
+      return;
+    }
+    const changes = nextStatus === "in-review" && task.status !== "in-review"
+      ? { status: nextStatus, review_approvals: [], review_history: [] }
+      : { status: nextStatus };
+    if (isPreview) {
+      const updated = normalizeTask({ ...task, ...changes });
+      setTasks((current) => current.map((entry) => entry.id === task.id ? updated : entry));
+      return;
+    }
+    let result = await supabase.from("tasks").update(changes).eq("id", task.id).select().single();
+    if (result.error && /review_history/i.test(result.error.message || "")) {
+      result = await supabase.from("tasks").update({ status: nextStatus, review_approvals: changes.review_approvals || [] }).eq("id", task.id).select().single();
+    }
+    if (result.error) {
+      setContentBoardError(result.error.message || "We couldn't update that item status.");
+      return;
+    }
+    const updated = normalizeTask(result.data);
+    setTasks((current) => current.map((entry) => entry.id === task.id ? updated : entry));
+  };
+
+  const handleContentTaskDrop = async (event, statusKey) => {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData("text/plain") || draggingTaskId;
+    setDraggingTaskId(null);
+    setDragOverStatus("");
+    const task = tasks.find((entry) => entry.id === taskId);
+    if (!task || task.status === statusKey || !isContentTask(task)) return;
+    await updateContentTaskStatus(task, statusKey);
+  };
 
   return (
     <div className="fadeIn mobile-pad" style={{...widePageStyle,overflowX:"hidden"}}>
@@ -5718,6 +5775,11 @@ function ContentMediaBoard({ tasks, setActive }) {
             <button className="btn-outline" onClick={() => setActive("tasks")}>Open Tasks</button>
           </div>
         </div>
+        {contentBoardError && (
+          <div style={{fontSize:12,color:C.danger,textAlign:"left",marginBottom:14}}>
+            {contentBoardError}
+          </div>
+        )}
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:16,width:"100%",maxWidth:"100%"}}>
           {columns.map((column) => {
             const columnTasks = contentTasks.filter((task) => task.status === column.id);
@@ -5726,6 +5788,15 @@ function ContentMediaBoard({ tasks, setActive }) {
               <div
                 key={column.id}
                 className="card content-board-column"
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setDragOverStatus(column.id);
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) setDragOverStatus("");
+                }}
+                onDrop={(event) => handleContentTaskDrop(event, column.id)}
                 style={{
                   padding:16,
                   minHeight:420,
@@ -5734,7 +5805,11 @@ function ContentMediaBoard({ tasks, setActive }) {
                   minWidth:0,
                   overflow:"hidden",
                   borderTop:`3px solid ${statusStyle.accent}`,
-                  background:`linear-gradient(180deg, ${statusStyle.surface} 0%, ${C.card} 24%)`,
+                  background:dragOverStatus === column.id
+                    ? `linear-gradient(180deg, ${statusStyle.surface} 0%, rgba(192,161,72,.14) 100%)`
+                    : `linear-gradient(180deg, ${statusStyle.surface} 0%, ${C.card} 24%)`,
+                  boxShadow:dragOverStatus === column.id ? `0 0 0 1px ${statusStyle.accent}` : undefined,
+                  transition:"background .16s ease, box-shadow .16s ease",
                 }}
               >
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
@@ -5750,13 +5825,22 @@ function ContentMediaBoard({ tasks, setActive }) {
                       key={task.id}
                       type="button"
                       className="content-task-row"
+                      draggable
+                      onDragStart={(event) => {
+                        setContentBoardError("");
+                        setDraggingTaskId(task.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", task.id);
+                      }}
+                      onDragEnd={() => { setDraggingTaskId(null); setDragOverStatus(""); }}
+                      title="Drag this item to another status column."
                       style={{
                         padding:16,
-                        border:`1px solid ${C.border}`,
+                        border:`1px solid ${draggingTaskId === task.id ? statusStyle.accent : C.border}`,
                         borderRadius:12,
                         background:C.surface,
                         textAlign:"left",
-                        cursor:"pointer",
+                        cursor:"grab",
                         display:"grid",
                         gridTemplateColumns:"1fr auto",
                         gap:16,
@@ -5764,6 +5848,9 @@ function ContentMediaBoard({ tasks, setActive }) {
                         width:"100%",
                         maxWidth:"100%",
                         minWidth:0,
+                        opacity:draggingTaskId === task.id ? 0.68 : 1,
+                        transform:draggingTaskId === task.id ? "scale(.99)" : "none",
+                        transition:"opacity .16s ease, transform .16s ease, border-color .16s ease",
                       }}
                     >
                       <div style={{display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
@@ -7574,6 +7661,8 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       return {};
     }
   });
+  const [draggingTaskId, setDraggingTaskId] = useState(null);
+  const [dragOverStatus, setDragOverStatus] = useState("");
   const teamNames = previewUsers?.map((user) => user.full_name) || [];
   const allowedAssignees = canAssignToAnyone ? teamNames : [profile?.full_name].filter(Boolean);
   const boardTasks = tasks;
@@ -7825,7 +7914,9 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   }, [showModal, editing, form, taskDraftKey]);
 
   const setTaskStatus = async (task, nextStatus) => {
+    setTaskFormError("");
     if (nextStatus === "done" && task.review_required && task.reviewers.some((name) => !listIncludesPerson(task.review_approvals, name))) {
+      setTaskFormError("This task still needs its review approvals before it can be marked done.");
       return;
     }
     const changes = nextStatus === "in-review" && task.status !== "in-review"
@@ -7840,6 +7931,10 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     let result = await supabase.from("tasks").update(changes).eq("id",task.id).select().single();
     if (result.error && /review_history/i.test(result.error.message || "")) {
       result = await supabase.from("tasks").update({ status: nextStatus, review_approvals: changes.review_approvals || [] }).eq("id", task.id).select().single();
+    }
+    if (result.error) {
+      setTaskFormError(result.error.message || "We couldn't update that task status.");
+      return;
     }
     const { data } = result;
     const updated = normalizeTask(data);
@@ -8039,6 +8134,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   };
 
   const del = async (id) => {
+    setTaskFormError("");
     const taskToDelete = tasks.find((task) => task.id === id);
     if (!confirmDestructiveAction(`Delete ${taskToDelete?.title || "this task"}? You can restore supported items from Trash.`)) return;
     if (taskToDelete) {
@@ -8056,7 +8152,11 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       setTasks(tasks.filter((t) => t.id !== id));
       return;
     }
-    await supabase.from("tasks").delete().eq("id",id);
+    const { error } = await supabase.from("tasks").delete().eq("id",id);
+    if (error) {
+      setTaskFormError(error.message || "We couldn't delete that task.");
+      return;
+    }
     setTasks(tasks.filter(t=>t.id!==id));
   };
 
@@ -8111,6 +8211,23 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     }));
   };
 
+  const handleTaskDragStart = (event, task) => {
+    setTaskFormError("");
+    setDraggingTaskId(task.id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", task.id);
+  };
+
+  const handleTaskDrop = async (event, statusKey) => {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData("text/plain") || draggingTaskId;
+    setDraggingTaskId(null);
+    setDragOverStatus("");
+    const task = tasks.find((entry) => entry.id === taskId);
+    if (!task || task.status === statusKey) return;
+    await setTaskStatus(task, statusKey);
+  };
+
   return (
     <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
@@ -8146,6 +8263,11 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
           ))}
         </div>
       </div>
+      {taskFormError && !showModal && !selectedTask && (
+        <div style={{fontSize:12,color:C.danger,textAlign:"left",marginBottom:14}}>
+          {taskFormError}
+        </div>
+      )}
       {showModal && (
         <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:18,marginBottom:18}}>
           <div>
@@ -8459,7 +8581,29 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       {!showModal && !selectedTask && (
       <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16,alignItems:"start"}}>
         {["todo","in-progress","in-review","done"].map((statusKey) => (
-          <div key={statusKey} className="card" style={{padding:16,minHeight:collapsedColumns?.[statusKey] ? "auto" : 420,borderTop:`3px solid ${STATUS_STYLES[statusKey].accent}`,background:`linear-gradient(180deg, ${STATUS_STYLES[statusKey].surface} 0%, ${C.card} 24%)`}}>
+          <div
+            key={statusKey}
+            className="card"
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setDragOverStatus(statusKey);
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setDragOverStatus("");
+            }}
+            onDrop={(event) => handleTaskDrop(event, statusKey)}
+            style={{
+              padding:16,
+              minHeight:collapsedColumns?.[statusKey] ? "auto" : 420,
+              borderTop:`3px solid ${STATUS_STYLES[statusKey].accent}`,
+              background:dragOverStatus === statusKey
+                ? `linear-gradient(180deg, ${STATUS_STYLES[statusKey].surface} 0%, rgba(192,161,72,.14) 100%)`
+                : `linear-gradient(180deg, ${STATUS_STYLES[statusKey].surface} 0%, ${C.card} 24%)`,
+              boxShadow:dragOverStatus === statusKey ? `0 0 0 1px ${STATUS_STYLES[statusKey].accent}` : undefined,
+              transition:"background .16s ease, box-shadow .16s ease",
+            }}
+          >
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:collapsedColumns?.[statusKey] ? 0 : 14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
               <div>
                 <div style={{fontSize:15,fontWeight:600,color:STATUS_STYLES[statusKey].accent}}>{STATUS_STYLES[statusKey].label}</div>
@@ -8477,8 +8621,26 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
               {groupedTasks[statusKey].map((task) => (
                 <button
                   key={task.id}
+                  draggable
+                  onDragStart={(event) => handleTaskDragStart(event, task)}
+                  onDragEnd={() => { setDraggingTaskId(null); setDragOverStatus(""); }}
                   onClick={() => openTask(task)}
-                  style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}
+                  title="Drag this task to another status column, or open it to use the status dropdown."
+                  style={{
+                    padding:16,
+                    border:`1px solid ${draggingTaskId === task.id ? STATUS_STYLES[statusKey].accent : C.border}`,
+                    borderRadius:12,
+                    background:C.surface,
+                    textAlign:"left",
+                    cursor:"grab",
+                    display:"grid",
+                    gridTemplateColumns:"1fr auto",
+                    gap:16,
+                    alignItems:"start",
+                    opacity:draggingTaskId === task.id ? 0.68 : 1,
+                    transform:draggingTaskId === task.id ? "scale(.99)" : "none",
+                    transition:"opacity .16s ease, transform .16s ease, border-color .16s ease",
+                  }}
                 >
                   <div style={{display:"flex",flexDirection:"column",gap:6}}>
                     <div style={{fontSize:20,fontWeight:600,color:task.status==="done"?C.muted:C.text,textDecoration:task.status==="done"?"line-through":"none"}}>{task.title}</div>
@@ -8508,121 +8670,6 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   );
 }
 
-// ── People Care ────────────────────────────────────────────────────────────
-function Members({ people, setPeople, churchId, church, profile }) {
-  const isPreview = churchId === "preview";
-  const canEditPeople = canManagePeople(profile, church);
-  const [search, setSearch] = useState("");
-  const [showModal, setShowModal] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const blank = {full_name:"",role:"",ministry:"Admin",email:"",phone:"",tier:"volunteer",status:"active",prayer_request:"",last_contact:""};
-  const [form, setForm] = useState(blank);
-
-  const filtered = people.filter(p=>p.full_name?.toLowerCase().includes(search.toLowerCase())||p.ministry?.toLowerCase().includes(search.toLowerCase()));
-
-  const openNew = () => { setSelected(null); setForm(blank); setShowModal(true); };
-  const openEdit = (p) => { setSelected(p); setForm(p); setShowModal(true); };
-
-  const save = async () => {
-    if (!form.full_name) return;
-    if (isPreview) {
-      const record = selected?.id
-        ? { ...selected, ...form }
-        : { ...form, id: `person-${Date.now()}`, church_id: churchId };
-      setPeople(selected?.id ? people.map((p) => p.id === selected.id ? record : p) : [...people, record]);
-      setShowModal(false);
-      return;
-    }
-    if (selected?.id) {
-      const { data } = await supabase.from("people").update(form).eq("id",selected.id).select().single();
-      setPeople(people.map(p=>p.id===selected.id?data:p));
-    } else {
-      const { data } = await supabase.from("people").insert({...form,church_id:churchId}).select().single();
-      setPeople([...people,data]);
-    }
-    setShowModal(false);
-  };
-
-  const toggleFollowUp = async (p) => {
-    const next = p.status==="follow-up"?"active":"follow-up";
-    if (isPreview) {
-      setPeople(people.map((x) => x.id === p.id ? { ...x, status: next } : x));
-      return;
-    }
-    const { data } = await supabase.from("people").update({status:next}).eq("id",p.id).select().single();
-    setPeople(people.map(x=>x.id===p.id?data:x));
-  };
-
-  return (
-    <div className="fadeIn mobile-pad" style={widePageStyle}>
-      <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"flex-start",gap:16,marginBottom:24}}>
-        <div>
-          <h2 style={pageTitleStyle}>People Care</h2>
-          <p style={{color:C.muted,fontSize:13,marginTop:4}}>Track pastoral care, prayer requests & follow-ups</p>
-        </div>
-        {canEditPeople && <button className="btn-gold" onClick={openNew}><Icons.plus/>Add Person</button>}
-      </div>
-      <input className="input-field" placeholder="Search by name or ministry…" value={search} onChange={e=>setSearch(e.target.value)} style={{maxWidth:380,marginBottom:20}}/>
-      {showModal ? (
-        <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:16}}>
-          <div>
-            <button className="btn-outline" onClick={()=>setShowModal(false)} style={{marginBottom:14}}>Back to People Care</button>
-            <h3 style={sectionTitleStyle}>{selected?"Edit Person":"Add Person"}</h3>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <input className="input-field" placeholder="Full name" value={form.full_name||""} onChange={e=>setForm({...form,full_name:e.target.value})}/>
-            <div className="member-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <input className="input-field" placeholder="Role (e.g. Worship Leader)" value={form.role||""} onChange={e=>setForm({...form,role:e.target.value})}/>
-              <select className="input-field" value={form.ministry||"Admin"} onChange={e=>setForm({...form,ministry:e.target.value})} style={{background:C.surface}}>
-                {TASK_CATEGORIES.map(m=><option key={m}>{m}</option>)}
-              </select>
-              <input className="input-field" placeholder="Email" value={form.email||""} onChange={e=>setForm({...form,email:e.target.value})}/>
-              <input className="input-field" placeholder="Phone" value={form.phone||""} onChange={e=>setForm({...form,phone:e.target.value})}/>
-              <select className="input-field" value={form.tier||"volunteer"} onChange={e=>setForm({...form,tier:e.target.value})} style={{background:C.surface}}>
-                <option value="staff">Staff 👔</option>
-                <option value="elder">Elder 🕊️</option>
-                <option value="volunteer">Volunteer 🙋</option>
-                <option value="member">Member</option>
-              </select>
-              <input className="input-field" type="date" placeholder="Last contact" value={form.last_contact||""} onChange={e=>setForm({...form,last_contact:e.target.value})}/>
-            </div>
-            <textarea className="input-field" placeholder="Prayer request (optional)" rows={2} value={form.prayer_request||""} onChange={e=>setForm({...form,prayer_request:e.target.value})} style={{resize:"vertical"}}/>
-          </div>
-          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
-            {selected&&<button className="btn-outline" onClick={()=>{toggleFollowUp(selected);setShowModal(false);}} style={{borderColor:selected.status==="follow-up"?C.success:C.gold,color:selected.status==="follow-up"?C.success:C.gold}}>{selected.status==="follow-up"?"Mark Active":"Flag Follow-up"}</button>}
-            <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
-            <button className="btn-gold" onClick={save}>Save</button>
-          </div>
-        </div>
-      ) : (
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
-        {filtered.map(p=>(
-          <div key={p.id} className="card" style={{padding:20,cursor:canEditPeople?"pointer":"default",borderColor:p.status==="follow-up"?C.goldDim:C.border}} onClick={()=>canEditPeople && openEdit(p)}>
-            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-              <div style={{width:44,height:44,borderRadius:"50%",background:p.status==="follow-up"?`linear-gradient(135deg,${C.goldDim},${C.gold})`:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:600,color:p.status==="follow-up"?"#0f1117":C.gold}}>
-                {p.full_name?.[0]}
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:600,color:C.text}}>{p.full_name}</div>
-                <div style={{fontSize:12,color:C.muted}}>{p.role}</div>
-              </div>
-              <span style={{fontSize:18}}>{p.tier==="staff"?"👔":p.tier==="elder"?"🕊️":"🙋"}</span>
-            </div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
-              <span className={`badge ${getTag(p.ministry)}`}>{p.ministry}</span>
-              <span className="badge" style={{background:p.status==="follow-up"?"rgba(201,168,76,.15)":"rgba(82,200,122,.15)",color:p.status==="follow-up"?C.gold:C.success,border:`1px solid ${p.status==="follow-up"?C.goldDim:"rgba(82,200,122,.3)"}`}}>{p.status==="follow-up"?"Follow-up":"Active"}</span>
-            </div>
-              {p.prayer_request&&<div style={{background:C.goldGlow,border:`1px solid ${C.goldDim}`,borderRadius:8,padding:"8px 12px",fontSize:12,color:C.text}}><em>{p.prayer_request}</em></div>}
-            {p.last_contact&&<div style={{fontSize:11,color:C.muted,marginTop:10}}>Last contact: {fmtDate(p.last_contact)}</div>}
-          </div>
-        ))}
-        {filtered.length===0&&<div style={{color:C.muted,fontSize:13,gridColumn:"1/-1",padding:"40px 0",textAlign:"center"}}>No people found. Add someone!</div>}
-      </div>
-      )}
-    </div>
-  );
-}
-
 // ── Budget ─────────────────────────────────────────────────────────────────
 function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrders, churchId, profile, setProfile, ministries, setMinistries, previewUsers, setPreviewUsers }) {
   const isPreview = churchId === "preview";
@@ -8633,6 +8680,10 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const [showModal, setShowModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [showPurchaseOrderModal, setShowPurchaseOrderModal] = useState(false);
+  const [budgetError, setBudgetError] = useState("");
+  const [budgetSubmitting, setBudgetSubmitting] = useState(false);
+  const [transactionError, setTransactionError] = useState("");
+  const [transactionSubmitting, setTransactionSubmitting] = useState(false);
   const [purchaseOrderError, setPurchaseOrderError] = useState("");
   const [purchaseOrderSubmitting, setPurchaseOrderSubmitting] = useState(false);
   const [purchaseOrderCommentDrafts, setPurchaseOrderCommentDrafts] = useState({});
@@ -8702,10 +8753,13 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   });
   const openTransactionModal = (ministry = defaultMinistry, type = "expense") => {
     setSelectedLedgerMinistry(ministry);
+    setTransactionError("");
+    setTransactionSubmitting(false);
     setForm(resetTransactionForm(ministry, type));
     setShowModal(true);
   };
   const openBudgetModal = (ministry = "") => {
+    setBudgetError("");
     const existingMinistry = (ministries || []).find((entry) => entry.name === ministry) || null;
     const assignedUser = (previewUsers || []).find((user) => (user.ministries || []).includes(ministry));
     const normalizedItems = normalizeBudgetItems(existingMinistry?.budget_items);
@@ -8737,6 +8791,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   };
   const closeBudgetModal = () => {
     if (!budgetForm.id) clearStoredFormDraft(budgetDraftKey);
+    setBudgetError("");
+    setBudgetSubmitting(false);
     setShowBudgetModal(false);
   };
   const closePurchaseOrderModal = () => {
@@ -8839,17 +8895,31 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const purchaseOrderLineItemSuggestions = selectedPurchaseOrderBudgetItems.map((item) => item.label);
 
   const save = async () => {
-    if (!form.description||!form.amount||!form.category||!form.ministry) return;
+    if (!form.description||!form.amount||!form.category||!form.ministry) {
+      setTransactionError("Please complete the transaction description, amount, ministry, and line item.");
+      return;
+    }
     const parsedAmount = Number.parseFloat(form.amount || "0");
-    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) return;
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      setTransactionError("Enter a valid transaction amount.");
+      return;
+    }
     const amt = parsedAmount * (form.type==="expense"?-1:1);
+    setTransactionError("");
+    setTransactionSubmitting(true);
     if (isPreview) {
       setTransactions([{ ...form, id: `txn-${Date.now()}`, amount: amt, church_id: churchId }, ...transactions]);
+      setTransactionSubmitting(false);
       setShowModal(false);
       setForm(resetTransactionForm(defaultMinistry));
       return;
     }
-    const { data } = await supabase.from("transactions").insert({description:form.description,amount:amt,ministry:form.ministry,category:form.category,date:form.date,church_id:churchId}).select().single();
+    const { data, error } = await supabase.from("transactions").insert({description:form.description,amount:amt,ministry:form.ministry,category:form.category,date:form.date,church_id:churchId}).select().single();
+    setTransactionSubmitting(false);
+    if (error) {
+      setTransactionError(error.message || "This transaction could not be saved yet.");
+      return;
+    }
     setTransactions([data,...transactions]);
     setShowModal(false);
     setForm(resetTransactionForm(defaultMinistry));
@@ -8857,7 +8927,14 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
 
   const saveBudget = async () => {
     const trimmedMinistry = budgetForm.ministry.trim();
-    if (!financeView || !trimmedMinistry) return;
+    if (!financeView) {
+      setBudgetError("Only the Finance Director can create or rename ministry budgets.");
+      return;
+    }
+    if (!trimmedMinistry) {
+      setBudgetError("Enter a ministry name before saving this budget.");
+      return;
+    }
     const normalizedItems = normalizeBudgetItems((budgetForm.items || []).map((item) => ({
       label: item.label,
       amount: item.amount,
@@ -8865,7 +8942,12 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     const nextBudget = normalizedItems.length > 0
       ? normalizedItems.reduce((sum, item) => sum + item.amount, 0)
       : (Number.parseFloat(budgetForm.budget || "0") || 0);
-    if (Number.isNaN(nextBudget)) return;
+    if (Number.isNaN(nextBudget)) {
+      setBudgetError("Enter a valid budget amount before saving.");
+      return;
+    }
+    setBudgetError("");
+    setBudgetSubmitting(true);
     const previousName = (ministries || []).find((entry) => entry.id === budgetForm.id)?.name || trimmedMinistry;
     const payload = {
       church_id: churchId,
@@ -8882,62 +8964,73 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         return [...others, { ...payload, id: budgetForm.id || `ministry-${trimmedMinistry}` }].sort((left, right) => left.name.localeCompare(right.name));
       });
       if (!budgetForm.id) clearStoredFormDraft(budgetDraftKey);
+      setBudgetSubmitting(false);
       setShowBudgetModal(false);
       return;
     }
-    const ministryQuery = budgetForm.id
-      ? supabase.from("ministries").update(payload).eq("id", budgetForm.id)
-      : supabase.from("ministries").upsert(payload, { onConflict: "church_id,name" });
-    const { data, error } = await ministryQuery.select().single();
-    if (error) return;
-    if (previousName !== trimmedMinistry) {
-      const matchingTransactions = transactions.filter((transaction) => transaction.ministry === previousName);
-      if (matchingTransactions.length > 0) {
-        await supabase.from("transactions").update({ ministry: trimmedMinistry }).eq("church_id", churchId).eq("ministry", previousName);
-        setTransactions((current) => current.map((transaction) => transaction.ministry === previousName ? { ...transaction, ministry: trimmedMinistry } : transaction));
-      }
-    }
-    const updatedStaff = await Promise.all((previewUsers || []).map(async (user) => {
-      const existingMinistries = Array.isArray(user.ministries) ? user.ministries : [];
-      const strippedMinistries = existingMinistries.filter((ministry) => ministry !== previousName && ministry !== trimmedMinistry);
-      const nextMinistries = user.id === budgetForm.assignedStaffId ? [...strippedMinistries, trimmedMinistry] : strippedMinistries;
-      if (JSON.stringify(existingMinistries) === JSON.stringify(nextMinistries)) return user;
-      if (!isPreview) {
-        await supabase.from("church_staff").update({ ministries: nextMinistries }).eq("id", user.id);
-        await supabase.from("profiles").update({ ministries: nextMinistries }).eq("staff_id", user.id);
-        if (user.auth_user_id) {
-          await supabase.from("profiles").upsert({
-            id: user.auth_user_id,
-            church_id: churchId,
-            staff_id: user.id,
-            full_name: user.full_name,
-            role: user.role,
-            title: user.title,
-            email: user.email || null,
-            photo_url: user.photo_url || null,
-            staff_roles: Array.isArray(user.staff_roles) ? user.staff_roles : (user.role ? [user.role] : []),
-            ministries: nextMinistries,
-            can_see_team_overview: user.can_see_team_overview ?? user.canSeeTeamOverview ?? false,
-            can_see_admin_overview: user.can_see_admin_overview ?? user.canSeeAdminOverview ?? false,
-            read_only_oversight: user.read_only_oversight ?? user.readOnlyOversight ?? false,
-          });
+    try {
+      const ministryQuery = budgetForm.id
+        ? supabase.from("ministries").update(payload).eq("id", budgetForm.id)
+        : supabase.from("ministries").upsert(payload, { onConflict: "church_id,name" });
+      const { data, error } = await ministryQuery.select().single();
+      if (error) throw error;
+      if (previousName !== trimmedMinistry) {
+        const matchingTransactions = transactions.filter((transaction) => transaction.ministry === previousName);
+        if (matchingTransactions.length > 0) {
+          const { error: transactionError } = await supabase.from("transactions").update({ ministry: trimmedMinistry }).eq("church_id", churchId).eq("ministry", previousName);
+          if (transactionError) throw transactionError;
+          setTransactions((current) => current.map((transaction) => transaction.ministry === previousName ? { ...transaction, ministry: trimmedMinistry } : transaction));
         }
       }
-      return normalizeAccessUser({ ...user, ministries: nextMinistries });
-    }));
-    setPreviewUsers?.(updatedStaff.sort((left, right) => left.full_name.localeCompare(right.full_name)));
-    if (profile?.staff_id) {
-      const refreshedProfile = updatedStaff.find((user) => user.id === profile.staff_id);
-      if (refreshedProfile) {
-        setProfile?.((current) => current ? { ...current, ministries: refreshedProfile.ministries } : current);
+      const updatedStaff = await Promise.all((previewUsers || []).map(async (user) => {
+        const existingMinistries = Array.isArray(user.ministries) ? user.ministries : [];
+        const strippedMinistries = existingMinistries.filter((ministry) => ministry !== previousName && ministry !== trimmedMinistry);
+        const nextMinistries = user.id === budgetForm.assignedStaffId ? [...strippedMinistries, trimmedMinistry] : strippedMinistries;
+        if (JSON.stringify(existingMinistries) === JSON.stringify(nextMinistries)) return user;
+        if (!isPreview) {
+          const { error: staffError } = await supabase.from("church_staff").update({ ministries: nextMinistries }).eq("id", user.id);
+          if (staffError) throw staffError;
+          const { error: profileError } = await supabase.from("profiles").update({ ministries: nextMinistries }).eq("staff_id", user.id);
+          if (profileError) throw profileError;
+          if (user.auth_user_id) {
+            const { error: upsertProfileError } = await supabase.from("profiles").upsert({
+              id: user.auth_user_id,
+              church_id: churchId,
+              staff_id: user.id,
+              full_name: user.full_name,
+              role: user.role,
+              title: user.title,
+              email: user.email || null,
+              photo_url: user.photo_url || null,
+              staff_roles: Array.isArray(user.staff_roles) ? user.staff_roles : (user.role ? [user.role] : []),
+              ministries: nextMinistries,
+              can_see_team_overview: user.can_see_team_overview ?? user.canSeeTeamOverview ?? false,
+              can_see_admin_overview: user.can_see_admin_overview ?? user.canSeeAdminOverview ?? false,
+              read_only_oversight: user.read_only_oversight ?? user.readOnlyOversight ?? false,
+            });
+            if (upsertProfileError) throw upsertProfileError;
+          }
+        }
+        return normalizeAccessUser({ ...user, ministries: nextMinistries });
+      }));
+      setPreviewUsers?.(updatedStaff.sort((left, right) => left.full_name.localeCompare(right.full_name)));
+      if (profile?.staff_id) {
+        const refreshedProfile = updatedStaff.find((user) => user.id === profile.staff_id);
+        if (refreshedProfile) {
+          setProfile?.((current) => current ? { ...current, ministries: refreshedProfile.ministries } : current);
+        }
       }
+      setMinistries?.((current) => {
+        const others = (current || []).filter((entry) => entry.id !== data.id && entry.name !== data.name);
+        return [...others, data].sort((left, right) => left.name.localeCompare(right.name));
+      });
+      if (!budgetForm.id) clearStoredFormDraft(budgetDraftKey);
+      setShowBudgetModal(false);
+    } catch (error) {
+      setBudgetError(error?.message || "This budget could not be saved yet.");
+    } finally {
+      setBudgetSubmitting(false);
     }
-    setMinistries?.((current) => {
-      const others = (current || []).filter((entry) => entry.id !== data.id && entry.name !== data.name);
-      return [...others, data].sort((left, right) => left.name.localeCompare(right.name));
-    });
-    if (!budgetForm.id) clearStoredFormDraft(budgetDraftKey);
-    setShowBudgetModal(false);
   };
   const savePurchaseOrder = async () => {
     if (!purchaseOrderForm.title || !purchaseOrderForm.amount || !purchaseOrderForm.ministry) {
@@ -9014,10 +9107,20 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   };
 
   const updatePurchaseOrderStatus = async (order, status) => {
-    if (!order?.id) return;
+    setPurchaseOrderError("");
+    if (!order?.id) {
+      setPurchaseOrderError("We couldn't find that purchase order.");
+      return;
+    }
     const nowIso = new Date().toISOString();
-    if (status === "approved" && !canApprovePurchaseOrder(profile, order)) return;
-    if (status === "denied" && !canApprovePurchaseOrder(profile, order)) return;
+    if (status === "approved" && !canApprovePurchaseOrder(profile, order)) {
+      setPurchaseOrderError("You do not have permission to approve this purchase order.");
+      return;
+    }
+    if (status === "denied" && !canApprovePurchaseOrder(profile, order)) {
+      setPurchaseOrderError("You do not have permission to deny this purchase order.");
+      return;
+    }
     const nextApprovals = status === "approved"
       ? [...new Set([...(order.approvals || []), profile?.full_name].filter(Boolean))]
       : (order.approvals || []);
@@ -9052,7 +9155,10 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       return;
     }
     const { error } = await supabase.from("purchase_orders").update(changes).eq("id", order.id);
-    if (error) return;
+    if (error) {
+      setPurchaseOrderError(error.message || "We couldn't update that purchase order.");
+      return;
+    }
     setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
     const requesterProfileId = order.requester_id || getStaffProfileId(findStaffByName(previewUsers, order.requested_by));
     if (requesterProfileId) {
@@ -9074,19 +9180,34 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     }
   };
   const deletePurchaseOrder = async (order) => {
-    if (!canDeletePurchaseOrder(profile, order) || !order?.id) return;
+    setPurchaseOrderError("");
+    if (!canDeletePurchaseOrder(profile, order) || !order?.id) {
+      setPurchaseOrderError("You do not have permission to delete this purchase order.");
+      return;
+    }
     if (!confirmDestructiveAction(`Delete purchase order "${order.title || order.item || "this request"}"?`)) return;
     if (isPreview) {
       setPurchaseOrders((current) => (current || []).filter((entry) => entry.id !== order.id));
       return;
     }
     const { error } = await supabase.from("purchase_orders").delete().eq("id", order.id);
-    if (error) return;
+    if (error) {
+      setPurchaseOrderError(error.message || "We couldn't delete that purchase order.");
+      return;
+    }
     setPurchaseOrders((current) => (current || []).filter((entry) => entry.id !== order.id));
   };
   const addPurchaseOrderComment = async (order) => {
+    setPurchaseOrderError("");
+    if (!order?.id) {
+      setPurchaseOrderError("We couldn't find that purchase order.");
+      return;
+    }
     const draft = (purchaseOrderCommentDrafts[order.id] || "").trim();
-    if (!draft || !order?.id) return;
+    if (!draft) {
+      setPurchaseOrderError("Write a comment before posting.");
+      return;
+    }
     const commentEntry = {
       id: `${order.id}-comment-${(order.comments || []).length + 1}`,
       author: profile?.full_name || "Staff Member",
@@ -9105,7 +9226,10 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       return;
     }
     const { error } = await supabase.from("purchase_orders").update(changes).eq("id", order.id);
-    if (error) return;
+    if (error) {
+      setPurchaseOrderError(error.message || "We couldn't post that purchase order comment.");
+      return;
+    }
     setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
     const mentionedNames = getMentionedStaffNames(commentEntry.body, previewUsers);
     const discussionNames = [
@@ -9142,14 +9266,21 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     });
   };
   const savePurchaseOrderComments = async (orderId, nextComments) => {
-    if (!orderId) return false;
+    setPurchaseOrderError("");
+    if (!orderId) {
+      setPurchaseOrderError("We couldn't find that purchase order.");
+      return false;
+    }
     const changes = { comments: nextComments };
     if (isPreview) {
       setPurchaseOrders((current) => (current || []).map((entry) => entry.id === orderId ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
       return true;
     }
     const { error } = await supabase.from("purchase_orders").update(changes).eq("id", orderId);
-    if (error) return false;
+    if (error) {
+      setPurchaseOrderError(error.message || "We couldn't update those purchase order comments.");
+      return false;
+    }
     setPurchaseOrders((current) => (current || []).map((entry) => entry.id === orderId ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
     return true;
   };
@@ -9312,9 +9443,16 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               </div>
             )}
           </div>
+          {transactionError && (
+            <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>
+              {transactionError}
+            </div>
+          )}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
             <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
-            <button className="btn-gold" onClick={save}>Save</button>
+            <button className="btn-gold" onClick={save} disabled={transactionSubmitting} style={{opacity:transactionSubmitting ? 0.8 : 1}}>
+              {transactionSubmitting ? "Saving..." : "Save"}
+            </button>
           </div>
         </div>
       )}
@@ -9471,6 +9609,11 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               ? "This sets the ministry’s working budget inside Shepherd. If you add line items, the total budget is calculated from them automatically."
               : "You can add and adjust line items for this ministry budget here. Finance still controls the main ministry budget and staff assignment."}
           </div>
+          {budgetError && (
+            <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>
+              {budgetError}
+            </div>
+          )}
           <div style={{display:"flex",gap:10,justifyContent:"space-between",flexWrap:"wrap"}}>
             {financeView && budgetForm.id ? (
               <button
@@ -9485,7 +9628,9 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             ) : <div />}
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             <button className="btn-outline" onClick={closeBudgetModal}>Cancel</button>
-            <button className="btn-gold" onClick={saveBudget}>Save Budget</button>
+            <button className="btn-gold" onClick={saveBudget} disabled={budgetSubmitting} style={{opacity:budgetSubmitting ? 0.8 : 1}}>
+              {budgetSubmitting ? "Saving..." : "Save Budget"}
+            </button>
             </div>
           </div>
         </div>
@@ -9566,6 +9711,11 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               ? "Finance Director access includes all ministry budgets and purchase requests."
               : "Ministry options are based on the budgets assigned to your profile."}
           </div>
+          {purchaseOrderError && !showPurchaseOrderModal && (
+            <div style={{fontSize:12,color:C.danger,marginTop:8,textAlign:"left"}}>
+              {purchaseOrderError}
+            </div>
+          )}
         </div>
         {visiblePurchaseOrders.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No purchase orders yet.</div>}
         {visiblePurchaseOrders.map((order)=>(
@@ -10330,7 +10480,6 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [church, setChurch] = useState(null);
   const [tasks, setTasks] = useState([]);
-  const [people, setPeople] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [staffAvailabilityRequests, setStaffAvailabilityRequests] = useState([]);
@@ -10363,7 +10512,6 @@ export default function App() {
     "tasks",
     "trash",
     "faq",
-    "members",
     "budget",
     "calendar",
     ...(shouldShowChurchTeam(profile, church) ? ["church-team"] : []),
@@ -10628,15 +10776,13 @@ export default function App() {
 
       Promise.all([
         supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
-        supabase.from("people").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
         supabase.from("purchase_orders").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("staff_availability_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("calendar_events").select("*").eq("church_id", prof.church_id).order("event_date", { ascending: true }),
         supabase.from("ministries").select("*").eq("church_id", prof.church_id),
-      ]).then(([er, p, tr, po, sar, ce, m]) => {
+      ]).then(([er, tr, po, sar, ce, m]) => {
         setEventRequests(er.data || []);
-        setPeople(p.data || []);
         setTransactions(tr.data || []);
         setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
         setStaffAvailabilityRequests((sar.data || []).map(normalizeStaffAvailabilityRequest));
@@ -10649,7 +10795,6 @@ export default function App() {
       setChurch(null);
       setTasks([]);
       setEventRequests(null);
-      setPeople([]);
       setTransactions([]);
       setPurchaseOrders([]);
       setStaffAvailabilityRequests([]);
@@ -10855,7 +11000,6 @@ export default function App() {
         setProfile(null);
         setChurch(null);
         setTasks([]);
-        setPeople([]);
         setTransactions([]);
         setPurchaseOrders([]);
         setMinistries([]);
@@ -10906,12 +11050,11 @@ export default function App() {
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
-    "content-media-board": <ContentMediaBoard tasks={tasks} setActive={setActive} />,
+    "content-media-board": <ContentMediaBoard tasks={tasks} setTasks={setTasks} setActive={setActive} churchId={church?.id} />,
     "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} />,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest}/>,
     faq: <FAQPage onStartTutorial={startTutorial} />,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,
-    members:    <Members people={people} setPeople={setPeople} churchId={church?.id} church={church} profile={profile}/>,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
     ministries: <Ministries ministries={ministries}/>,
     calendar:   <CalendarView tasks={tasks} setTasks={setTasks} eventRequests={eventRequests || []} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} previewUsers={previewUsers} profile={profile} church={church} churchId={church?.id} setActive={setActive} />,

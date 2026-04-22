@@ -88,18 +88,10 @@ function jsonResponse(status: number, payload: Record<string, unknown>) {
   });
 }
 
-async function getUserClient(req: Request) {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+function getBearerToken(req: Request) {
   const authHeader = req.headers.get("Authorization") || "";
-
-  if (!supabaseUrl || !supabaseAnonKey || !authHeader) {
-    throw new Error("Missing Shepherd session credentials.");
-  }
-
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || "";
 }
 
 function getAdminClient() {
@@ -116,13 +108,16 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
   try {
-    const userClient = await getUserClient(req);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
+    const adminClient = getAdminClient();
+    const accessToken = getBearerToken(req);
+    if (!accessToken) {
+      return jsonResponse(401, { error: "Please log in again before sending preview emails." });
+    }
+    const { data: authData, error: authError } = await adminClient.auth.getUser(accessToken);
     if (authError || !authData?.user?.id) {
       return jsonResponse(401, { error: "We could not verify this Shepherd session." });
     }
 
-    const adminClient = getAdminClient();
     const { data: profile } = await adminClient
       .from("profiles")
       .select("id, full_name, email, church_id")

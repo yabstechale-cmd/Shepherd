@@ -1,2 +1,5 @@
 [functions.google-calendar-sync]
 verify_jwt = false
+
+[functions.send-notification-preview]
+verify_jwt = false

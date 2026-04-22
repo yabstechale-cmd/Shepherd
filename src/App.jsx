@@ -8669,6 +8669,12 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const activeLedgerMinistry = selectedLedgerMinistry || defaultMinistry;
   const selectedMinistryRecord = (ministries || []).find((entry) => entry.name === activeLedgerMinistry);
   const selectedMinistryBudgetItems = normalizeBudgetItems(selectedMinistryRecord?.budget_items);
+  const purchaseOrderMinistryOptions = [...new Set([
+    ...(financeView ? ledgerMinistryNames : visibleMinistries),
+    purchaseOrderForm.ministry,
+  ].filter(Boolean))].sort((left, right) => left.localeCompare(right));
+  const selectedPurchaseOrderMinistryRecord = (ministries || []).find((entry) => entry.name === purchaseOrderForm.ministry);
+  const selectedPurchaseOrderBudgetItems = normalizeBudgetItems(selectedPurchaseOrderMinistryRecord?.budget_items);
   const mentionableNames = [...new Set((previewUsers || []).map((user) => user.full_name).filter(Boolean))];
   const mentionableStaff = mentionableNames.map((name) => ({ fullName: name, token: getStaffMentionToken(name) })).filter((entry) => entry.token);
   const activePurchaseOrderCommentId = Object.keys(purchaseOrderCommentCursor).find((id) => typeof purchaseOrderCommentCursor[id] === "number") || "";
@@ -8830,6 +8836,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       .filter(Boolean)
   )];
   const ministryLineItemSuggestions = selectedMinistryBudgetItems.map((item) => item.label);
+  const purchaseOrderLineItemSuggestions = selectedPurchaseOrderBudgetItems.map((item) => item.label);
 
   const save = async () => {
     if (!form.description||!form.amount||!form.category||!form.ministry) return;
@@ -9328,7 +9335,19 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
-              <input className="input-field" value={purchaseOrderForm.ministry} readOnly />
+              <select
+                className="input-field"
+                value={purchaseOrderForm.ministry}
+                onChange={(e) => {
+                  setSelectedLedgerMinistry(e.target.value);
+                  setPurchaseOrderForm({ ...purchaseOrderForm, ministry: e.target.value, budgetLineItem: "" });
+                }}
+                style={{background:C.surface}}
+              >
+                {purchaseOrderMinistryOptions.map((ministry) => (
+                  <option key={ministry} value={ministry}>{ministry}</option>
+                ))}
+              </select>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>What Is This For?</label>
@@ -9356,9 +9375,9 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             {purchaseOrderForm.includedInBudget === "yes" && (
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Item</label>
-                <input className="input-field" list="purchase-order-line-items" placeholder={selectedMinistryBudgetItems.length > 0 ? "Choose a line item" : "Add line items to this budget first"} value={purchaseOrderForm.budgetLineItem} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,budgetLineItem:e.target.value})}/>
+                <input className="input-field" list="purchase-order-line-items" placeholder={selectedPurchaseOrderBudgetItems.length > 0 ? "Choose a line item" : "Add line items to this budget first"} value={purchaseOrderForm.budgetLineItem} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,budgetLineItem:e.target.value})}/>
                 <datalist id="purchase-order-line-items">
-                  {ministryLineItemSuggestions.map((item) => <option key={item} value={item} />)}
+                  {purchaseOrderLineItemSuggestions.map((item) => <option key={item} value={item} />)}
                 </datalist>
               </div>
             )}

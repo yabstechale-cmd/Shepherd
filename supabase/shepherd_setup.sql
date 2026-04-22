@@ -1133,6 +1133,7 @@ declare
   church_row public.churches%rowtype;
   delete_user_ids uuid[];
   approval_count integer := 0;
+  required_approval_count integer := 0;
 begin
   if auth.uid() is null then
     raise exception 'You must be signed in to delete a church account.';
@@ -1172,8 +1173,10 @@ begin
     and (approval->>'approved_at') is not null
     and (approval->>'reviewer_id')::uuid <> coalesce(church_row.deletion_requested_by, '00000000-0000-0000-0000-000000000000'::uuid);
 
-  if approval_count < 2 then
-    raise exception 'Church account deletion requires approval from two other reviewers.';
+  required_approval_count := coalesce(array_length(church_row.deletion_reviewer_user_ids, 1), 0);
+
+  if approval_count < required_approval_count then
+    raise exception 'Church account deletion requires approval from all other Shepherd Account Managers.';
   end if;
 
   if church_row.deletion_hold_until is null or church_row.deletion_hold_until > now() then

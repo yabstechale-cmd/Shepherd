@@ -480,6 +480,7 @@ const getChurchDeletionApprovals = (church) => Array.isArray(church?.deletion_ap
 const getChurchDeletionApprovalCount = (church) => getChurchDeletionApprovals(church).filter((approval) => approval?.reviewer_id && approval?.approved_at && approval.reviewer_id !== church?.deletion_requested_by).length;
 const isChurchDeletionPending = (church) => !!church?.deletion_requested_at;
 const getChurchDeletionHoldUntil = (church) => church?.deletion_hold_until || null;
+const getChurchDeletionRequiredApprovalCount = (church) => Array.isArray(church?.deletion_reviewer_user_ids) ? church.deletion_reviewer_user_ids.length : 0;
 const canReviewTask = (profile, task) => task?.review_required && task?.status === "in-review" && listIncludesPerson(task?.reviewers, profile?.full_name);
 const getTaskReviewerDecision = (task, reviewer) => {
   if (!reviewer) return null;
@@ -2854,7 +2855,6 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   const [deleteMessage, setDeleteMessage] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deletingChurch, setDeletingChurch] = useState(false);
-  const [selectedDeletionReviewerIds, setSelectedDeletionReviewerIds] = useState([]);
   const [selectedAccountManagerIds, setSelectedAccountManagerIds] = useState(() => getChurchAccountManagerUserIds(church));
   const [accountManagerMessage, setAccountManagerMessage] = useState("");
   const [accountManagerError, setAccountManagerError] = useState("");
@@ -2877,17 +2877,22 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   const selectedManagerUsers = managerCandidates.filter((user) => selectedAccountManagerIds.includes(user.auth_user_id));
   const availableManagerCandidates = managerCandidates.filter((user) => !selectedAccountManagerIds.includes(user.auth_user_id));
   const deletionReviewerCandidates = managerCandidates.filter((user) => user.auth_user_id && user.auth_user_id !== profile?.id && isStaffAccountAdmin(user, church));
+  const deletionReviewerCandidateIds = deletionReviewerCandidates.map((user) => user.auth_user_id).filter(Boolean);
   const deletionPending = isChurchDeletionPending(church);
   const deletionApprovals = getChurchDeletionApprovals(church);
   const deletionApprovalCount = getChurchDeletionApprovalCount(church);
   const deletionReviewerIds = Array.isArray(church?.deletion_reviewer_user_ids) ? church.deletion_reviewer_user_ids : [];
+  const deletionRequiredApprovalCount = getChurchDeletionRequiredApprovalCount(church);
+  const deletionDraftReviewerIds = deletionPending ? deletionReviewerIds : deletionReviewerCandidateIds;
+  const deletionDraftReviewerCount = deletionDraftReviewerIds.length;
   const currentUserCanApproveDeletion = deletionPending
     && deletionReviewerIds.includes(profile?.id)
     && profile?.id !== church?.deletion_requested_by
     && !deletionApprovals.some((approval) => approval?.reviewer_id === profile?.id);
   const deletionHoldUntil = getChurchDeletionHoldUntil(church);
   const deletionHoldDate = deletionHoldUntil ? new Date(deletionHoldUntil) : null;
-  const deletionReadyToFinalize = deletionApprovalCount >= 2 && deletionHoldDate && deletionHoldDate.getTime() <= Date.now();
+  const deletionApprovalRequirementMet = deletionApprovalCount >= deletionRequiredApprovalCount;
+  const deletionReadyToFinalize = deletionApprovalRequirementMet && deletionHoldDate && deletionHoldDate.getTime() <= Date.now();
   const deletionHoldLabel = deletionHoldDate && !Number.isNaN(deletionHoldDate.getTime())
     ? deletionHoldDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
     : "";
@@ -2976,16 +2981,6 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       return;
     }
     setSelectedAccountManagerIds((current) => current.filter((id) => id !== authUserId));
-  };
-
-  const toggleDeletionReviewer = (authUserId) => {
-    setDeleteError("");
-    setDeleteMessage("");
-    setSelectedDeletionReviewerIds((current) => (
-      current.includes(authUserId)
-        ? current.filter((id) => id !== authUserId)
-        : [...current, authUserId]
-    ));
   };
 
   const handlePhotoUpload = async (event) => {
@@ -3242,10 +3237,6 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       setDeleteError("Type the church name exactly to confirm deletion.");
       return;
     }
-    if (selectedDeletionReviewerIds.length < 2) {
-      setDeleteError("Choose at least two other reviewers before starting the deletion request.");
-      return;
-    }
     if (!deleteForm.currentPassword) {
       setDeleteError("Enter your current password to start this deletion request.");
       return;
@@ -3259,13 +3250,17 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       return;
     }
     setDeletingChurch(true);
+    const reviewerIds = deletionReviewerCandidateIds;
+    const holdUntil = reviewerIds.length === 0
+      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
     const payload = {
       deletion_requested_at: new Date().toISOString(),
       deletion_requested_by: profile.id,
       deletion_requested_by_name: profile.full_name || profile.email || "Shepherd Account Manager",
-      deletion_reviewer_user_ids: selectedDeletionReviewerIds,
+      deletion_reviewer_user_ids: reviewerIds,
       deletion_approvals: [],
-      deletion_hold_until: null,
+      deletion_hold_until: holdUntil,
     };
     const { data, error } = await supabase.from("churches").update(payload).eq("id", church.id).select().single();
     setDeletingChurch(false);
@@ -3280,11 +3275,23 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       entityId: church.id,
       entityTitle: church.name,
       summary: `${profile?.full_name || "A Shepherd Account Manager"} requested deletion of ${church.name}.`,
-      metadata: { reviewers: selectedDeletionReviewerIds },
+      metadata: { reviewers: reviewerIds },
     });
+    await Promise.all(deletionReviewerCandidates.map((user) => createPersistentNotification({
+      churchId: church.id,
+      actorProfile: profile,
+      recipientProfileId: user.auth_user_id,
+      type: "church_deletion_review_requested",
+      title: "Church Deletion Review Requested",
+      detail: `${profile?.full_name || "A Shepherd Account Manager"} requested deletion of ${church.name}. Open Church Account to approve or undo this request.`,
+      target: "account",
+      sourceKey: `${church.id}:church-deletion-review`,
+      data: { churchId: church.id, churchName: church.name },
+    })));
     setDeleteForm({ churchName: "", currentPassword: "" });
-    setSelectedDeletionReviewerIds([]);
-    setDeleteMessage("Deletion request started. Two selected reviewers must approve it before the 30-day hold begins.");
+    setDeleteMessage(reviewerIds.length === 0
+      ? "Deletion request started. There are no other Shepherd Account Managers, so the 30-day hold has started and can still be undone before final deletion."
+      : "Deletion request started. All other Shepherd Account Managers must approve it before the 30-day hold begins.");
   };
 
   const approveChurchDeletion = async () => {
@@ -3300,9 +3307,10 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       approved_at: new Date().toISOString(),
     };
     const nextApprovals = [...deletionApprovals, nextApproval];
+    const nextApprovalRequirementMet = nextApprovals.length >= deletionRequiredApprovalCount;
     const nextPayload = {
       deletion_approvals: nextApprovals,
-      deletion_hold_until: nextApprovals.length >= 2 && !church?.deletion_hold_until
+      deletion_hold_until: nextApprovalRequirementMet && !church?.deletion_hold_until
         ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         : church?.deletion_hold_until || null,
     };
@@ -3320,7 +3328,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       summary: `${profile?.full_name || "A reviewer"} approved deletion of ${church.name}.`,
       metadata: { approval_count: nextApprovals.length },
     });
-    setDeleteMessage(nextApprovals.length >= 2 ? "Approval saved. The 30-day hold has started." : "Approval saved. Waiting on one more reviewer.");
+    setDeleteMessage(nextApprovalRequirementMet ? "Approval saved. The 30-day hold has started." : "Approval saved. Waiting on the remaining Shepherd Account Managers.");
   };
 
   const cancelChurchDeletion = async () => {
@@ -3351,6 +3359,19 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       entityTitle: church.name,
       summary: `${profile?.full_name || "A Shepherd Account Manager"} cancelled deletion of ${church.name}.`,
     });
+    await Promise.all(currentManagerUsers
+      .filter((user) => user.auth_user_id && user.auth_user_id !== profile?.id)
+      .map((user) => createPersistentNotification({
+        churchId: church.id,
+        actorProfile: profile,
+        recipientProfileId: user.auth_user_id,
+        type: "church_deletion_cancelled",
+        title: "Church Deletion Request Cancelled",
+        detail: `${profile?.full_name || "A Shepherd Account Manager"} undid the deletion request for ${church.name}.`,
+        target: "account",
+        sourceKey: `${church.id}:church-deletion-cancelled:${Date.now()}`,
+        data: { churchId: church.id, churchName: church.name },
+      })));
     setDeleteMessage("Deletion request cancelled.");
   };
 
@@ -3586,12 +3607,12 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                   </div>}
                 </div>
               )}
-              {(canDeleteChurchAccount(profile, church) || canReviewChurchDeletion) && (
-                <div className="card" style={{padding:22,textAlign:"left",border:`1px solid rgba(224,82,82,.35)`}}>
-                  <h3 style={{...sectionTitleStyle,color:C.danger}}>Church Account Deletion</h3>
-                  <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
-                    Only Shepherd Account Managers can start this process. Deletion requires approval from two other selected reviewers, then Shepherd holds the account for 30 days before it can be permanently deleted.
-                  </p>
+	              {(canDeleteChurchAccount(profile, church) || canReviewChurchDeletion) && (
+	                <div className="card" style={{padding:22,textAlign:"left",border:`1px solid rgba(224,82,82,.35)`}}>
+	                  <h3 style={{...sectionTitleStyle,color:C.danger}}>Church Account Deletion</h3>
+	                  <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+	                    Only Shepherd Account Managers can start this process. All other Shepherd Account Managers must approve, then Shepherd holds the account for 30 days before final deletion. Any Shepherd Account Manager can undo the request during that hold.
+	                  </p>
                   <div style={{display:"grid",gap:12,marginTop:16}}>
                     {deletionPending ? (
                       <>
@@ -3599,11 +3620,15 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                           <div style={{fontSize:13,color:C.text,fontWeight:700}}>Deletion Request Pending</div>
                           <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
                             Requested by {church?.deletion_requested_by_name || "a Shepherd Account Manager"} on {fmtActivityDate(church?.deletion_requested_at)}.
-                          </div>
-                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-                            Reviewer approvals: <span style={{color:C.text}}>{deletionApprovalCount}/2</span>
-                            {deletionHoldLabel ? <span> • 30-day hold ends {deletionHoldLabel}</span> : <span> • 30-day hold begins after the second approval</span>}
-                          </div>
+	                          </div>
+	                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+	                            Reviewer approvals: <span style={{color:C.text}}>{deletionApprovalCount}/{deletionRequiredApprovalCount}</span>
+	                            {deletionHoldLabel
+	                              ? <span> • 30-day hold ends {deletionHoldLabel}</span>
+	                              : deletionRequiredApprovalCount === 0
+	                                ? <span> • 30-day hold begins immediately because there are no other managers</span>
+	                                : <span> • 30-day hold begins after all other managers approve</span>}
+	                          </div>
                           {deletionApprovals.length > 0 && (
                             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                               {deletionApprovals.map((approval) => (
@@ -3621,9 +3646,9 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                         )}
                         {canDeleteChurchAccount(profile, church) && (
                           <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
-                            <button className="btn-outline" onClick={cancelChurchDeletion}>
-                              Cancel Deletion Request
-                            </button>
+	                            <button className="btn-gold" onClick={cancelChurchDeletion}>
+	                              Undo Deletion Request
+	                            </button>
                             <button className="btn-outline" onClick={finalizeChurchDeletion} disabled={!deletionReadyToFinalize || deletingChurch} style={{borderColor:C.danger,color:C.danger,opacity:deletionReadyToFinalize ? 1 : .55}}>
                               {deletingChurch ? "Deleting..." : "Permanently Delete After Hold"}
                             </button>
@@ -3645,24 +3670,27 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                           onChange={(e)=>setDeleteForm({...deleteForm,currentPassword:e.target.value})}
                           placeholder="Current password"
                         />
-                        <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"grid",gap:10}}>
-                          <div style={{fontSize:12,color:C.muted}}>Select At Least Two Other Shepherd Account Managers To Review</div>
-                          {deletionReviewerCandidates.length < 2 ? (
-                            <div style={{fontSize:12,color:C.danger,lineHeight:1.6}}>
-                              Add at least two other Shepherd Account Managers before church deletion can be requested.
-                            </div>
-                          ) : deletionReviewerCandidates.map((user) => (
-                            <label key={`deletion-reviewer-${user.auth_user_id}`} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.text}}>
-                              <input
-                                type="checkbox"
-                                checked={selectedDeletionReviewerIds.includes(user.auth_user_id)}
-                                onChange={() => toggleDeletionReviewer(user.auth_user_id)}
-                              />
-                              {user.full_name}
-                              {user.email ? <span style={{color:C.muted}}>• {user.email}</span> : ""}
-                            </label>
-                          ))}
-                        </div>
+	                        <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"grid",gap:10}}>
+	                          <div style={{fontSize:12,color:C.muted}}>Required Approval</div>
+	                          {deletionDraftReviewerCount === 0 ? (
+	                            <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+	                              You are currently the only Shepherd Account Manager. If you request deletion, the 30-day hold starts immediately and can still be undone before final deletion.
+	                            </div>
+	                          ) : (
+	                            <>
+	                              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+	                                All other Shepherd Account Managers will be notified by email and must approve before the 30-day hold begins.
+	                              </div>
+	                              {deletionReviewerCandidates.map((user) => (
+	                                <div key={`deletion-reviewer-${user.auth_user_id}`} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.text}}>
+	                                  <span style={{width:16,height:16,borderRadius:4,border:`1px solid ${C.goldDim}`,background:C.goldGlow,color:C.gold,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11}}>✓</span>
+	                                  {user.full_name}
+	                                  {user.email ? <span style={{color:C.muted}}>• {user.email}</span> : ""}
+	                                </div>
+	                              ))}
+	                            </>
+	                          )}
+	                        </div>
                         <div style={{display:"flex",justifyContent:"flex-end"}}>
                           <button className="btn-outline" onClick={requestChurchDeletion} disabled={deletingChurch} style={{borderColor:C.danger,color:C.danger}}>
                             {deletingChurch ? "Starting Request..." : "Request Church Account Deletion"}

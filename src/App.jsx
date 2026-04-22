@@ -4916,7 +4916,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     await createNotificationsForNames({
       users: previewUsers,
       names: (previewUsers || [])
-        .filter((user) => hasAdministrativeOversight(user, church) || isSeniorPastor(user))
+        .filter((user) => isChurchAdministrator(user))
         .map((user) => user.full_name),
       churchId: church.id,
       actorProfile: profile,

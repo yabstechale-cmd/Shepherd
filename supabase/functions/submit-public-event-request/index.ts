@@ -1,5 +1,6 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import { renderShepherdNotificationEmail } from "../_shared/shepherd-email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -67,6 +68,90 @@ function createPublicAccessToken() {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function isChurchAdministrator(profile: Record<string, unknown>) {
+  const role = String(profile?.role || "").trim();
+  const title = String(profile?.title || "").trim().toLowerCase();
+  const staffRoles = Array.isArray(profile?.staff_roles) ? profile.staff_roles.map((entry) => String(entry || "").trim()) : [];
+  return role === "church_administrator"
+    || staffRoles.includes("church_administrator")
+    || title === "church administrator";
+}
+
+async function sendEventRequestNotifications(
+  adminClient: ReturnType<typeof createClient>,
+  church: { id: string; name?: string | null },
+  request: { id: string; event_name?: string | null; contact_name?: string | null },
+) {
+  const { data: admins, error: adminsError } = await adminClient
+    .from("profiles")
+    .select("id, full_name, email, role, staff_roles, title")
+    .eq("church_id", church.id);
+  if (adminsError) throw adminsError;
+
+  const adminRecipients = (admins || []).filter(isChurchAdministrator);
+  if (adminRecipients.length === 0) return;
+
+  const notificationRows = adminRecipients.map((admin) => ({
+    church_id: church.id,
+    recipient_profile_id: admin.id,
+    actor_profile_id: null,
+    type: "event_request_submitted",
+    title: "New Event Request Submitted",
+    detail: `${request.contact_name || "A requester"} submitted ${request.event_name || "an event request"}.`,
+    target: "events-board",
+    task_id: null,
+    source_key: request.id,
+    data: { eventRequestId: request.id, eventName: request.event_name || "" },
+    read_at: null,
+    archived_at: null,
+  }));
+
+  const { data: savedNotifications, error: notificationError } = await adminClient
+    .from("notifications")
+    .upsert(notificationRows, { onConflict: "recipient_profile_id,type,source_key", ignoreDuplicates: true })
+    .select();
+  if (notificationError) throw notificationError;
+
+  const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
+  const fromEmail = Deno.env.get("SHEPHERD_EMAIL_FROM") || "";
+  if (!resendApiKey || !fromEmail) return;
+
+  const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-s.com").replace(/\/+$/, "");
+  const notificationByRecipient = new Map((savedNotifications || []).map((notification) => [notification.recipient_profile_id, notification]));
+  await Promise.all(adminRecipients.map(async (admin) => {
+    if (!admin.email) return;
+    const notification = notificationByRecipient.get(admin.id);
+    if (!notification?.id || notification.emailed_at) return;
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [admin.email],
+        subject: `Shepherd: New Event Request Submitted`,
+        html: renderShepherdNotificationEmail({
+          title: "New Event Request Submitted",
+          detail: `${request.contact_name || "A requester"} submitted ${request.event_name || "an event request"}.`,
+          actionUrl: `${appUrl}/events`,
+          actionLabel: "Review Request",
+          churchName: church.name || "Shepherd",
+          eyebrow: "Shepherd Event Request",
+        }),
+      }),
+    });
+
+    if (!response.ok) return;
+    await adminClient
+      .from("notifications")
+      .update({ emailed_at: new Date().toISOString() })
+      .eq("id", notification.id);
+  }));
 }
 
 function buildEventRequestPayload(churchId: string, form: Record<string, unknown>, eventTiming: string, tablesNeeded: string) {
@@ -182,7 +267,7 @@ Deno.serve(async (req) => {
     const { data: insertedRequest, error: insertError } = await adminClient
       .from("event_requests")
       .insert(payload)
-      .select("public_access_token")
+      .select("id, event_name, contact_name, public_access_token")
       .single();
     if (insertError) throw insertError;
 
@@ -190,6 +275,8 @@ Deno.serve(async (req) => {
       church_id: church.id,
       requester_key: requesterKey,
     });
+
+    await sendEventRequestNotifications(adminClient, church, insertedRequest);
 
     return jsonResponse(200, {
       submitted: true,

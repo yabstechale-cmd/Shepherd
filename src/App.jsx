@@ -106,7 +106,7 @@ const TUTORIAL_PROMPT_COUNT_STORAGE_PREFIX = "shepherd-tutorial-prompt-count";
 const TUTORIAL_AUTO_PROMPT_LIMIT = 10;
 const NOTIFICATION_RETENTION_MS = 40 * 24 * 60 * 60 * 1000;
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
-const ACTIVITY_LOG_ALLOWED_EMAILS = ["yabs@reachjax.com"];
+const ACTIVITY_LOG_ALLOWED_USER_IDS = ["725a6cc4-106d-4c7f-9819-b994c1927f53"];
 
 const getGoogleCalendarOAuthStateStorageKey = (churchId) => `${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:${churchId || "anon"}`;
 const getTutorialCompletedStorageKey = (userId) => `${TUTORIAL_COMPLETED_STORAGE_PREFIX}:${userId || "anon"}`;
@@ -475,7 +475,7 @@ const canEditChurchTeam = (profile, church) => hasAdministrativeOversight(profil
 const canDeleteChurchAccount = (profile, church) => isChurchAccountAdmin(profile, church);
 const canManageAllTasks = (profile, church) => hasAdministrativeOversight(profile, church);
 const canEditTask = (profile, church, task) => canManageAllTasks(profile, church) || samePerson(task?.assignee, profile?.full_name);
-const canViewActivityLog = (profile) => ACTIVITY_LOG_ALLOWED_EMAILS.some((email) => samePerson(email, profile?.email));
+const canViewActivityLog = (profile) => ACTIVITY_LOG_ALLOWED_USER_IDS.includes(profile?.id);
 const getChurchDeletionApprovals = (church) => Array.isArray(church?.deletion_approvals) ? church.deletion_approvals : [];
 const getChurchDeletionApprovalCount = (church) => getChurchDeletionApprovals(church).filter((approval) => approval?.reviewer_id && approval?.approved_at && approval.reviewer_id !== church?.deletion_requested_by).length;
 const isChurchDeletionPending = (church) => !!church?.deletion_requested_at;

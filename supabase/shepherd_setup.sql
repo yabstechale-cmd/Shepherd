@@ -1605,7 +1605,7 @@ using (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = activity_logs.church_id
-      and lower(coalesce(p.email, '')) = 'yabs@reachjax.com'
+      and p.id = '725a6cc4-106d-4c7f-9819-b994c1927f53'::uuid
   )
 );
 

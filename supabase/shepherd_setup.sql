@@ -21,6 +21,12 @@ alter table public.churches add column if not exists google_calendar_id text;
 alter table public.churches add column if not exists google_calendar_title text;
 alter table public.churches add column if not exists google_calendar_ids text[] not null default '{}';
 alter table public.churches add column if not exists google_calendar_titles text[] not null default '{}';
+alter table public.churches add column if not exists deletion_requested_at timestamptz;
+alter table public.churches add column if not exists deletion_requested_by uuid references auth.users(id) on delete set null;
+alter table public.churches add column if not exists deletion_requested_by_name text;
+alter table public.churches add column if not exists deletion_reviewer_user_ids uuid[] not null default '{}';
+alter table public.churches add column if not exists deletion_approvals jsonb not null default '[]'::jsonb;
+alter table public.churches add column if not exists deletion_hold_until timestamptz;
 alter table public.churches add column if not exists created_at timestamptz not null default now();
 
 create unique index if not exists churches_code_key on public.churches (code);
@@ -100,6 +106,8 @@ create table if not exists public.profiles (
   read_only_oversight boolean not null default false,
   current_focus_task_id uuid references public.tasks(id) on delete set null,
   current_focus_updated_at timestamptz,
+  walkthrough_prompt_count integer not null default 0,
+  walkthrough_completed_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -117,6 +125,8 @@ alter table public.profiles add column if not exists can_see_admin_overview bool
 alter table public.profiles add column if not exists read_only_oversight boolean not null default false;
 alter table public.profiles add column if not exists current_focus_task_id uuid references public.tasks(id) on delete set null;
 alter table public.profiles add column if not exists current_focus_updated_at timestamptz;
+alter table public.profiles add column if not exists walkthrough_prompt_count integer not null default 0;
+alter table public.profiles add column if not exists walkthrough_completed_at timestamptz;
 alter table public.profiles add column if not exists created_at timestamptz not null default now();
 alter table public.profiles drop constraint if exists profiles_role_check;
 
@@ -996,7 +1006,9 @@ set search_path = public, auth
 as $$
 declare
   current_profile public.profiles%rowtype;
+  church_row public.churches%rowtype;
   delete_user_ids uuid[];
+  approval_count integer := 0;
 begin
   if auth.uid() is null then
     raise exception 'You must be signed in to delete a church account.';
@@ -1012,8 +1024,36 @@ begin
     raise exception 'You do not have access to that church account.';
   end if;
 
-  if current_profile.role not in ('church_administrator', 'admin', 'senior_pastor') then
-    raise exception 'Only the Church Administrator or Senior Pastor can delete this church account.';
+  select *
+  into church_row
+  from public.churches
+  where id = p_church_id;
+
+  if not found then
+    raise exception 'Church account not found.';
+  end if;
+
+  if not public.user_can_manage_church(p_church_id) then
+    raise exception 'Only Shepherd Account Managers can finalize a church account deletion.';
+  end if;
+
+  if church_row.deletion_requested_at is null then
+    raise exception 'A deletion request has not been started for this church account.';
+  end if;
+
+  select count(distinct (approval->>'reviewer_id')::uuid)
+  into approval_count
+  from jsonb_array_elements(coalesce(church_row.deletion_approvals, '[]'::jsonb)) approval
+  where (approval->>'reviewer_id') is not null
+    and (approval->>'approved_at') is not null
+    and (approval->>'reviewer_id')::uuid <> coalesce(church_row.deletion_requested_by, '00000000-0000-0000-0000-000000000000'::uuid);
+
+  if approval_count < 2 then
+    raise exception 'Church account deletion requires approval from two other reviewers.';
+  end if;
+
+  if church_row.deletion_hold_until is null or church_row.deletion_hold_until > now() then
+    raise exception 'Church account deletion is still in the 30-day hold period.';
   end if;
 
   select coalesce(array_agg(id), '{}'::uuid[])
@@ -1381,7 +1421,15 @@ drop policy if exists "activity logs manager read" on public.activity_logs;
 create policy "activity logs manager read"
 on public.activity_logs
 for select
-using (public.user_can_manage_church(church_id));
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = activity_logs.church_id
+      and lower(coalesce(p.email, '')) = 'yabs@reachjax.com'
+  )
+);
 
 drop policy if exists "activity logs same church insert" on public.activity_logs;
 create policy "activity logs same church insert"

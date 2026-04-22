@@ -104,13 +104,17 @@ const GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-r
 const GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX = "shepherd-google-calendar-oauth-state";
 const ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY = "shepherd-account-settings-branch";
 const TUTORIAL_COMPLETED_STORAGE_PREFIX = "shepherd-tutorial-completed";
+const TUTORIAL_PROMPT_COUNT_STORAGE_PREFIX = "shepherd-tutorial-prompt-count";
+const TUTORIAL_AUTO_PROMPT_LIMIT = 10;
 const NOTIFICATION_RETENTION_MS = 40 * 24 * 60 * 60 * 1000;
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
+const ACTIVITY_LOG_ALLOWED_EMAILS = ["yabs@reachjax.com"];
 
 const getGoogleProviderTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 const getGoogleProviderRefreshTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 const getGoogleCalendarOAuthStateStorageKey = (churchId) => `${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:${churchId || "anon"}`;
 const getTutorialCompletedStorageKey = (userId) => `${TUTORIAL_COMPLETED_STORAGE_PREFIX}:${userId || "anon"}`;
+const getTutorialPromptCountStorageKey = (userId) => `${TUTORIAL_PROMPT_COUNT_STORAGE_PREFIX}:${userId || "anon"}`;
 const getChurchAccountManagerUserIds = (church) => (
   Array.isArray(church?.account_manager_user_ids) && church.account_manager_user_ids.length
     ? church.account_manager_user_ids
@@ -349,6 +353,8 @@ const normalizeAccessUser = (record) => ({
   readOnlyOversight: record?.read_only_oversight ?? record?.readOnlyOversight ?? false,
   current_focus_task_id: record?.current_focus_task_id || record?.currentFocusTaskId || null,
   current_focus_updated_at: record?.current_focus_updated_at || record?.currentFocusUpdatedAt || null,
+  walkthrough_prompt_count: Number.parseInt(record?.walkthrough_prompt_count || 0, 10) || 0,
+  walkthrough_completed_at: record?.walkthrough_completed_at || null,
 });
 const normalizeTask = (task) => ({
   ...task,
@@ -470,9 +476,14 @@ const shouldShowChurchTeam = (profile, church) =>
 const canManageChurchTeam = (profile, church) =>
   isChurchAccountAdmin(profile, church);
 const canEditChurchTeam = (profile, church) => hasAdministrativeOversight(profile, church);
-const canDeleteChurchAccount = (profile, church) => hasAdministrativeOversight(profile, church);
+const canDeleteChurchAccount = (profile, church) => isChurchAccountAdmin(profile, church);
 const canManageAllTasks = (profile, church) => hasAdministrativeOversight(profile, church);
 const canEditTask = (profile, church, task) => canManageAllTasks(profile, church) || samePerson(task?.assignee, profile?.full_name);
+const canViewActivityLog = (profile) => ACTIVITY_LOG_ALLOWED_EMAILS.some((email) => samePerson(email, profile?.email));
+const getChurchDeletionApprovals = (church) => Array.isArray(church?.deletion_approvals) ? church.deletion_approvals : [];
+const getChurchDeletionApprovalCount = (church) => getChurchDeletionApprovals(church).filter((approval) => approval?.reviewer_id && approval?.approved_at && approval.reviewer_id !== church?.deletion_requested_by).length;
+const isChurchDeletionPending = (church) => !!church?.deletion_requested_at;
+const getChurchDeletionHoldUntil = (church) => church?.deletion_hold_until || null;
 const canReviewTask = (profile, task) => task?.review_required && task?.status === "in-review" && listIncludesPerson(task?.reviewers, profile?.full_name);
 const getTaskReviewerDecision = (task, reviewer) => {
   if (!reviewer) return null;
@@ -1979,7 +1990,7 @@ function getTutorialSteps(profile, church) {
   return steps;
 }
 
-function ShepherdTutorial({ profile, church, onClose }) {
+function ShepherdTutorial({ profile, church, onClose, onComplete }) {
   const steps = useMemo(() => getTutorialSteps(profile, church), [profile, church]);
   const [hasStarted, setHasStarted] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
@@ -1990,6 +2001,7 @@ function ShepherdTutorial({ profile, church, onClose }) {
     if (typeof window !== "undefined" && profile?.id) {
       window.localStorage.setItem(getTutorialCompletedStorageKey(profile.id), "true");
     }
+    onComplete?.();
     onClose?.();
   };
 
@@ -2824,7 +2836,11 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
 function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial, activityLogs, refreshActivityLogs, recordActivity }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
   const canManageAccountManagers = canManageChurchTeam(profile, church);
-  const canSeeChurchAccount = canManageAccountManagers || canDeleteChurchAccount(profile, church);
+  const canSeeActivityLog = canViewActivityLog(profile);
+  const canReviewChurchDeletion = isChurchDeletionPending(church)
+    && Array.isArray(church?.deletion_reviewer_user_ids)
+    && church.deletion_reviewer_user_ids.includes(profile?.id);
+  const canSeeChurchAccount = canManageAccountManagers || canDeleteChurchAccount(profile, church) || canReviewChurchDeletion;
   const [settingsBranch, setSettingsBranch] = useState(() => {
     if (typeof window === "undefined") return "my-account";
     const stored = window.localStorage.getItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY);
@@ -2849,6 +2865,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   const [deleteMessage, setDeleteMessage] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deletingChurch, setDeletingChurch] = useState(false);
+  const [selectedDeletionReviewerIds, setSelectedDeletionReviewerIds] = useState([]);
   const [selectedAccountManagerIds, setSelectedAccountManagerIds] = useState(() => getChurchAccountManagerUserIds(church));
   const [accountManagerMessage, setAccountManagerMessage] = useState("");
   const [accountManagerError, setAccountManagerError] = useState("");
@@ -2870,6 +2887,21 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   const currentManagerUsers = managerCandidates.filter((user) => currentAccountManagerIds.includes(user.auth_user_id));
   const selectedManagerUsers = managerCandidates.filter((user) => selectedAccountManagerIds.includes(user.auth_user_id));
   const availableManagerCandidates = managerCandidates.filter((user) => !selectedAccountManagerIds.includes(user.auth_user_id));
+  const deletionReviewerCandidates = managerCandidates.filter((user) => user.auth_user_id && user.auth_user_id !== profile?.id && isStaffAccountAdmin(user, church));
+  const deletionPending = isChurchDeletionPending(church);
+  const deletionApprovals = getChurchDeletionApprovals(church);
+  const deletionApprovalCount = getChurchDeletionApprovalCount(church);
+  const deletionReviewerIds = Array.isArray(church?.deletion_reviewer_user_ids) ? church.deletion_reviewer_user_ids : [];
+  const currentUserCanApproveDeletion = deletionPending
+    && deletionReviewerIds.includes(profile?.id)
+    && profile?.id !== church?.deletion_requested_by
+    && !deletionApprovals.some((approval) => approval?.reviewer_id === profile?.id);
+  const deletionHoldUntil = getChurchDeletionHoldUntil(church);
+  const deletionHoldDate = deletionHoldUntil ? new Date(deletionHoldUntil) : null;
+  const deletionReadyToFinalize = deletionApprovalCount >= 2 && deletionHoldDate && deletionHoldDate.getTime() <= Date.now();
+  const deletionHoldLabel = deletionHoldDate && !Number.isNaN(deletionHoldDate.getTime())
+    ? deletionHoldDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    : "";
   const currentUserCanBeManager = !!profile?.id && managerCandidates.some((user) => user.auth_user_id === profile.id);
   const currentUserMissingFromSelection = !!profile?.id && currentUserCanBeManager && !selectedAccountManagerIds.includes(profile.id);
   const accountManagerSelectionUnchanged =
@@ -2955,6 +2987,16 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       return;
     }
     setSelectedAccountManagerIds((current) => current.filter((id) => id !== authUserId));
+  };
+
+  const toggleDeletionReviewer = (authUserId) => {
+    setDeleteError("");
+    setDeleteMessage("");
+    setSelectedDeletionReviewerIds((current) => (
+      current.includes(authUserId)
+        ? current.filter((id) => id !== authUserId)
+        : [...current, authUserId]
+    ));
   };
 
   const handlePhotoUpload = async (event) => {
@@ -3192,23 +3234,31 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     setResetMessage("Password reset email sent. Use the link in that email to choose a new password.");
   };
 
-  const deleteChurchAccount = async () => {
+  const requestChurchDeletion = async () => {
     setDeleteError("");
     setDeleteMessage("");
     if (!canDeleteChurchAccount(profile, church)) {
-      setDeleteError("Only the Church Administrator or Senior Pastor can delete this church account.");
+      setDeleteError("Only Shepherd Account Managers can request church account deletion.");
       return;
     }
     if (!church?.id) {
       setDeleteError("We couldn't find this church account.");
       return;
     }
+    if (deletionPending) {
+      setDeleteError("A deletion request is already pending for this church account.");
+      return;
+    }
     if (!deleteForm.churchName.trim() || deleteForm.churchName.trim() !== (church?.name || "")) {
       setDeleteError("Type the church name exactly to confirm deletion.");
       return;
     }
+    if (selectedDeletionReviewerIds.length < 2) {
+      setDeleteError("Choose at least two other reviewers before starting the deletion request.");
+      return;
+    }
     if (!deleteForm.currentPassword) {
-      setDeleteError("Enter your current password to confirm this deletion.");
+      setDeleteError("Enter your current password to start this deletion request.");
       return;
     }
     const { error: verifyError } = await supabase.auth.signInWithPassword({
@@ -3220,10 +3270,114 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       return;
     }
     setDeletingChurch(true);
+    const payload = {
+      deletion_requested_at: new Date().toISOString(),
+      deletion_requested_by: profile.id,
+      deletion_requested_by_name: profile.full_name || profile.email || "Shepherd Account Manager",
+      deletion_reviewer_user_ids: selectedDeletionReviewerIds,
+      deletion_approvals: [],
+      deletion_hold_until: null,
+    };
+    const { data, error } = await supabase.from("churches").update(payload).eq("id", church.id).select().single();
+    setDeletingChurch(false);
+    if (error) {
+      setDeleteError(error.message || "We couldn't start that deletion request.");
+      return;
+    }
+    if (data) setChurch?.(data);
+    await recordActivity?.({
+      action: "requested",
+      entityType: "church_account_deletion",
+      entityId: church.id,
+      entityTitle: church.name,
+      summary: `${profile?.full_name || "A Shepherd Account Manager"} requested deletion of ${church.name}.`,
+      metadata: { reviewers: selectedDeletionReviewerIds },
+    });
+    setDeleteForm({ churchName: "", currentPassword: "" });
+    setSelectedDeletionReviewerIds([]);
+    setDeleteMessage("Deletion request started. Two selected reviewers must approve it before the 30-day hold begins.");
+  };
+
+  const approveChurchDeletion = async () => {
+    setDeleteError("");
+    setDeleteMessage("");
+    if (!currentUserCanApproveDeletion) {
+      setDeleteError("You are not one of the selected reviewers for this deletion request.");
+      return;
+    }
+    const nextApproval = {
+      reviewer_id: profile.id,
+      reviewer_name: profile.full_name || profile.email || "Reviewer",
+      approved_at: new Date().toISOString(),
+    };
+    const nextApprovals = [...deletionApprovals, nextApproval];
+    const nextPayload = {
+      deletion_approvals: nextApprovals,
+      deletion_hold_until: nextApprovals.length >= 2 && !church?.deletion_hold_until
+        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        : church?.deletion_hold_until || null,
+    };
+    const { data, error } = await supabase.from("churches").update(nextPayload).eq("id", church.id).select().single();
+    if (error) {
+      setDeleteError(error.message || "We couldn't save that deletion approval.");
+      return;
+    }
+    if (data) setChurch?.(data);
+    await recordActivity?.({
+      action: "approved",
+      entityType: "church_account_deletion",
+      entityId: church.id,
+      entityTitle: church.name,
+      summary: `${profile?.full_name || "A reviewer"} approved deletion of ${church.name}.`,
+      metadata: { approval_count: nextApprovals.length },
+    });
+    setDeleteMessage(nextApprovals.length >= 2 ? "Approval saved. The 30-day hold has started." : "Approval saved. Waiting on one more reviewer.");
+  };
+
+  const cancelChurchDeletion = async () => {
+    setDeleteError("");
+    setDeleteMessage("");
+    if (!canDeleteChurchAccount(profile, church)) {
+      setDeleteError("Only Shepherd Account Managers can cancel this deletion request.");
+      return;
+    }
+    const payload = {
+      deletion_requested_at: null,
+      deletion_requested_by: null,
+      deletion_requested_by_name: null,
+      deletion_reviewer_user_ids: [],
+      deletion_approvals: [],
+      deletion_hold_until: null,
+    };
+    const { data, error } = await supabase.from("churches").update(payload).eq("id", church.id).select().single();
+    if (error) {
+      setDeleteError(error.message || "We couldn't cancel that deletion request.");
+      return;
+    }
+    if (data) setChurch?.(data);
+    await recordActivity?.({
+      action: "cancelled",
+      entityType: "church_account_deletion",
+      entityId: church.id,
+      entityTitle: church.name,
+      summary: `${profile?.full_name || "A Shepherd Account Manager"} cancelled deletion of ${church.name}.`,
+    });
+    setDeleteMessage("Deletion request cancelled.");
+  };
+
+  const finalizeChurchDeletion = async () => {
+    setDeleteError("");
+    setDeleteMessage("");
+    if (!deletionReadyToFinalize) {
+      setDeleteError("This church account is not ready for final deletion yet.");
+      return;
+    }
+    if (!confirmDestructiveAction(`Permanently delete ${church?.name || "this church"} now? This cannot be undone.`)) return;
+    setDeletingChurch(true);
     const { error } = await supabase.rpc("delete_church_account", { p_church_id: church.id });
     setDeletingChurch(false);
     if (error) {
-      setDeleteError(error.message || "We couldn't delete this church account.");
+      setDeleteError(error.message || "We couldn't permanently delete this church account.");
       return;
     }
     setDeleteMessage("Church account deleted. Signing out...");
@@ -3384,7 +3538,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                   </div>
                 )}
               </div>
-              {canManageAccountManagers && (
+              {canSeeActivityLog && (
                 <div className="card" style={{padding:22,textAlign:"left"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:activityLogOpen ? 14 : 0}}>
                     <div>
@@ -3443,33 +3597,92 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                   </div>}
                 </div>
               )}
-              {canDeleteChurchAccount(profile, church) && (
+              {(canDeleteChurchAccount(profile, church) || canReviewChurchDeletion) && (
                 <div className="card" style={{padding:22,textAlign:"left",border:`1px solid rgba(224,82,82,.35)`}}>
-                  <h3 style={{...sectionTitleStyle,color:C.danger}}>Delete Church Account</h3>
+                  <h3 style={{...sectionTitleStyle,color:C.danger}}>Church Account Deletion</h3>
                   <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
-                    This permanently removes <span style={{color:C.text,fontWeight:600}}>{church?.name || "this church"}</span> from Shepherd, including staff access, tasks, boards, and stored church data. If you do not remember your password, use Password Recovery above first.
+                    Only Shepherd Account Managers can start this process. Deletion requires approval from two other selected reviewers, then Shepherd holds the account for 30 days before it can be permanently deleted.
                   </p>
-                  <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
-                    <input
-                      className="input-field"
-                      value={deleteForm.churchName}
-                      onChange={(e)=>setDeleteForm({...deleteForm,churchName:e.target.value})}
-                      placeholder={`Type "${church?.name || "church name"}" to confirm`}
-                    />
-                    <input
-                      className="input-field"
-                      type="password"
-                      value={deleteForm.currentPassword}
-                      onChange={(e)=>setDeleteForm({...deleteForm,currentPassword:e.target.value})}
-                      placeholder="Current password"
-                    />
+                  <div style={{display:"grid",gap:12,marginTop:16}}>
+                    {deletionPending ? (
+                      <>
+                        <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"grid",gap:8}}>
+                          <div style={{fontSize:13,color:C.text,fontWeight:700}}>Deletion Request Pending</div>
+                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                            Requested by {church?.deletion_requested_by_name || "a Shepherd Account Manager"} on {fmtActivityDate(church?.deletion_requested_at)}.
+                          </div>
+                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                            Reviewer approvals: <span style={{color:C.text}}>{deletionApprovalCount}/2</span>
+                            {deletionHoldLabel ? <span> • 30-day hold ends {deletionHoldLabel}</span> : <span> • 30-day hold begins after the second approval</span>}
+                          </div>
+                          {deletionApprovals.length > 0 && (
+                            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                              {deletionApprovals.map((approval) => (
+                                <span key={`${approval.reviewer_id}-${approval.approved_at}`} className="badge" style={{background:C.goldGlow,color:C.gold,border:`1px solid ${C.goldDim}`}}>
+                                  {approval.reviewer_name || "Reviewer"} approved
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {currentUserCanApproveDeletion && (
+                          <button className="btn-gold" onClick={approveChurchDeletion}>
+                            Approve Deletion Request
+                          </button>
+                        )}
+                        {canDeleteChurchAccount(profile, church) && (
+                          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                            <button className="btn-outline" onClick={cancelChurchDeletion}>
+                              Cancel Deletion Request
+                            </button>
+                            <button className="btn-outline" onClick={finalizeChurchDeletion} disabled={!deletionReadyToFinalize || deletingChurch} style={{borderColor:C.danger,color:C.danger,opacity:deletionReadyToFinalize ? 1 : .55}}>
+                              {deletingChurch ? "Deleting..." : "Permanently Delete After Hold"}
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          className="input-field"
+                          value={deleteForm.churchName}
+                          onChange={(e)=>setDeleteForm({...deleteForm,churchName:e.target.value})}
+                          placeholder={`Type "${church?.name || "church name"}" to confirm`}
+                        />
+                        <input
+                          className="input-field"
+                          type="password"
+                          value={deleteForm.currentPassword}
+                          onChange={(e)=>setDeleteForm({...deleteForm,currentPassword:e.target.value})}
+                          placeholder="Current password"
+                        />
+                        <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,display:"grid",gap:10}}>
+                          <div style={{fontSize:12,color:C.muted}}>Select At Least Two Other Shepherd Account Managers To Review</div>
+                          {deletionReviewerCandidates.length < 2 ? (
+                            <div style={{fontSize:12,color:C.danger,lineHeight:1.6}}>
+                              Add at least two other Shepherd Account Managers before church deletion can be requested.
+                            </div>
+                          ) : deletionReviewerCandidates.map((user) => (
+                            <label key={`deletion-reviewer-${user.auth_user_id}`} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.text}}>
+                              <input
+                                type="checkbox"
+                                checked={selectedDeletionReviewerIds.includes(user.auth_user_id)}
+                                onChange={() => toggleDeletionReviewer(user.auth_user_id)}
+                              />
+                              {user.full_name}
+                              {user.email ? <span style={{color:C.muted}}>• {user.email}</span> : ""}
+                            </label>
+                          ))}
+                        </div>
+                        <div style={{display:"flex",justifyContent:"flex-end"}}>
+                          <button className="btn-outline" onClick={requestChurchDeletion} disabled={deletingChurch} style={{borderColor:C.danger,color:C.danger}}>
+                            {deletingChurch ? "Starting Request..." : "Request Church Account Deletion"}
+                          </button>
+                        </div>
+                      </>
+                    )}
                     {deleteError && <div style={{fontSize:12,color:C.danger}}>{deleteError}</div>}
                     {deleteMessage && <div style={{fontSize:12,color:C.success}}>{deleteMessage}</div>}
-                    <div style={{display:"flex",justifyContent:"flex-end"}}>
-                      <button className="btn-outline" onClick={deleteChurchAccount} disabled={deletingChurch} style={{borderColor:C.danger,color:C.danger}}>
-                        {deletingChurch ? "Deleting..." : "Delete Church Account"}
-                      </button>
-                    </div>
                   </div>
                 </div>
               )}
@@ -8656,18 +8869,6 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
               </div>
             </div>
             <div>
-              <div style={{fontSize:12,color:C.muted}}>Shared Link</div>
-              {selectedTask.share_link ? (
-                <div style={{marginTop:6}}>
-                  <a href={selectedTask.share_link} target="_blank" rel="noreferrer" style={{fontSize:13,color:C.gold,textDecoration:"none",wordBreak:"break-all"}}>
-                    {selectedTask.share_link}
-                  </a>
-                </div>
-              ) : (
-                <div style={{fontSize:13,color:C.muted,marginTop:4}}>No digital link attached yet.</div>
-              )}
-            </div>
-            <div>
               <div style={{fontSize:12,color:C.muted}}>Review Workflow</div>
               {selectedTask.review_required ? (
                 <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
@@ -10837,6 +11038,8 @@ export default function App() {
   const shownNotificationIdsRef = useRef(new Set());
   const deadlineNotificationKeysRef = useRef(new Set());
   const loadedUserIdRef = useRef(null);
+  const tutorialAutoPromptedUserRef = useRef(null);
+  const loggedLoginActivityRef = useRef(new Set());
 
   const allowedPages = new Set([
     "dashboard",
@@ -10855,7 +11058,7 @@ export default function App() {
   const safeActive = allowedPages.has(active) ? active : "dashboard";
 
   const refreshActivityLogs = useCallback(async (churchIdOverride = church?.id) => {
-    if (!churchIdOverride || churchIdOverride === "preview") {
+    if (!churchIdOverride || churchIdOverride === "preview" || !canViewActivityLog(profile)) {
       setActivityLogs([]);
       return;
     }
@@ -10870,7 +11073,7 @@ export default function App() {
       return;
     }
     setActivityLogs((data || []).map(normalizeActivityLog));
-  }, [church?.id]);
+  }, [church?.id, profile]);
 
   const recordActivity = useCallback(async (activity) => {
     const saved = await createActivityLog({
@@ -10879,7 +11082,9 @@ export default function App() {
       ...activity,
     });
     if (saved) {
-      setActivityLogs((current) => [saved, ...(current || []).filter((entry) => entry.id !== saved.id)].slice(0, 120));
+      if (canViewActivityLog(profile)) {
+        setActivityLogs((current) => [saved, ...(current || []).filter((entry) => entry.id !== saved.id)].slice(0, 120));
+      }
     }
     return saved;
   }, [church?.id, profile]);
@@ -10977,6 +11182,17 @@ export default function App() {
   const startTutorial = useCallback(() => {
     setShowTutorial(true);
   }, []);
+
+  const completeTutorial = useCallback(() => {
+    if (!profile?.id) return;
+    const completedAt = new Date().toISOString();
+    setProfile((current) => current?.id === profile.id ? { ...current, walkthrough_completed_at: completedAt } : current);
+    supabase
+      .from("profiles")
+      .update({ walkthrough_completed_at: completedAt })
+      .eq("id", profile.id)
+      .then(() => {});
+  }, [profile?.id]);
 
   const moveItemToTrash = (item) => {
     if (!item) return;
@@ -11109,14 +11325,13 @@ export default function App() {
       setTrashItems([]);
     }
     if (prof?.church_id) {
-      const [ch, t, cla, staff, profileRows, notificationRows, activityRows] = await Promise.all([
+      const [ch, t, cla, staff, profileRows, notificationRows] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("church_lockup_assignments").select("*").eq("church_id", prof.church_id).order("week_of", { ascending: true }),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
         supabase.from("notifications").select("*").eq("recipient_profile_id", prof.id).order("created_at", { ascending: false }).limit(100),
-        supabase.from("activity_logs").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }).limit(120),
       ]);
       const enhancedProfile = normalizedProfile
         ? {
@@ -11129,7 +11344,19 @@ export default function App() {
       setTasks((t.data || []).map(normalizeTask));
       setChurchLockupAssignments((cla.data || []).map(normalizeChurchLockupAssignment));
       setPersistentNotifications(notificationRows.data || []);
-      setActivityLogs(activityRows.error ? [] : (activityRows.data || []).map(normalizeActivityLog));
+      if (canViewActivityLog(enhancedProfile)) {
+        supabase
+          .from("activity_logs")
+          .select("*")
+          .eq("church_id", prof.church_id)
+          .order("created_at", { ascending: false })
+          .limit(120)
+          .then(({ data, error }) => {
+            setActivityLogs(error ? [] : (data || []).map(normalizeActivityLog));
+          });
+      } else {
+        setActivityLogs([]);
+      }
       const profileFocusMap = new Map((profileRows.data || []).map((entry) => [entry.staff_id || entry.id || entry.full_name, entry]));
       setPreviewUsers((staff.data || []).map((entry) => {
         const match = profileFocusMap.get(entry.id)
@@ -11140,6 +11367,21 @@ export default function App() {
           current_focus_updated_at: match?.current_focus_updated_at || null,
         });
       }));
+      const loginActivityKey = `${prof.church_id}:${uid}`;
+      if (!loggedLoginActivityRef.current.has(loginActivityKey) && enhancedProfile?.id) {
+        loggedLoginActivityRef.current.add(loginActivityKey);
+        createActivityLog({
+          churchId: prof.church_id,
+          actorProfile: enhancedProfile,
+          action: "logged_in",
+          entityType: "login",
+          entityId: enhancedProfile.id,
+          entityTitle: enhancedProfile.full_name || enhancedProfile.email || "User",
+          summary: `${enhancedProfile.full_name || enhancedProfile.email || "A user"} logged in.`,
+        }).then((saved) => {
+          if (saved && canViewActivityLog(enhancedProfile)) setActivityLogs((current) => [saved, ...(current || []).filter((entry) => entry.id !== saved.id)].slice(0, 120));
+        });
+      }
       setLoading(false);
 
       Promise.all([
@@ -11299,10 +11541,35 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined" || loading || !session || !profile?.id || isPublicEventRequestRoute) return;
     const storageKey = getTutorialCompletedStorageKey(profile.id);
-    if (window.localStorage.getItem(storageKey) === "true") return;
+    if (profile.walkthrough_completed_at) return;
+    if (window.localStorage.getItem(storageKey) === "true") {
+      const completedAt = new Date().toISOString();
+      setProfile((current) => current?.id === profile.id ? { ...current, walkthrough_completed_at: completedAt } : current);
+      supabase
+        .from("profiles")
+        .update({ walkthrough_completed_at: completedAt })
+        .eq("id", profile.id)
+        .then(() => {});
+      return;
+    }
+    if (tutorialAutoPromptedUserRef.current === profile.id) return;
+    const serverPromptCount = Number.parseInt(profile.walkthrough_prompt_count || 0, 10) || 0;
+    const promptCountKey = getTutorialPromptCountStorageKey(profile.id);
+    const localPromptCount = Number.parseInt(window.localStorage.getItem(promptCountKey) || "0", 10) || 0;
+    const promptCount = Math.max(serverPromptCount, localPromptCount);
+    if (promptCount >= TUTORIAL_AUTO_PROMPT_LIMIT) return;
+    const nextPromptCount = promptCount + 1;
+    tutorialAutoPromptedUserRef.current = profile.id;
+    window.localStorage.setItem(promptCountKey, String(nextPromptCount));
+    setProfile((current) => current?.id === profile.id ? { ...current, walkthrough_prompt_count: nextPromptCount } : current);
+    supabase
+      .from("profiles")
+      .update({ walkthrough_prompt_count: nextPromptCount })
+      .eq("id", profile.id)
+      .then(() => {});
     const timer = window.setTimeout(() => setShowTutorial(true), 0);
     return () => window.clearTimeout(timer);
-  }, [loading, session, profile?.id, isPublicEventRequestRoute]);
+  }, [loading, session, profile?.id, profile?.walkthrough_completed_at, profile?.walkthrough_prompt_count, isPublicEventRequestRoute, setProfile]);
 
   useEffect(() => {
     if (typeof Notification === "undefined" || browserPermission !== "granted") return;
@@ -11375,6 +11642,7 @@ export default function App() {
         setPreviewUsers([]);
         setPersistentNotifications([]);
         setActivityLogs([]);
+        loggedLoginActivityRef.current.clear();
         setLoading(false);
       }
     });
@@ -11441,6 +11709,7 @@ export default function App() {
         <ShepherdTutorial
           profile={profile}
           church={church}
+          onComplete={completeTutorial}
           onClose={() => setShowTutorial(false)}
         />
       )}

@@ -48,6 +48,33 @@ function getAdminClient() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
+function actorCanManageChurch(actor: {
+  id?: string | null;
+  role?: string | null;
+  staff_roles?: string[] | null;
+  title?: string | null;
+  can_see_admin_overview?: boolean | null;
+}, church: {
+  account_admin_user_id?: string | null;
+  account_manager_user_ids?: string[] | null;
+} | null) {
+  const roles = Array.isArray(actor.staff_roles) ? actor.staff_roles : [];
+  const title = String(actor.title || "").trim().toLowerCase();
+  const managerIds = Array.isArray(church?.account_manager_user_ids) ? church.account_manager_user_ids : [];
+  return Boolean(
+    actor.can_see_admin_overview
+    || actor.role === "church_administrator"
+    || actor.role === "admin"
+    || actor.role === "senior_pastor"
+    || roles.includes("church_administrator")
+    || roles.includes("senior_pastor")
+    || title === "church administrator"
+    || title === "senior pastor"
+    || church?.account_admin_user_id === actor.id
+    || managerIds.includes(String(actor.id || ""))
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
@@ -65,7 +92,7 @@ Deno.serve(async (req) => {
     const adminClient = getAdminClient();
     const { data: actor } = await adminClient
       .from("profiles")
-      .select("id, full_name, church_id")
+      .select("id, full_name, church_id, role, staff_roles, title, can_see_admin_overview")
       .eq("id", authData.user.id)
       .maybeSingle();
     const { data: notification } = await adminClient
@@ -89,7 +116,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const { data: church } = await adminClient
       .from("churches")
-      .select("name")
+      .select("name, account_admin_user_id, account_manager_user_ids")
       .eq("id", notification.church_id)
       .maybeSingle();
 
@@ -99,6 +126,13 @@ Deno.serve(async (req) => {
 
     if (recipient.church_id !== notification.church_id) {
       return jsonResponse(403, { error: "This notification recipient is outside your church scope." });
+    }
+
+    const canSendNotificationEmail = actor.id === notification.actor_profile_id
+      || actor.id === notification.recipient_profile_id
+      || actorCanManageChurch(actor, church);
+    if (!canSendNotificationEmail) {
+      return jsonResponse(403, { error: "You can only send email for notifications you created, received, or manage." });
     }
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";

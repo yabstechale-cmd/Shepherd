@@ -718,6 +718,104 @@ begin
 end;
 $$;
 
+create or replace function public.list_public_churches()
+returns table (
+  id uuid,
+  name text
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select c.id, c.name
+  from public.churches c
+  order by c.name;
+$$;
+
+create or replace function public.get_public_church_access(
+  p_church_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  church_payload jsonb;
+  staff_payload jsonb;
+begin
+  if p_church_id is null then
+    raise exception 'Church is required.';
+  end if;
+
+  select jsonb_build_object(
+    'id', c.id,
+    'name', c.name
+  )
+  into church_payload
+  from public.churches c
+  where c.id = p_church_id;
+
+  if church_payload is null then
+    raise exception 'That church could not be found.';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', s.id,
+    'church_id', s.church_id,
+    'full_name', s.full_name,
+    'role', s.role,
+    'staff_roles', coalesce(s.staff_roles, '{}'::text[]),
+    'title', s.title,
+    'email', s.email,
+    'auth_user_id', s.auth_user_id,
+    'ministries', coalesce(s.ministries, '{}'::text[]),
+    'can_see_team_overview', coalesce(s.can_see_team_overview, false),
+    'can_see_admin_overview', coalesce(s.can_see_admin_overview, false),
+    'read_only_oversight', coalesce(s.read_only_oversight, false)
+  ) order by s.full_name), '[]'::jsonb)
+  into staff_payload
+  from public.church_staff s
+  where s.church_id = p_church_id;
+
+  return jsonb_build_object(
+    'church', church_payload,
+    'users', staff_payload
+  );
+end;
+$$;
+
+create or replace function public.get_public_church_by_code(
+  p_code text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  church_payload jsonb;
+begin
+  if p_code is null or length(trim(p_code)) = 0 then
+    raise exception 'Church code is required.';
+  end if;
+
+  select jsonb_build_object(
+    'id', c.id,
+    'name', c.name
+  )
+  into church_payload
+  from public.churches c
+  where lower(c.code) = lower(trim(p_code));
+
+  if church_payload is null then
+    raise exception 'That church code was not found.';
+  end if;
+
+  return church_payload;
+end;
+$$;
+
 create or replace function public.create_church_with_admin(
   p_church_name text,
   p_code text,
@@ -733,7 +831,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, auth
 as $$
 declare
   created_church_id uuid;
@@ -741,6 +839,19 @@ declare
 begin
   if p_user_id is null then
     raise exception 'Missing administrator account.';
+  end if;
+
+  if auth.uid() is not null and p_user_id <> auth.uid() then
+    raise exception 'Church accounts can only be created for the current signed-in user.';
+  end if;
+
+  if auth.uid() is null and not exists (
+    select 1
+    from auth.users u
+    where u.id = p_user_id
+      and lower(u.email) = lower(trim(p_email))
+  ) then
+    raise exception 'We could not verify the administrator account for this church.';
   end if;
 
   if p_church_name is null or length(trim(p_church_name)) = 0 then
@@ -1075,8 +1186,48 @@ begin
 end;
 $$;
 
+create or replace function public.prevent_unsafe_profile_self_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() = new.id and not public.user_can_manage_church(coalesce(old.church_id, new.church_id)) then
+    if old.church_id is distinct from new.church_id
+      or old.staff_id is distinct from new.staff_id
+      or old.full_name is distinct from new.full_name
+      or old.role is distinct from new.role
+      or old.staff_roles is distinct from new.staff_roles
+      or old.title is distinct from new.title
+      or old.ministries is distinct from new.ministries
+      or old.can_see_team_overview is distinct from new.can_see_team_overview
+      or old.can_see_admin_overview is distinct from new.can_see_admin_overview
+      or old.read_only_oversight is distinct from new.read_only_oversight
+      or (
+        old.email is distinct from new.email
+        and lower(coalesce(new.email, '')) <> lower(coalesce(auth.jwt() ->> 'email', ''))
+      )
+    then
+      raise exception 'Profile access fields can only be changed by an authorized church manager.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists protect_profile_self_update on public.profiles;
+create trigger protect_profile_self_update
+before update on public.profiles
+for each row
+execute function public.prevent_unsafe_profile_self_update();
+
 grant execute on function public.reserve_staff_registration(uuid, uuid, text) to anon, authenticated;
 grant execute on function public.claim_staff_profile(uuid, uuid) to authenticated;
+grant execute on function public.list_public_churches() to anon, authenticated;
+grant execute on function public.get_public_church_access(uuid) to anon, authenticated;
+grant execute on function public.get_public_church_by_code(text) to anon, authenticated;
 grant execute on function public.create_church_with_admin(text, text, text, text, text, text, uuid) to anon, authenticated;
 grant execute on function public.user_can_manage_church(uuid) to authenticated;
 grant execute on function public.user_can_manage_calendar_settings(uuid) to authenticated;
@@ -1291,7 +1442,14 @@ drop policy if exists "church code lookup" on public.churches;
 create policy "church code lookup"
 on public.churches
 for select
-using (true);
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = churches.id
+  )
+);
 
 drop policy if exists "church admin write" on public.churches;
 create policy "church admin write"
@@ -1317,7 +1475,14 @@ drop policy if exists "church staff lookup" on public.church_staff;
 create policy "church staff lookup"
 on public.church_staff
 for select
-using (true);
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = church_staff.church_id
+  )
+);
 
 drop policy if exists "church staff admin write" on public.church_staff;
 create policy "church staff admin write"
@@ -1335,7 +1500,7 @@ using (id = auth.uid());
 drop policy if exists "profiles self write" on public.profiles;
 create policy "profiles self write"
 on public.profiles
-for all
+for update
 using (id = auth.uid())
 with check (id = auth.uid());
 
@@ -1751,6 +1916,13 @@ using (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = transactions.church_id
+      and (
+        public.user_can_manage_church(transactions.church_id)
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
+        or p.role = 'finance_director'
+        or 'finance_director' = any(coalesce(p.staff_roles, '{}'::text[]))
+        or transactions.ministry = any(coalesce(p.ministries, '{}'::text[]))
+      )
   )
 );
 
@@ -1793,6 +1965,13 @@ using (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = ministries.church_id
+      and (
+        public.user_can_manage_church(ministries.church_id)
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
+        or p.role = 'finance_director'
+        or 'finance_director' = any(coalesce(p.staff_roles, '{}'::text[]))
+        or ministries.name = any(coalesce(p.ministries, '{}'::text[]))
+      )
   )
 );
 
@@ -1831,6 +2010,13 @@ with check (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = purchase_orders.church_id
+      and (
+        public.user_can_manage_church(purchase_orders.church_id)
+        or 'Finances' = any(coalesce(p.ministries, '{}'::text[]))
+        or p.role = 'finance_director'
+        or 'finance_director' = any(coalesce(p.staff_roles, '{}'::text[]))
+        or purchase_orders.ministry = any(coalesce(p.ministries, '{}'::text[]))
+      )
   )
 );
 

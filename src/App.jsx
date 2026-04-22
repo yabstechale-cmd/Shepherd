@@ -99,8 +99,6 @@ const TASK_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-task-discussion-sections"
 const PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-po-discussion-sections";
 const CURRENT_WORK_FOCUS_STORAGE_PREFIX = "shepherd-current-work-focus";
 const FORM_DRAFT_STORAGE_PREFIX = "shepherd-form-draft";
-const GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-token";
-const GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX = "shepherd-google-provider-refresh-token";
 const GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX = "shepherd-google-calendar-oauth-state";
 const ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY = "shepherd-account-settings-branch";
 const TUTORIAL_COMPLETED_STORAGE_PREFIX = "shepherd-tutorial-completed";
@@ -110,8 +108,6 @@ const NOTIFICATION_RETENTION_MS = 40 * 24 * 60 * 60 * 1000;
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 const ACTIVITY_LOG_ALLOWED_EMAILS = ["yabs@reachjax.com"];
 
-const getGoogleProviderTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
-const getGoogleProviderRefreshTokenStorageKey = (userId) => `${GOOGLE_PROVIDER_REFRESH_TOKEN_STORAGE_PREFIX}:${userId || "anon"}`;
 const getGoogleCalendarOAuthStateStorageKey = (churchId) => `${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:${churchId || "anon"}`;
 const getTutorialCompletedStorageKey = (userId) => `${TUTORIAL_COMPLETED_STORAGE_PREFIX}:${userId || "anon"}`;
 const getTutorialPromptCountStorageKey = (userId) => `${TUTORIAL_PROMPT_COUNT_STORAGE_PREFIX}:${userId || "anon"}`;
@@ -561,27 +557,24 @@ const claimStaffProfile = async (staffId, churchId) => {
   });
   if (error) throw error;
 };
-const fetchChurchAccess = async (code) => {
-  const { data: church, error: churchError } = await supabase.from("churches").select("*").eq("code", code).maybeSingle();
-  if (churchError) throw churchError;
-  if (!church) throw new Error("That church code was not found.");
-  const { data: users, error: usersError } = await supabase.from("church_staff").select("*").eq("church_id", church.id).order("full_name");
-  if (usersError) throw usersError;
-  return { church, users: (users || []).map(normalizeAccessUser) };
+const fetchChurchByCode = async (code) => {
+  const { data, error } = await supabase.rpc("get_public_church_by_code", { p_code: code });
+  if (error) throw error;
+  if (!data?.id) throw new Error("That church code was not found.");
+  return data;
 };
 const fetchChurchList = async () => {
-  const { data, error } = await supabase.from("churches").select("*").order("name");
+  const { data, error } = await supabase.rpc("list_public_churches");
   if (error) throw error;
   return data || [];
 };
 const fetchChurchAccessById = async (churchId) => {
   if (!churchId) return { church: null, users: [] };
-  const { data: church, error: churchError } = await supabase.from("churches").select("*").eq("id", churchId).maybeSingle();
-  if (churchError) throw churchError;
+  const { data, error } = await supabase.rpc("get_public_church_access", { p_church_id: churchId });
+  if (error) throw error;
+  const church = data?.church || null;
   if (!church) throw new Error("That church could not be found.");
-  const { data: users, error: usersError } = await supabase.from("church_staff").select("*").eq("church_id", church.id).order("full_name");
-  if (usersError) throw usersError;
-  return { church, users: (users || []).map(normalizeAccessUser) };
+  return { church, users: (data?.users || []).map(normalizeAccessUser) };
 };
 const generateChurchCode = () => `${Math.floor(100000 + Math.random() * 900000)}`;
 const getTimeOfDayGreeting = () => {
@@ -2499,10 +2492,6 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
         .select()
         .single();
       if (churchError) throw churchError;
-      if (typeof window !== "undefined" && session?.user?.id) {
-        window.localStorage.removeItem(getGoogleProviderTokenStorageKey(session.user.id));
-        window.localStorage.removeItem(getGoogleProviderRefreshTokenStorageKey(session.user.id));
-      }
       if (churchData) setChurch?.(churchData);
       setGoogleCalendarLinked(false);
       setGoogleConnectionEmail("");
@@ -7227,8 +7216,9 @@ function PublicEventRequestPage() {
       };
     }
 
-    fetchChurchAccess(code)
-      .then(({ church }) => {
+    setLookupLoading(true);
+    fetchChurchByCode(code)
+      .then((church) => {
         if (!active) return;
         setChurchRecord(church);
       })
@@ -11586,16 +11576,6 @@ export default function App() {
   }, [browserPermission, unreadNotifications]);
 
   useEffect(() => {
-    const persistProviderTokens = (session) => {
-      if (typeof window !== "undefined" && session?.user?.id) {
-        if (session.provider_token) {
-          window.localStorage.setItem(getGoogleProviderTokenStorageKey(session.user.id), session.provider_token);
-        }
-        if (session.provider_refresh_token) {
-          window.localStorage.setItem(getGoogleProviderRefreshTokenStorageKey(session.user.id), session.provider_refresh_token);
-        }
-      }
-    };
     const initializeSession = async () => {
       if (typeof window !== "undefined") {
         const url = new URL(window.location.href);
@@ -11604,9 +11584,8 @@ export default function App() {
         const isGoogleCalendarOauth = url.searchParams.get("google_calendar_oauth") === "1"
           || hasStoredGoogleCalendarOAuthState(state);
         if (code && !isGoogleCalendarOauth) {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (!error) {
-            persistProviderTokens(data?.session || null);
             url.searchParams.delete("code");
             url.searchParams.delete("state");
             window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
@@ -11614,14 +11593,12 @@ export default function App() {
         }
       }
       const { data: { session } } = await supabase.auth.getSession();
-      persistProviderTokens(session);
       setSession(session);
       if (session) loadData(session.user.id);
       else setLoading(false);
     };
     initializeSession();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      persistProviderTokens(session);
       setSession(session);
       const nextUserId = session?.user?.id || null;
       if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {

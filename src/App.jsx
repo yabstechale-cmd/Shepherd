@@ -9253,8 +9253,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
           <h2 style={{...pageTitleStyle,textAlign:"left"}}>{financeView ? "Budget Overview" : "Your Budgets"}</h2>
           <p style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"left"}}>
             {financeView
-              ? "See every ministry's budget standing and manage the church's ministry budgets."
-              : "These are the budgets currently assigned to you. If something is missing, reach out to the Finance Director so they can attach the right ministry budget to your profile in the ministry editor."}
+              ? "See every ministry's budget standing and manage the church's ministry budgets; other staff only see ministries assigned to their profile."
+              : "You will only see budgets and purchase order ministries assigned to your profile; if something is missing, ask the Finance Director to update your ministry assignment."}
           </p>
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
@@ -9348,6 +9348,11 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                   <option key={ministry} value={ministry}>{ministry}</option>
                 ))}
               </select>
+              <div style={{fontSize:11,color:C.muted,lineHeight:1.5,textAlign:"left"}}>
+                {financeView
+                  ? "Finance Director access includes all ministry budgets."
+                  : "Only ministries assigned to your profile appear here."}
+              </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>What Is This For?</label>
@@ -9555,6 +9560,11 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             {financeView
               ? "Review and respond to ministry purchase requests from one place."
               : "Submit purchase requests tied to your ministry budgets so Finance can review them."}
+          </div>
+          <div style={{fontSize:11,color:C.muted,marginTop:6,lineHeight:1.5,textAlign:"left"}}>
+            {financeView
+              ? "Finance Director access includes all ministry budgets and purchase requests."
+              : "Ministry options are based on the budgets assigned to your profile."}
           </div>
         </div>
         {visiblePurchaseOrders.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No purchase orders yet.</div>}

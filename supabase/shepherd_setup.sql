@@ -257,6 +257,37 @@ create unique index if not exists notifications_recipient_type_source_key
 alter table public.notifications
   enable row level security;
 
+create table if not exists public.activity_logs (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid not null references public.churches(id) on delete cascade,
+  actor_profile_id uuid references public.profiles(id) on delete set null,
+  actor_name text,
+  action text not null,
+  entity_type text not null,
+  entity_id text,
+  entity_title text,
+  summary text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.activity_logs add column if not exists church_id uuid references public.churches(id) on delete cascade;
+alter table public.activity_logs add column if not exists actor_profile_id uuid references public.profiles(id) on delete set null;
+alter table public.activity_logs add column if not exists actor_name text;
+alter table public.activity_logs add column if not exists action text;
+alter table public.activity_logs add column if not exists entity_type text;
+alter table public.activity_logs add column if not exists entity_id text;
+alter table public.activity_logs add column if not exists entity_title text;
+alter table public.activity_logs add column if not exists summary text;
+alter table public.activity_logs add column if not exists metadata jsonb not null default '{}'::jsonb;
+alter table public.activity_logs add column if not exists created_at timestamptz not null default now();
+
+create index if not exists activity_logs_church_created_at_idx
+  on public.activity_logs (church_id, created_at desc);
+
+alter table public.activity_logs
+  enable row level security;
+
 create table if not exists public.event_requests (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -1345,6 +1376,26 @@ on public.notifications
 for update
 using (recipient_profile_id = auth.uid())
 with check (recipient_profile_id = auth.uid());
+
+drop policy if exists "activity logs manager read" on public.activity_logs;
+create policy "activity logs manager read"
+on public.activity_logs
+for select
+using (public.user_can_manage_church(church_id));
+
+drop policy if exists "activity logs same church insert" on public.activity_logs;
+create policy "activity logs same church insert"
+on public.activity_logs
+for insert
+with check (
+  actor_profile_id = auth.uid()
+  and exists (
+    select 1
+    from public.profiles actor
+    where actor.id = auth.uid()
+      and actor.church_id = activity_logs.church_id
+  )
+);
 
 drop policy if exists "event requests public submit" on public.event_requests;
 create policy "event requests public submit"

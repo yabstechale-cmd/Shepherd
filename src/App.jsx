@@ -50,6 +50,12 @@ const fmtShortDate = (d) => {
   const parsed = parseAppDate(d);
   return parsed ? parsed.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) : "—";
 };
+const fmtActivityDate = (d) => {
+  const parsed = d ? new Date(d) : null;
+  return parsed && !Number.isNaN(parsed.getTime())
+    ? parsed.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : "—";
+};
 const stripGoogleCalendarMetadata = (notes) => String(notes || "")
   .split(/\n+/)
   .filter((line) => {
@@ -360,6 +366,16 @@ const normalizePurchaseOrder = (order) => ({
   approvals: Array.isArray(order?.approvals) ? order.approvals : [],
   comments: Array.isArray(order?.comments) ? order.comments : [],
   approval_history: Array.isArray(order?.approval_history) ? order.approval_history : [],
+});
+const normalizeActivityLog = (entry) => ({
+  ...entry,
+  actor_name: entry?.actor_name || "Shepherd",
+  action: entry?.action || "updated",
+  entity_type: entry?.entity_type || "system",
+  entity_title: entry?.entity_title || "",
+  summary: entry?.summary || "",
+  metadata: entry?.metadata && typeof entry.metadata === "object" ? entry.metadata : {},
+  created_at: entry?.created_at || new Date().toISOString(),
 });
 const normalizeStaffAvailabilityRequest = (request) => ({
   ...request,
@@ -1229,6 +1245,32 @@ const createNotificationsForNames = async ({ users, names, actorProfile, churchI
     actorProfile,
     recipientProfileId: getStaffProfileId(user),
   })));
+};
+const createActivityLog = async ({
+  churchId,
+  actorProfile,
+  action,
+  entityType,
+  entityId = "",
+  entityTitle = "",
+  summary,
+  metadata = {},
+}) => {
+  if (!churchId || churchId === "preview" || !actorProfile?.id || !action || !entityType || !summary) return null;
+  const payload = {
+    church_id: churchId,
+    actor_profile_id: actorProfile.id,
+    actor_name: actorProfile.full_name || actorProfile.email || "Staff",
+    action,
+    entity_type: entityType,
+    entity_id: entityId ? String(entityId) : null,
+    entity_title: entityTitle || null,
+    summary,
+    metadata,
+  };
+  const { data, error } = await supabase.from("activity_logs").insert(payload).select().maybeSingle();
+  if (error) return null;
+  return data ? normalizeActivityLog(data) : null;
 };
 const dedupeNotifications = (items) => {
   const seen = new Set();
@@ -2779,7 +2821,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   );
 }
 
-function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial }) {
+function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial, activityLogs, refreshActivityLogs, recordActivity }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
   const canManageAccountManagers = canManageChurchTeam(profile, church);
   const canSeeChurchAccount = canManageAccountManagers || canDeleteChurchAccount(profile, church);
@@ -2834,6 +2876,25 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     selectedAccountManagerIds.length === currentAccountManagerIds.length
     && selectedAccountManagerIds.every((id) => currentAccountManagerIds.includes(id))
     && currentAccountManagerIds.every((id) => selectedAccountManagerIds.includes(id));
+  const [activityLogOpen, setActivityLogOpen] = useState(true);
+  const [activityMonthOpen, setActivityMonthOpen] = useState({});
+  const activityMonthGroups = useMemo(() => {
+    const groups = new Map();
+    (activityLogs || []).forEach((entry) => {
+      const parsed = entry?.created_at ? new Date(entry.created_at) : new Date();
+      const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+      const key = `${safeDate.getFullYear()}-${String(safeDate.getMonth() + 1).padStart(2, "0")}`;
+      const label = safeDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      if (!groups.has(key)) groups.set(key, { key, label, entries: [] });
+      groups.get(key).entries.push(entry);
+    });
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        entries: group.entries.sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0)),
+      }))
+      .sort((left, right) => right.key.localeCompare(left.key));
+  }, [activityLogs]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2868,6 +2929,17 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     setAccountManagerError("");
     setAccountManagerMessage("");
     setSelectedAccountManagerIds((current) => current.includes(authUserId) ? current : [...current, authUserId]);
+  };
+
+  const isActivityMonthOpen = (monthKey, index) => (
+    Object.prototype.hasOwnProperty.call(activityMonthOpen, monthKey)
+      ? activityMonthOpen[monthKey]
+      : index === 0
+  );
+
+  const toggleActivityMonth = (monthKey, index) => {
+    const currentOpen = isActivityMonthOpen(monthKey, index);
+    setActivityMonthOpen((current) => ({ ...current, [monthKey]: !currentOpen }));
   };
 
   const removeAccountManager = (authUserId) => {
@@ -2991,6 +3063,15 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       const { data, error } = await supabase.from("churches").update(payload).eq("id", church.id).select().single();
       if (error) throw error;
       if (data) setChurch?.(data);
+      const savedNames = selected.map((user) => user.full_name).filter(Boolean).join(", ");
+      await recordActivity?.({
+        action: "updated",
+        entityType: "church_account",
+        entityId: church.id,
+        entityTitle: church.name,
+        summary: `${profile?.full_name || "A staff member"} updated Shepherd Account Managers${savedNames ? `: ${savedNames}` : ""}.`,
+        metadata: { manager_count: selected.length },
+      });
       setAccountManagerMessage(`Saved ${selected.length} Shepherd Account Manager${selected.length === 1 ? "" : "s"}.`);
     } catch (error) {
       setAccountManagerError(error?.message || "We couldn't update the Shepherd Account Managers yet.");
@@ -3303,6 +3384,65 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
                   </div>
                 )}
               </div>
+              {canManageAccountManagers && (
+                <div className="card" style={{padding:22,textAlign:"left"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:activityLogOpen ? 14 : 0}}>
+                    <div>
+                      <h3 style={sectionTitleStyle}>Activity Log</h3>
+                      {activityLogOpen && <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                        A church-wide record of meaningful changes across Shepherd. This logs important saves, assignments, status moves, approvals, deletions, and account changes.
+                      </p>}
+                    </div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      {activityLogOpen && (
+                        <button className="btn-outline" onClick={refreshActivityLogs} style={{whiteSpace:"nowrap"}}>
+                          Refresh
+                        </button>
+                      )}
+                      <button className="btn-gold-compact" onClick={() => setActivityLogOpen((current) => !current)} style={{whiteSpace:"nowrap"}}>
+                        {activityLogOpen ? "Collapse" : `Expand (${(activityLogs || []).length})`}
+                      </button>
+                    </div>
+                  </div>
+                  {activityLogOpen && <div style={{display:"grid",gap:10}}>
+                    {(activityLogs || []).length === 0 ? (
+                      <div style={{padding:"18px 14px",border:`1px dashed ${C.border}`,borderRadius:12,color:C.muted,fontSize:12,textAlign:"center"}}>
+                        No activity has been recorded yet. New meaningful changes will appear here.
+                      </div>
+                    ) : activityMonthGroups.map((group, groupIndex) => {
+                      const monthOpen = isActivityMonthOpen(group.key, groupIndex);
+                      return (
+                        <div key={group.key} style={{border:`1px solid ${C.border}`,borderRadius:14,background:C.surface,overflow:"hidden"}}>
+                          <button
+                            type="button"
+                            onClick={() => toggleActivityMonth(group.key, groupIndex)}
+                            style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"12px 14px",border:"none",background:monthOpen ? C.card : "transparent",color:C.text,cursor:"pointer",textAlign:"left"}}
+                          >
+                            <span style={{fontSize:14,fontWeight:600,color:monthOpen ? C.gold : C.text}}>{group.label}</span>
+                            <span style={{fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{group.entries.length} {group.entries.length === 1 ? "item" : "items"} • {monthOpen ? "Collapse" : "Expand"}</span>
+                          </button>
+                          {monthOpen && (
+                            <div style={{display:"grid",gap:8,padding:12,borderTop:`1px solid ${C.border}`}}>
+                              {group.entries.slice(0, 60).map((entry) => (
+                                <div key={entry.id} style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.card,display:"grid",gap:5}}>
+                                  <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
+                                    <div style={{fontSize:13,color:C.text,fontWeight:600,lineHeight:1.5}}>{entry.summary}</div>
+                                    <div style={{fontSize:11,color:C.muted,whiteSpace:"nowrap"}}>{fmtActivityDate(entry.created_at)}</div>
+                                  </div>
+                                  <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>
+                                    {entry.actor_name || "Shepherd"} • {String(entry.entity_type || "system").replace(/_/g, " ")}
+                                    {entry.entity_title ? ` • ${entry.entity_title}` : ""}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>}
+                </div>
+              )}
               {canDeleteChurchAccount(profile, church) && (
                 <div className="card" style={{padding:22,textAlign:"left",border:`1px solid rgba(224,82,82,.35)`}}>
                   <h3 style={{...sectionTitleStyle,color:C.danger}}>Delete Church Account</h3>
@@ -4296,7 +4436,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
   );
 }
 
-function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, setTasks, moveItemToTrash, previewUsers }) {
+function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, setTasks, moveItemToTrash, previewUsers, recordActivity }) {
   const [eventsSection, setEventsSection] = useState("home");
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
@@ -4413,6 +4553,14 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       data: { eventRequestId: data.id, eventName: data.event_name },
     });
     clearStoredFormDraft(eventRequestDraftKey);
+    await recordActivity?.({
+      action: "created",
+      entityType: "event_request",
+      entityId: data.id,
+      entityTitle: data.event_name,
+      summary: `${profile?.full_name || "A staff member"} submitted event request "${data.event_name}".`,
+      metadata: { status: data.status, contact_name: data.contact_name },
+    });
     setShowEventForm(false);
     setEventForm(createEventRequestBlank(profile));
   };
@@ -4465,6 +4613,14 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     setFormError("");
     setEventRequests((current) => current.map((request) => request.id === requestId ? data : request));
     setSelectedRequest((current) => current?.id === requestId ? data : current);
+    await recordActivity?.({
+      action: status,
+      entityType: "event_request",
+      entityId: data.id,
+      entityTitle: data.event_name,
+      summary: `${profile?.full_name || "A staff member"} ${status === "approved" ? "approved" : "declined"} event request "${data.event_name}".`,
+      metadata: { status },
+    });
   };
 
   const loadingRequests = !!church?.id && eventRequests === null;
@@ -4563,6 +4719,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       const normalized = normalizeEventWorkflow(data);
       setEventWorkflows((current) => (current || []).map((entry) => entry.id === normalized.id ? normalized : entry));
       setSelectedWorkflow(normalized);
+      await recordActivity?.({
+        action: "updated",
+        entityType: "event_plan",
+        entityId: normalized.id,
+        entityTitle: normalized.event_name || normalized.title,
+        summary: `${profile?.full_name || "A staff member"} updated event plan "${normalized.event_name || normalized.title}".`,
+      });
     } else {
       const { data, error } = await supabase.from("event_workflows").insert(payload).select().maybeSingle();
       if (error) {
@@ -4577,6 +4740,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       setEventWorkflows((current) => [normalized, ...(current || [])]);
       setSelectedWorkflow(normalized);
       clearStoredFormDraft(eventPlanDraftKey);
+      await recordActivity?.({
+        action: "created",
+        entityType: "event_plan",
+        entityId: normalized.id,
+        entityTitle: normalized.event_name || normalized.title,
+        summary: `${profile?.full_name || "A staff member"} created event plan "${normalized.event_name || normalized.title}".`,
+      });
     }
     setShowWorkflowModal(false);
   };
@@ -4946,6 +5116,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     setWorkflowError("");
     setEventWorkflows((current) => (current || []).filter((entry) => entry.id !== workflow.id));
     setSelectedWorkflow((current) => current?.id === workflow.id ? null : current);
+    await recordActivity?.({
+      action: "deleted",
+      entityType: "event_plan",
+      entityId: workflow.id,
+      entityTitle: workflow.event_name || workflow.title,
+      summary: `${profile?.full_name || "A staff member"} deleted event plan "${workflow.event_name || workflow.title}".`,
+    });
   };
   const deleteRequest = async (request) => {
     if (!request?.id) return;
@@ -4967,6 +5144,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     setFormError("");
     setEventRequests((current) => (current || []).filter((entry) => entry.id !== request.id));
     setSelectedRequest(null);
+    await recordActivity?.({
+      action: "deleted",
+      entityType: "event_request",
+      entityId: request.id,
+      entityTitle: request.event_name,
+      summary: `${profile?.full_name || "A staff member"} deleted event request "${request.event_name}".`,
+    });
   };
 
   useEffect(() => {
@@ -5710,7 +5894,7 @@ function Workspaces({ setActive }) {
   );
 }
 
-function ContentMediaBoard({ tasks, setTasks, setActive, churchId }) {
+function ContentMediaBoard({ tasks, setTasks, setActive, churchId, recordActivity }) {
   const isPreview = churchId === "preview";
   const [draggingTaskId, setDraggingTaskId] = useState(null);
   const [dragOverStatus, setDragOverStatus] = useState("");
@@ -5747,6 +5931,14 @@ function ContentMediaBoard({ tasks, setTasks, setActive, churchId }) {
     }
     const updated = normalizeTask(result.data);
     setTasks((current) => current.map((entry) => entry.id === task.id ? updated : entry));
+    await recordActivity?.({
+      action: "status_changed",
+      entityType: "content_item",
+      entityId: updated.id,
+      entityTitle: updated.title,
+      summary: `${updated.title} moved from ${STATUS_STYLES[task.status]?.label || task.status} to ${STATUS_STYLES[nextStatus]?.label || nextStatus}.`,
+      metadata: { from_status: task.status, to_status: nextStatus, assignee: updated.assignee },
+    });
   };
 
   const handleContentTaskDrop = async (event, statusKey) => {
@@ -5905,7 +6097,7 @@ function PlaceholderBoard({ title, summary, systems }) {
   );
 }
 
-function OperationsBoard({ profile, church, previewUsers, staffAvailabilityRequests, setStaffAvailabilityRequests, churchLockupAssignments, setChurchLockupAssignments, setCalendarEvents }) {
+function OperationsBoard({ profile, church, previewUsers, staffAvailabilityRequests, setStaffAvailabilityRequests, churchLockupAssignments, setChurchLockupAssignments, setCalendarEvents, recordActivity }) {
   const [operationsSection, setOperationsSection] = useState("home");
   const [timeOffMode, setTimeOffMode] = useState("");
   const [lockupMode, setLockupMode] = useState("home");
@@ -6166,6 +6358,14 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
           data: { availabilityRequestId: saved.id, requestedBy: profile.full_name || "", requestType: saved.request_type },
         });
       }
+      await recordActivity?.({
+        action: "created",
+        entityType: "staff_availability",
+        entityId: saved.id,
+        entityTitle: saved.request_type,
+        summary: `${profile?.full_name || "A staff member"} submitted ${saved.request_type} for ${fmtDate(saved.from_date)}-${fmtDate(saved.to_date)}.`,
+        metadata: { status: saved.status, request_type: saved.request_type },
+      });
       setOperationsMessage(
         timeOffMode === "pto"
           ? "PTO request submitted for review. The Senior Pastor and Church Administrator have both been notified."
@@ -6252,6 +6452,14 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         data: { availabilityRequestId: request.id, requestType: request.request_type },
       });
     }
+    await recordActivity?.({
+      action: status,
+      entityType: "staff_availability",
+      entityId: saved.id,
+      entityTitle: saved.request_type,
+      summary: `${profile?.full_name || "A reviewer"} ${status === "approved" ? "approved" : "denied"} ${saved.request_type} for ${saved.requested_by || "staff"}.`,
+      metadata: { status: saved.status, request_type: saved.request_type },
+    });
     setOperationsMessage(
       status === "denied"
         ? "PTO request denied."
@@ -6344,6 +6552,14 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         target: "operations-board",
         sourceKey: `${saved.id || saved.week_of}:lockup`,
         data: { lockupAssignmentId: saved.id, weekOf: saved.week_of },
+      });
+      await recordActivity?.({
+        action: existing?.id ? "updated" : "created",
+        entityType: "lockup_assignment",
+        entityId: saved.id,
+        entityTitle: fmtWeekRange(saved.week_of),
+        summary: `${profile?.full_name || "A staff member"} assigned church lock-up for ${fmtWeekRange(saved.week_of)} to ${saved.assignee_names.join(", ")}.`,
+        metadata: { week_of: saved.week_of, assignees: saved.assignee_names },
       });
       setOperationsMessage("Church lock-up assignment saved.");
       setLockupMode("home");
@@ -7622,7 +7838,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
-function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveItemToTrash, taskOpenRequest, clearTaskOpenRequest }) {
+function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveItemToTrash, taskOpenRequest, clearTaskOpenRequest, recordActivity }) {
   const isPreview = churchId === "preview";
   const canCreateTasks = true;
   const canAssignToAnyone = hasAdministrativeOversight(profile, church);
@@ -7867,6 +8083,14 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
         const normalized = normalizeTask(result.data);
         setTasks(tasks.map(t=>t.id===editing.id?normalized:t));
         await notifyTaskAssignment(normalized, editing.assignee);
+        await recordActivity?.({
+          action: "updated",
+          entityType: "task",
+          entityId: normalized.id,
+          entityTitle: normalized.title,
+          summary: `${profile?.full_name || "A staff member"} updated task "${normalized.title}".`,
+          metadata: { assignee: normalized.assignee, status: normalized.status },
+        });
       }
     } else {
       let result = await supabase.from("tasks").insert(dbPayload).select().single();
@@ -7890,6 +8114,14 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
         const normalized = normalizeTask(result.data);
         setTasks([...tasks, normalized]);
         await notifyTaskAssignment(normalized);
+        await recordActivity?.({
+          action: "created",
+          entityType: "task",
+          entityId: normalized.id,
+          entityTitle: normalized.title,
+          summary: `${profile?.full_name || "A staff member"} created task "${normalized.title}" for ${normalized.assignee || "staff"}.`,
+          metadata: { assignee: normalized.assignee, status: normalized.status },
+        });
       }
     }
     if (!editing) clearStoredFormDraft(taskDraftKey);
@@ -7941,6 +8173,14 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     setTasks(tasks.map(t=>t.id===task.id?updated:t));
     syncTaskInView(updated);
     if (nextStatus === "in-review" && task.status !== "in-review") await notifyTaskReviewRequested(updated);
+    await recordActivity?.({
+      action: "status_changed",
+      entityType: "task",
+      entityId: updated.id,
+      entityTitle: updated.title,
+      summary: `${profile?.full_name || "A staff member"} moved "${updated.title}" from ${STATUS_STYLES[task.status]?.label || task.status} to ${STATUS_STYLES[nextStatus]?.label || nextStatus}.`,
+      metadata: { from_status: task.status, to_status: nextStatus, assignee: updated.assignee },
+    });
   };
 
   const toggleReviewer = (name) => {
@@ -7995,6 +8235,14 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     setTasks(tasks.map((entry) => entry.id === task.id ? updated : entry));
     syncTaskInView(updated);
     await notifyTaskReviewDecision(updated, status, nowIso);
+    await recordActivity?.({
+      action: "reviewed",
+      entityType: "task",
+      entityId: updated.id,
+      entityTitle: updated.title,
+      summary: `${profile?.full_name || "A reviewer"} ${status === "approved" ? "approved" : "sent back"} "${updated.title}".`,
+      metadata: { review_status: status },
+    });
   };
 
   const addComment = async () => {
@@ -8030,6 +8278,14 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     setSelectedTask((current) => current?.id === selectedTask.id ? normalizeTask({ ...current, comments: nextComments }) : current);
     const savedComment = nextComments.find((comment) => comment.id === commentId);
     if (savedComment) await notifyTaskComment(selectedTask, savedComment);
+    await recordActivity?.({
+      action: "commented",
+      entityType: "task",
+      entityId: selectedTask.id,
+      entityTitle: selectedTask.title,
+      summary: `${profile?.full_name || "A staff member"} commented on task "${selectedTask.title}".`,
+      metadata: { comment_id: commentId },
+    });
     setCommentDraft("");
     setCommentCursor(0);
   };
@@ -8158,6 +8414,14 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       return;
     }
     setTasks(tasks.filter(t=>t.id!==id));
+    await recordActivity?.({
+      action: "deleted",
+      entityType: "task",
+      entityId: id,
+      entityTitle: taskToDelete?.title || "Task",
+      summary: `${profile?.full_name || "A staff member"} deleted task "${taskToDelete?.title || "Task"}".`,
+      metadata: { source: isContentTask(taskToDelete) ? "content-media-board" : "tasks" },
+    });
   };
 
   const groupedTasks = {
@@ -8671,7 +8935,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
 }
 
 // ── Budget ─────────────────────────────────────────────────────────────────
-function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrders, churchId, profile, setProfile, ministries, setMinistries, previewUsers, setPreviewUsers }) {
+function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrders, churchId, profile, setProfile, ministries, setMinistries, previewUsers, setPreviewUsers, recordActivity }) {
   const isPreview = churchId === "preview";
   const financeView = isFinanceUser(profile);
   const visibleMinistries = getBudgetScopeMinistries(profile);
@@ -8921,6 +9185,14 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       return;
     }
     setTransactions([data,...transactions]);
+    await recordActivity?.({
+      action: "created",
+      entityType: "transaction",
+      entityId: data.id,
+      entityTitle: data.description,
+      summary: `${profile?.full_name || "A staff member"} logged ${form.type === "expense" ? "an expense" : "income"} for ${form.ministry}: ${data.description}.`,
+      metadata: { ministry: data.ministry, amount: data.amount },
+    });
     setShowModal(false);
     setForm(resetTransactionForm(defaultMinistry));
   };
@@ -9024,6 +9296,14 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         const others = (current || []).filter((entry) => entry.id !== data.id && entry.name !== data.name);
         return [...others, data].sort((left, right) => left.name.localeCompare(right.name));
       });
+      await recordActivity?.({
+        action: budgetForm.id ? "updated" : "created",
+        entityType: "budget",
+        entityId: data.id,
+        entityTitle: data.name,
+        summary: `${profile?.full_name || "A staff member"} ${budgetForm.id ? "updated" : "created"} the ${data.name} budget.`,
+        metadata: { ministry: data.name, budget: data.budget },
+      });
       if (!budgetForm.id) clearStoredFormDraft(budgetDraftKey);
       setShowBudgetModal(false);
     } catch (error) {
@@ -9100,6 +9380,14 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       target: "budget",
       sourceKey: savedOrder.id,
       data: { purchaseOrderId: savedOrder.id, purchaseOrderTitle: savedOrder.title },
+    });
+    await recordActivity?.({
+      action: "created",
+      entityType: "purchase_order",
+      entityId: savedOrder.id,
+      entityTitle: savedOrder.title,
+      summary: `${profile?.full_name || "A staff member"} submitted purchase order "${savedOrder.title}" for ${fmt(savedOrder.amount)}.`,
+      metadata: { ministry: savedOrder.ministry, amount: savedOrder.amount, status: savedOrder.status },
     });
     setPurchaseOrderSubmitting(false);
     clearStoredFormDraft(purchaseOrderDraftKey);
@@ -9178,6 +9466,14 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         data: { purchaseOrderId: order.id, purchaseOrderTitle: order.title },
       });
     }
+    await recordActivity?.({
+      action: status,
+      entityType: "purchase_order",
+      entityId: order.id,
+      entityTitle: order.title,
+      summary: `${profile?.full_name || "A reviewer"} ${status === "approved" ? "approved" : "denied"} purchase order "${order.title}".`,
+      metadata: { status: changes.status, amount: order.amount },
+    });
   };
   const deletePurchaseOrder = async (order) => {
     setPurchaseOrderError("");
@@ -9196,6 +9492,13 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       return;
     }
     setPurchaseOrders((current) => (current || []).filter((entry) => entry.id !== order.id));
+    await recordActivity?.({
+      action: "deleted",
+      entityType: "purchase_order",
+      entityId: order.id,
+      entityTitle: order.title,
+      summary: `${profile?.full_name || "A staff member"} deleted purchase order "${order.title}".`,
+    });
   };
   const addPurchaseOrderComment = async (order) => {
     setPurchaseOrderError("");
@@ -9248,6 +9551,14 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       target: "budget",
       sourceKey: `${order.id}:comment:${commentEntry.id}`,
       data: { purchaseOrderId: order.id, purchaseOrderTitle: order.title, commentId: commentEntry.id },
+    });
+    await recordActivity?.({
+      action: "commented",
+      entityType: "purchase_order",
+      entityId: order.id,
+      entityTitle: order.title,
+      summary: `${profile?.full_name || "A staff member"} commented on purchase order "${order.title}".`,
+      metadata: { comment_id: commentEntry.id },
     });
     setPurchaseOrderCommentDrafts((current) => ({ ...current, [order.id]: "" }));
     setPurchaseOrderCommentCursor((current) => ({ ...current, [order.id]: 0 }));
@@ -9374,6 +9685,13 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       }
     }
     setMinistries?.((current) => (current || []).filter((entry) => entry.id !== budgetForm.id));
+    await recordActivity?.({
+      action: "deleted",
+      entityType: "budget",
+      entityId: budgetForm.id,
+      entityTitle: ministryName,
+      summary: `${profile?.full_name || "A staff member"} removed the ${ministryName} budget.`,
+    });
     setShowBudgetModal(false);
   };
 
@@ -9952,7 +10270,7 @@ function Ministries({ ministries }) {
 }
 
 // ── Calendar ───────────────────────────────────────────────────────────────
-function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, profile, church, churchId, setActive }) {
+function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, profile, church, churchId, setActive, recordActivity }) {
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const today = new Date();
   const calendarYears = [today.getFullYear(), today.getFullYear() + 1];
@@ -10149,7 +10467,16 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         setCalendarItemError(error.message || "That task could not be added yet.");
         return;
       }
-      setTasks((current) => [normalizeTask(data), ...(current || [])]);
+      const savedTask = normalizeTask(data);
+      setTasks((current) => [savedTask, ...(current || [])]);
+      await recordActivity?.({
+        action: "created",
+        entityType: "task",
+        entityId: savedTask.id,
+        entityTitle: savedTask.title,
+        summary: `${profile?.full_name || "A staff member"} added task "${savedTask.title}" from the calendar.`,
+        metadata: { due_date: savedTask.due_date },
+      });
     } else {
       const payload = {
         church_id: churchId,
@@ -10176,6 +10503,14 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       setCalendarEvents((current) => {
         const others = (current || []).filter((entry) => entry.id !== data.id);
         return [data, ...others];
+      });
+      await recordActivity?.({
+        action: editingCalendarEventId ? "updated" : "created",
+        entityType: "calendar_event",
+        entityId: data.id,
+        entityTitle: data.title,
+        summary: `${profile?.full_name || "A staff member"} ${editingCalendarEventId ? "updated" : "added"} calendar event "${data.title}".`,
+        metadata: { event_date: data.event_date },
       });
     }
     setCalendarItemError("");
@@ -10496,6 +10831,7 @@ export default function App() {
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [archivedNotificationIds, setArchivedNotificationIds] = useState([]);
   const [persistentNotifications, setPersistentNotifications] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   const [showTutorial, setShowTutorial] = useState(false);
   const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
   const shownNotificationIdsRef = useRef(new Set());
@@ -10517,6 +10853,36 @@ export default function App() {
     ...(shouldShowChurchTeam(profile, church) ? ["church-team"] : []),
   ]);
   const safeActive = allowedPages.has(active) ? active : "dashboard";
+
+  const refreshActivityLogs = useCallback(async (churchIdOverride = church?.id) => {
+    if (!churchIdOverride || churchIdOverride === "preview") {
+      setActivityLogs([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("activity_logs")
+      .select("*")
+      .eq("church_id", churchIdOverride)
+      .order("created_at", { ascending: false })
+      .limit(120);
+    if (error) {
+      setActivityLogs([]);
+      return;
+    }
+    setActivityLogs((data || []).map(normalizeActivityLog));
+  }, [church?.id]);
+
+  const recordActivity = useCallback(async (activity) => {
+    const saved = await createActivityLog({
+      churchId: church?.id,
+      actorProfile: profile,
+      ...activity,
+    });
+    if (saved) {
+      setActivityLogs((current) => [saved, ...(current || []).filter((entry) => entry.id !== saved.id)].slice(0, 120));
+    }
+    return saved;
+  }, [church?.id, profile]);
 
   const notifications = useMemo(
     () => dedupeNotifications([
@@ -10743,13 +11109,14 @@ export default function App() {
       setTrashItems([]);
     }
     if (prof?.church_id) {
-      const [ch, t, cla, staff, profileRows, notificationRows] = await Promise.all([
+      const [ch, t, cla, staff, profileRows, notificationRows, activityRows] = await Promise.all([
         supabase.from("churches").select("*").eq("id", prof.church_id).single(),
         supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
         supabase.from("church_lockup_assignments").select("*").eq("church_id", prof.church_id).order("week_of", { ascending: true }),
         supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
         supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
         supabase.from("notifications").select("*").eq("recipient_profile_id", prof.id).order("created_at", { ascending: false }).limit(100),
+        supabase.from("activity_logs").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }).limit(120),
       ]);
       const enhancedProfile = normalizedProfile
         ? {
@@ -10762,6 +11129,7 @@ export default function App() {
       setTasks((t.data || []).map(normalizeTask));
       setChurchLockupAssignments((cla.data || []).map(normalizeChurchLockupAssignment));
       setPersistentNotifications(notificationRows.data || []);
+      setActivityLogs(activityRows.error ? [] : (activityRows.data || []).map(normalizeActivityLog));
       const profileFocusMap = new Map((profileRows.data || []).map((entry) => [entry.staff_id || entry.id || entry.full_name, entry]));
       setPreviewUsers((staff.data || []).map((entry) => {
         const match = profileFocusMap.get(entry.id)
@@ -10803,6 +11171,7 @@ export default function App() {
       setMinistries([]);
       setPreviewUsers([]);
       setPersistentNotifications([]);
+      setActivityLogs([]);
     }
     setLoading(false);
   };
@@ -11005,6 +11374,7 @@ export default function App() {
         setMinistries([]);
         setPreviewUsers([]);
         setPersistentNotifications([]);
+        setActivityLogs([]);
         setLoading(false);
       }
     });
@@ -11046,18 +11416,18 @@ export default function App() {
 
   const pages = {
     dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
-    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} />,
+    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} />,
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
     workspaces: <Workspaces setActive={setActive}/>,
-    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers}/>,
-    "content-media-board": <ContentMediaBoard tasks={tasks} setTasks={setTasks} setActive={setActive} churchId={church?.id} />,
-    "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} />,
-    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest}/>,
+    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity}/>,
+    "content-media-board": <ContentMediaBoard tasks={tasks} setTasks={setTasks} setActive={setActive} churchId={church?.id} recordActivity={recordActivity} />,
+    "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} recordActivity={recordActivity} />,
+    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest} recordActivity={recordActivity}/>,
     faq: <FAQPage onStartTutorial={startTutorial} />,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,
-    budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers}/>,
+    budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} recordActivity={recordActivity}/>,
     ministries: <Ministries ministries={ministries}/>,
-    calendar:   <CalendarView tasks={tasks} setTasks={setTasks} eventRequests={eventRequests || []} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} previewUsers={previewUsers} profile={profile} church={church} churchId={church?.id} setActive={setActive} />,
+    calendar:   <CalendarView tasks={tasks} setTasks={setTasks} eventRequests={eventRequests || []} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} previewUsers={previewUsers} profile={profile} church={church} churchId={church?.id} setActive={setActive} recordActivity={recordActivity} />,
   };
 
   return (

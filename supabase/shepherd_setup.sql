@@ -404,6 +404,19 @@ alter table public.event_requests add column if not exists created_at timestampt
 alter table public.event_requests
   enable row level security;
 
+create table if not exists public.event_request_rate_limits (
+  id uuid primary key default gen_random_uuid(),
+  church_id uuid references public.churches(id) on delete cascade,
+  requester_key text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists event_request_rate_limits_key_created_at_idx
+  on public.event_request_rate_limits (requester_key, created_at desc);
+
+alter table public.event_request_rate_limits
+  enable row level security;
+
 create table if not exists public.calendar_events (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
@@ -1611,14 +1624,18 @@ with check (
 );
 
 drop policy if exists "event requests public submit" on public.event_requests;
-create policy "event requests public submit"
+drop policy if exists "event requests authenticated submit" on public.event_requests;
+create policy "event requests authenticated submit"
 on public.event_requests
 for insert
 with check (
+  auth.uid() is not null
+  and
   exists (
     select 1
-    from public.churches c
-    where c.id = event_requests.church_id
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = event_requests.church_id
   )
 );
 
@@ -1887,24 +1904,7 @@ with check (
 );
 
 drop policy if exists "people same church read" on public.people;
-create policy "people same church read"
-on public.people
-for select
-using (
-  exists (
-    select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.church_id = people.church_id
-  )
-);
-
 drop policy if exists "people admin write" on public.people;
-create policy "people admin write"
-on public.people
-for all
-using (public.user_can_manage_church(church_id))
-with check (public.user_can_manage_church(church_id));
 
 drop policy if exists "transactions same church read" on public.transactions;
 create policy "transactions same church read"

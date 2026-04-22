@@ -7263,15 +7263,14 @@ function PublicEventRequestPage() {
     setSubmitting(true);
     setSubmitError("");
     setSubmitMessage("");
-    const payload = {
-      ...eventForm,
-      church_id: churchRecord.id,
-      event_timing: eventTiming,
-      tables_needed: buildTablesSummary(eventForm),
-      status: "new",
-      requested_by: eventForm.contact_name,
-    };
-    const { error } = await supabase.from("event_requests").insert(payload);
+    const { error } = await supabase.functions.invoke("submit-public-event-request", {
+      body: {
+        churchCode: churchCode.trim(),
+        eventForm,
+        eventTiming,
+        tablesNeeded: buildTablesSummary(eventForm),
+      },
+    });
     if (error) {
       setSubmitError(error.message || "We couldn't submit that request.");
       setSubmitting(false);

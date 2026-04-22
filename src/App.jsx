@@ -449,6 +449,10 @@ const hasChurchAdminRole = (profile) =>
   ["church_administrator", "admin", "senior_pastor"].includes(profile?.role)
   || samePerson(profile?.title, "Church Administrator")
   || samePerson(profile?.title, "Senior Pastor");
+const isChurchAdministrator = (profile) =>
+  profile?.role === "church_administrator"
+  || (profile?.staff_roles || []).includes("church_administrator")
+  || samePerson(profile?.title, "Church Administrator");
 const canManageCalendarSettings = (profile) =>
   profile?.role === "church_administrator"
   || (profile?.staff_roles || []).includes("church_administrator")
@@ -511,7 +515,7 @@ const getBudgetScopeMinistries = (profile) => {
   return assignedMinistries;
 };
 const canViewBudget = (profile) => isFinanceUser(profile) || getBudgetScopeMinistries(profile).length > 0;
-const canApproveEventRequests = (profile, church) => hasAdministrativeOversight(profile, church);
+const canApproveEventRequests = (profile) => isChurchAdministrator(profile);
 const isTaskForUser = (task, fullName) => samePerson(task?.assignee, fullName) || listIncludesPerson(task?.reviewers, fullName);
 const isContentTask = (task) => task?.ministry === "Content/Art";
 const isEventApplicant = (profile, request) => {
@@ -876,6 +880,27 @@ const getEventPrimaryDate = (request) =>
   || request?.multi_start_date
   || request?.recurring_start_date
   || null;
+const getEventStartDate = (request) =>
+  request?.single_date
+  || request?.multi_start_date
+  || request?.recurring_start_date
+  || request?.setup_datetime
+  || null;
+const getEventEndDate = (request) =>
+  request?.multi_end_date
+  || request?.single_date
+  || request?.recurring_start_date
+  || getEventStartDate(request);
+const getEventStartTime = (request) =>
+  request?.single_start_time
+  || request?.multi_start_time
+  || request?.recurring_start_time
+  || "";
+const getEventEndTime = (request) =>
+  request?.single_end_time
+  || request?.multi_end_time
+  || request?.recurring_end_time
+  || "";
 const hasEventOpsNeeds = (request) =>
   request?.location_scope === "building"
   || Array.isArray(request?.location_areas) && request.location_areas.length > 0
@@ -892,6 +917,14 @@ const hasEventOpsNeeds = (request) =>
   || !!request?.espresso_drinks;
 const eventNeedsFinanceReview = (request) => /fee|fees|payment|payments|paid|ticket|tickets|registration|cost|budget|reimburse/i.test(String(request?.additional_information || ""));
 const findStaffLead = (staff, matcher) => (staff || []).find((user) => matcher(user))?.full_name || "";
+const findStaffByEventRequester = (staff, request) => {
+  const email = normalizeName(request?.email);
+  if (email) {
+    const emailMatch = (staff || []).find((user) => normalizeName(user?.email) === email);
+    if (emailMatch) return emailMatch;
+  }
+  return (staff || []).find((user) => samePerson(user?.full_name, request?.contact_name) || samePerson(user?.full_name, request?.requested_by)) || null;
+};
 const createDefaultEventChecklist = () => ([]);
 const getEventWorkflowMeta = (workflow) => {
   const metaEntry = Array.isArray(workflow?.steps)
@@ -905,14 +938,105 @@ const getEventWorkflowMeta = (workflow) => {
 const createEventPlanningBlank = (profile, request = null) => ({
   id: null,
   eventName: request?.event_name || "",
-  startDate: request?.single_date || request?.multi_start_date || request?.recurring_start_date || "",
-  endDate: request?.multi_end_date || request?.single_date || request?.recurring_start_date || "",
-  startTime: "",
-  endTime: "",
+  startDate: getEventStartDate(request) || "",
+  endDate: getEventEndDate(request) || "",
+  startTime: getEventStartTime(request),
+  endTime: getEventEndTime(request),
   location: request ? getEventLocationSummary(request) : "",
   mainContact: request?.contact_name || profile?.full_name || "",
   linkedRequestId: request?.id || "",
 });
+const buildEventWorkflowFromRequest = (request, churchId, ownerName) => {
+  const startDate = getEventStartDate(request);
+  const endDate = getEventEndDate(request);
+  const timelineItems = [
+    {
+      id: crypto.randomUUID(),
+      title: "Confirm event details",
+      date: startDate,
+      details: `Review the approved request details, confirm the event scope, and clarify anything still missing with ${request.contact_name || "the requester"}.`,
+      done: false,
+      linked_task_id: null,
+      linked_task_assignee: null,
+      linked_task_review_required: false,
+      linked_task_reviewers: [],
+    },
+  ];
+
+  if (request.graphics_reference || request.location_scope === "off-campus") {
+    timelineItems.push({
+      id: crypto.randomUUID(),
+      title: "Coordinate graphics and announcements",
+      date: startDate,
+      details: `Graphics direction from request:\n${request.graphics_reference || "Announcement and graphics support requested."}`,
+      done: false,
+      linked_task_id: null,
+      linked_task_assignee: null,
+      linked_task_review_required: false,
+      linked_task_reviewers: [],
+    });
+  }
+
+  if (request.av_request) {
+    timelineItems.push({
+      id: crypto.randomUUID(),
+      title: "Review A/V needs",
+      date: startDate,
+      details: request.av_request_details || "A/V support was requested. Confirm sound, slides, and tech needs before the event.",
+      done: false,
+      linked_task_id: null,
+      linked_task_assignee: null,
+      linked_task_review_required: false,
+      linked_task_reviewers: [],
+    });
+  }
+
+  if (hasEventOpsNeeds(request)) {
+    timelineItems.push({
+      id: crypto.randomUUID(),
+      title: "Confirm room setup and facilities",
+      date: request.setup_datetime || startDate,
+      details: `Location: ${getEventLocationSummary(request)}\nTables: ${buildTablesSummary(request) || "None requested"}\nKitchen: ${request.kitchen_use ? "Yes" : "No"}\nCoffee: ${request.espresso_drinks ? "Espresso drinks" : request.drip_coffee_only ? "Drip coffee only" : "None"}`,
+      done: false,
+      linked_task_id: null,
+      linked_task_assignee: null,
+      linked_task_review_required: false,
+      linked_task_reviewers: [],
+    });
+  }
+
+  return {
+    church_id: churchId,
+    linked_event_request_id: request.id,
+    title: request.event_name || "Approved Event",
+    event_name: request.event_name || "Approved Event",
+    owner_name: ownerName || request.contact_name || "Staff Member",
+    visibility: "shared",
+    summary: `Created automatically from approved event request submitted by ${request.contact_name || request.requested_by || "the requester"}.`,
+    target_date: startDate,
+    start_date: startDate,
+    end_date: endDate,
+    location: getEventLocationSummary(request),
+    main_contact: request.contact_name || request.requested_by || "",
+    timeline_items: timelineItems,
+    checklist_items: createDefaultEventChecklist(),
+    notes_entries: [
+      {
+        id: crypto.randomUUID(),
+        author: "Shepherd",
+        body: `Approved event request imported into Event Planning.\n\nEvent timing: ${request.event_timing || "Not provided"}\nContact: ${request.contact_name || "Not provided"}${request.phone ? `\nPhone: ${request.phone}` : ""}${request.email ? `\nEmail: ${request.email}` : ""}\n\nDescription:\n${request.description || "No description provided."}${request.additional_information ? `\n\nAdditional information:\n${request.additional_information}` : ""}`,
+        created_at: new Date().toISOString(),
+      },
+    ],
+    steps: [
+      {
+        type: "event_meta",
+        start_time: getEventStartTime(request),
+        end_time: getEventEndTime(request),
+      },
+    ],
+  };
+};
 const getEventWorkflowPrimaryDate = (workflow) => workflow?.start_date || workflow?.target_date || workflow?.end_date || "";
 const getEventCountdownLabel = (workflow) => {
   const primaryDate = getEventWorkflowPrimaryDate(workflow);
@@ -4719,7 +4843,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       ? samePerson(workflow.owner_name, profile?.full_name)
       : !samePerson(workflow.owner_name, profile?.full_name))
     .sort((left, right) => new Date(getEventWorkflowPrimaryDate(left) || left.created_at || 0) - new Date(getEventWorkflowPrimaryDate(right) || right.created_at || 0));
-  const canEditWorkflow = (workflow) => samePerson(workflow?.owner_name, profile?.full_name);
+  const canEditWorkflow = (workflow) => samePerson(workflow?.owner_name, profile?.full_name) || isChurchAdministrator(profile);
   const eventPlanningTeamNames = [...new Set((previewUsers || []).map((user) => user.full_name).filter(Boolean))];
 
   useEffect(() => {
@@ -4823,6 +4947,42 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       decided_at: new Date().toISOString(),
       decided_by: profile?.full_name || null,
     };
+    let linkedWorkflow = null;
+    if (status === "approved" && existingRequest) {
+      const { data: existingWorkflow, error: existingWorkflowError } = await supabase
+        .from("event_workflows")
+        .select("*")
+        .eq("church_id", church?.id)
+        .eq("linked_event_request_id", existingRequest.id)
+        .maybeSingle();
+      if (existingWorkflowError) {
+        setFormError(existingWorkflowError.message || "We couldn't check for an existing event plan.");
+        return;
+      }
+      if (existingWorkflow) {
+        linkedWorkflow = normalizeEventWorkflow(existingWorkflow);
+      } else {
+        const requesterStaff = findStaffByEventRequester(previewUsers, existingRequest);
+        const workflowOwner = requesterStaff?.full_name || profile?.full_name || existingRequest.contact_name || "Staff Member";
+        const workflowPayload = buildEventWorkflowFromRequest(existingRequest, church?.id, workflowOwner);
+        const { data: createdWorkflow, error: workflowError } = await supabase
+          .from("event_workflows")
+          .insert(workflowPayload)
+          .select()
+          .maybeSingle();
+        if (workflowError) {
+          setFormError(workflowError.message || "We couldn't create the event planning framework.");
+          return;
+        }
+        if (!createdWorkflow) {
+          setFormError("We couldn't create the event planning framework.");
+          return;
+        }
+        linkedWorkflow = normalizeEventWorkflow(createdWorkflow);
+        setEventWorkflows((current) => [linkedWorkflow, ...(current || [])]);
+      }
+    }
+
     if (status === "approved" && existingRequest && !existingRequest.graphics_task_created) {
       const taskPayloads = buildApprovedEventTaskChain(existingRequest, church?.id, previewUsers);
       if (taskPayloads.length > 0) {
@@ -4832,8 +4992,9 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
           return;
         }
         if (createdTasks?.length) {
-          decisionPayload.graphics_task_created = true;
-          decisionPayload.graphics_task_id = createdTasks[0]?.id || null;
+          const graphicsTask = createdTasks.find((task) => task.ministry === "Content/Art");
+          decisionPayload.graphics_task_created = !!graphicsTask;
+          decisionPayload.graphics_task_id = graphicsTask?.id || null;
           setTasks((current) => [...createdTasks.map(normalizeTask), ...(current || [])]);
           await Promise.all(createdTasks.map((task) => {
             const recipient = findStaffByName(previewUsers, task.assignee);
@@ -4864,14 +5025,28 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     setFormError("");
     setEventRequests((current) => current.map((request) => request.id === requestId ? data : request));
     setSelectedRequest((current) => current?.id === requestId ? data : current);
+    if (linkedWorkflow) {
+      setSelectedWorkflow(linkedWorkflow);
+      setPlanningFilter(samePerson(linkedWorkflow.owner_name, profile?.full_name) ? "mine" : "others");
+      setSelectedRequest(null);
+    }
     await recordActivity?.({
       action: status,
       entityType: "event_request",
       entityId: data.id,
       entityTitle: data.event_name,
       summary: `${profile?.full_name || "A staff member"} ${status === "approved" ? "approved" : "declined"} event request "${data.event_name}".`,
-      metadata: { status },
+      metadata: { status, event_plan_id: linkedWorkflow?.id || null },
     });
+    if (linkedWorkflow && status === "approved") {
+      await recordActivity?.({
+        action: "created",
+        entityType: "event_plan",
+        entityId: linkedWorkflow.id,
+        entityTitle: linkedWorkflow.event_name || linkedWorkflow.title,
+        summary: `${profile?.full_name || "A staff member"} created an event planning framework for "${linkedWorkflow.event_name || linkedWorkflow.title}".`,
+      });
+    }
   };
 
   const loadingRequests = !!church?.id && eventRequests === null;

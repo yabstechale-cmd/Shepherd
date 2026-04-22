@@ -1127,6 +1127,34 @@ begin
 end;
 $$;
 
+create or replace function public.user_is_church_administrator(
+  p_church_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  is_admin boolean := false;
+begin
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.church_id = p_church_id
+      and (
+        p.role = 'church_administrator'
+        or 'church_administrator' = any(coalesce(p.staff_roles, '{}'::text[]))
+        or lower(coalesce(p.title, '')) = 'church administrator'
+      )
+  )
+  into is_admin;
+
+  return coalesce(is_admin, false);
+end;
+$$;
+
 create or replace function public.delete_church_account(
   p_church_id uuid
 )
@@ -1254,6 +1282,7 @@ grant execute on function public.get_public_church_by_code(text) to anon, authen
 grant execute on function public.create_church_with_admin(text, text, text, text, text, text, uuid) to anon, authenticated;
 grant execute on function public.user_can_manage_church(uuid) to authenticated;
 grant execute on function public.user_can_manage_calendar_settings(uuid) to authenticated;
+grant execute on function public.user_is_church_administrator(uuid) to authenticated;
 grant execute on function public.delete_church_account(uuid) to authenticated;
 
 create or replace function public.add_task_comment(
@@ -1666,8 +1695,8 @@ drop policy if exists "event requests admin update" on public.event_requests;
 create policy "event requests admin update"
 on public.event_requests
 for update
-using (public.user_can_manage_church(church_id))
-with check (public.user_can_manage_church(church_id));
+using (public.user_is_church_administrator(church_id))
+with check (public.user_is_church_administrator(church_id));
 
 drop policy if exists "event workflows same church read" on public.event_workflows;
 create policy "event workflows same church read"
@@ -1704,6 +1733,8 @@ create policy "event workflows owner update"
 on public.event_workflows
 for update
 using (
+  public.user_is_church_administrator(church_id)
+  or
   exists (
     select 1
     from public.profiles p
@@ -1713,6 +1744,8 @@ using (
   )
 )
 with check (
+  public.user_is_church_administrator(church_id)
+  or
   exists (
     select 1
     from public.profiles p
@@ -1727,6 +1760,8 @@ create policy "event workflows owner delete"
 on public.event_workflows
 for delete
 using (
+  public.user_is_church_administrator(church_id)
+  or
   exists (
     select 1
     from public.profiles p

@@ -38,6 +38,7 @@ function renderUpdateList() {
     <ul style="margin:0;padding-left:22px;">
       ${updateItems.map((item) => `<li style="margin:0 0 10px 0;">${item}</li>`).join("")}
     </ul>
+    <p style="margin:18px 0 0 0;">Thank you for all the input and feedback you have shared so far. More improvements are already on the way as Shepherd continues to grow.</p>
   `;
 }
 

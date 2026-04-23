@@ -305,6 +305,7 @@ create table if not exists public.event_requests (
   decided_at timestamptz,
   decided_by text,
   requested_by text,
+  submission_source text not null default 'staff',
   event_name text not null,
   event_format text not null,
   event_timing text not null,
@@ -356,6 +357,7 @@ alter table public.event_requests add column if not exists status text not null 
 alter table public.event_requests add column if not exists decided_at timestamptz;
 alter table public.event_requests add column if not exists decided_by text;
 alter table public.event_requests add column if not exists requested_by text;
+alter table public.event_requests add column if not exists submission_source text not null default 'staff';
 alter table public.event_requests add column if not exists event_name text;
 alter table public.event_requests add column if not exists event_format text;
 alter table public.event_requests add column if not exists event_timing text;
@@ -403,6 +405,28 @@ alter table public.event_requests add column if not exists created_at timestampt
 alter table public.event_requests add column if not exists public_access_token text;
 alter table public.event_requests add column if not exists public_access_enabled boolean not null default true;
 alter table public.event_requests add column if not exists public_comments jsonb not null default '[]'::jsonb;
+
+update public.event_requests
+set submission_source = case
+  when public_access_token is not null then 'guest'
+  else 'staff'
+end
+where submission_source is null
+  or submission_source not in ('staff', 'guest');
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'event_requests_submission_source_check'
+      and conrelid = 'public.event_requests'::regclass
+  ) then
+    alter table public.event_requests
+      add constraint event_requests_submission_source_check
+      check (submission_source in ('staff', 'guest'));
+  end if;
+end $$;
 
 create unique index if not exists event_requests_public_access_token_key
   on public.event_requests (public_access_token)

@@ -200,6 +200,7 @@ function buildEventRequestPayload(churchId: string, form: Record<string, unknown
     church_id: churchId,
     status: "new",
     requested_by: cleanString(form.contact_name, 160),
+    submission_source: "guest",
     public_access_token: createPublicAccessToken(),
     public_access_enabled: true,
     public_comments: [],

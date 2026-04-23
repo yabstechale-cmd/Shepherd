@@ -56,6 +56,11 @@ const fmtActivityDate = (d) => {
     ? parsed.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
     : "—";
 };
+const getEventRequestSubmissionSource = (request) => {
+  const source = String(request?.submission_source || "").trim().toLowerCase();
+  if (source === "guest" || request?.public_access_token) return "Guest Form";
+  return "Staff Entry";
+};
 const stripGoogleCalendarMetadata = (notes) => String(notes || "")
   .split(/\n+/)
   .filter((line) => {
@@ -4906,6 +4911,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       tables_needed: buildTablesSummary(eventForm),
       status: "new",
       requested_by: profile?.full_name || eventForm.contact_name,
+      submission_source: "staff",
     };
     setFormError("");
     const { data, error } = await supabase.from("event_requests").insert(request).select().single();
@@ -6205,6 +6211,10 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                     <div style={{fontSize:13,color:C.text,marginTop:4}}>{requestDetails.contact_name}</div>
                   </div>
                   <div>
+                    <div style={{fontSize:12,color:C.muted}}>Submission Source</div>
+                    <div style={{fontSize:13,color:C.text,marginTop:4}}>{getEventRequestSubmissionSource(requestDetails)}</div>
+                  </div>
+                  <div>
                     <div style={{fontSize:12,color:C.muted}}>Submitted on</div>
                     <div style={{fontSize:13,color:C.text,marginTop:4}}>{fmtDate(requestDetails.submitted_on || requestDetails.created_at)}</div>
                   </div>
@@ -6354,6 +6364,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                       <button className="event-request-row" key={request.id} onClick={() => openRequest(request)} style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12,background:C.surface,textAlign:"left",cursor:"pointer",display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
                         <div style={{fontSize:20,fontWeight:600,color:C.text,lineHeight:1.15}}>{request.event_name}</div>
                         <div className="event-request-meta" style={{display:"flex",flexDirection:"column",alignItems:"flex-end",textAlign:"right",gap:4}}>
+                          <div style={{fontSize:11,color:C.gold,fontWeight:700}}>{getEventRequestSubmissionSource(request)}</div>
                           <div style={{fontSize:11,color:C.muted}}>Submitted by {request.contact_name}</div>
                           <div style={{fontSize:11,color:C.muted}}>Submitted on {fmtDate(request.submitted_on || request.created_at)}</div>
                         </div>

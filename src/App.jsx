@@ -75,7 +75,7 @@ const stripGoogleCalendarMetadata = (notes) => String(notes || "")
   .trim();
 const getChurchGoogleCalendarLabel = (church, index = 0, total = 1) => {
   const churchName = String(church?.name || "Church").trim() || "Church";
-  const base = `${churchName}_google calendar`;
+  const base = `${churchName}'s Google Calendar`;
   return total > 1 ? `${base} ${index + 1}` : base;
 };
 const startOfWeekMonday = (value) => {
@@ -4069,7 +4069,7 @@ const FAQ_ITEMS = [
   { tag: "Google Calendar", question: "Why is Google Calendar not two-way right now?", answer: "One-way import is safer for this stage. It lets Shepherd read the church calendar without risking unexpected changes back into Google." },
   { tag: "Google Calendar", question: "Why did Shepherd ask to reconnect Google?", answer: "Google access uses tokens. If the live token is missing or expired, an admin may need to reconnect so Shepherd can refresh the shared calendar again." },
   { tag: "Google Calendar", question: "Can we import multiple Google calendars?", answer: "Yes. The admin can select multiple official Google calendars so staff can filter and view the calendars the church wants to share." },
-  { tag: "Google Calendar", question: "How are imported calendars named?", answer: "Imported Google calendars display under a Shepherd-friendly church label, such as Reach Church_google calendar, instead of exposing the raw Google calendar title everywhere." },
+  { tag: "Google Calendar", question: "How are imported calendars named?", answer: "Imported Google calendars display under a Shepherd-friendly church label, such as Reach Church's Google Calendar, instead of exposing the raw Google calendar title everywhere." },
 
   { tag: "Operations", question: "Which staff availability items need approval?", answer: "PTO requests go through review. Out Of Office and Sick Day entries are logged directly because they are more immediate status updates." },
   { tag: "Operations", question: "Who approves PTO requests?", answer: "PTO requests are intended to be reviewed by church leadership, including the Senior Pastor and Church Administrator, before they appear as approved time off." },

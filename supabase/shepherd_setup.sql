@@ -25,12 +25,12 @@ alter table public.churches add column if not exists google_calendar_titles text
 update public.churches
 set
   google_calendar_title = case
-    when google_calendar_id is not null then name || '_google calendar'
+    when google_calendar_id is not null then name || '''s Google Calendar'
     else google_calendar_title
   end,
   google_calendar_titles = case
     when cardinality(google_calendar_ids) > 0 then array(
-      select name || '_google calendar' || case when cardinality(google_calendar_ids) > 1 then ' ' || calendar_index::text else '' end
+      select name || '''s Google Calendar' || case when cardinality(google_calendar_ids) > 1 then ' ' || calendar_index::text else '' end
       from generate_subscripts(google_calendar_ids, 1) as s(calendar_index)
       order by calendar_index
     )

@@ -73,6 +73,57 @@ const stripGoogleCalendarMetadata = (notes) => String(notes || "")
   .join("\n")
   .replace(/\n{3,}/g, "\n\n")
   .trim();
+const getTaskMetadataValue = (notes, key) => {
+  const match = String(notes || "").match(new RegExp(`${key}:([^\\n]+)`));
+  return match?.[1]?.trim() || "";
+};
+const stripTaskMetadata = (notes) => String(notes || "")
+  .split(/\n+/)
+  .filter((line) => {
+    const trimmed = line.trim();
+    return !trimmed.startsWith("task-share-link:")
+      && !trimmed.startsWith("task-recurring-enabled:")
+      && !trimmed.startsWith("task-recurring-frequency:")
+      && !trimmed.startsWith("task-recurring-interval:")
+      && !trimmed.startsWith("task-recurring-series-key:");
+  })
+  .join("\n")
+  .replace(/\n{3,}/g, "\n\n")
+  .trim();
+const buildTaskNotes = ({
+  notes,
+  shareLink,
+  recurringEnabled,
+  recurringFrequency,
+  recurringInterval,
+  recurringSeriesKey,
+}) => {
+  const parts = [stripTaskMetadata(notes)];
+  if (shareLink) parts.push(`task-share-link:${shareLink}`);
+  if (recurringEnabled) {
+    parts.push("task-recurring-enabled:true");
+    parts.push(`task-recurring-frequency:${recurringFrequency || "weekly"}`);
+    parts.push(`task-recurring-interval:${Math.max(1, Number.parseInt(recurringInterval || 1, 10) || 1)}`);
+    parts.push(`task-recurring-series-key:${recurringSeriesKey || crypto.randomUUID()}`);
+  }
+  return parts.filter(Boolean).join("\n");
+};
+const getNextRecurringDueDate = (dueDate, frequency, interval = 1) => {
+  const base = parseAppDate(dueDate);
+  if (!base) return "";
+  const next = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  const safeInterval = Math.max(1, Number.parseInt(interval || 1, 10) || 1);
+  if (frequency === "daily") next.setDate(next.getDate() + safeInterval);
+  else if (frequency === "monthly") next.setMonth(next.getMonth() + safeInterval);
+  else next.setDate(next.getDate() + (safeInterval * 7));
+  return toAppDateValue(next);
+};
+const getRecurringTaskLabel = (frequency, interval = 1) => {
+  const safeInterval = Math.max(1, Number.parseInt(interval || 1, 10) || 1);
+  if (frequency === "daily") return safeInterval === 1 ? "Daily" : `Every ${safeInterval} days`;
+  if (frequency === "monthly") return safeInterval === 1 ? "Monthly" : `Every ${safeInterval} months`;
+  return safeInterval === 1 ? "Weekly" : `Every ${safeInterval} weeks`;
+};
 const getChurchGoogleCalendarLabel = (church, index = 0, total = 1) => {
   const churchName = String(church?.name || "Church").trim() || "Church";
   const base = `${churchName}'s Google Calendar`;
@@ -370,6 +421,12 @@ const normalizeTask = (task) => ({
   review_required: task?.review_required ?? false,
   comments: Array.isArray(task?.comments) ? task.comments : [],
   review_history: Array.isArray(task?.review_history) ? task.review_history : [],
+  notes: stripTaskMetadata(task?.notes || ""),
+  share_link: task?.share_link || getTaskMetadataValue(task?.notes, "task-share-link"),
+  recurring_enabled: task?.recurring_enabled ?? (getTaskMetadataValue(task?.notes, "task-recurring-enabled") === "true"),
+  recurring_frequency: task?.recurring_frequency || getTaskMetadataValue(task?.notes, "task-recurring-frequency") || "weekly",
+  recurring_interval: Number.parseInt(task?.recurring_interval || getTaskMetadataValue(task?.notes, "task-recurring-interval") || 1, 10) || 1,
+  recurring_series_key: task?.recurring_series_key || getTaskMetadataValue(task?.notes, "task-recurring-series-key") || "",
 });
 const normalizePurchaseOrder = (order) => ({
   ...order,
@@ -2311,22 +2368,22 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
     {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
-    <div className="app-sidebar" style={{width:collapsed?64:220,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"relative",overflow:"hidden"}}>
+      <div className="app-sidebar" style={{width:collapsed?64:220,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",bottom:40,right:collapsed?-10:20,width:80,opacity:.05}}>
         <BrandMark size={80} color={C.gold}/>
       </div>
-      <div style={{padding:collapsed?"20px 16px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"space-between"}}>
+      <div style={{padding:collapsed?"12px 10px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",justifyContent:"space-between",gap:collapsed?10:12}}>
         <button
           onClick={() => setActive("dashboard")}
           title="Go to dashboard"
-          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left"}}
+          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"center"}}
         >
           <div style={{width:32,height:32,borderRadius:8,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <BrandMark size={14} color={C.gold}/>
           </div>
           {!collapsed && <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em"}}>Shepherd</span>}
         </button>
-        <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4}}><Icons.menu/></button>
+        <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>
       </div>
       <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1}}>
         {nav.map(({id,label,I: iconComponent})=>(
@@ -8584,7 +8641,23 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const [highlightedTaskCommentId, setHighlightedTaskCommentId] = useState(null);
   const commentInputRef = useRef(null);
   const taskCommentRefs = useRef({});
-  const blank = {title:"",ministry:"Admin",assignee:profile?.full_name || "",due_date:"",status:"todo",notes:"",share_link:"",review_required:false,reviewers:[],review_approvals:[],comments:[]};
+  const blank = {
+    title:"",
+    ministry:"Admin",
+    assignee:profile?.full_name || "",
+    due_date:"",
+    status:"todo",
+    notes:"",
+    share_link:"",
+    recurring_enabled:false,
+    recurring_frequency:"weekly",
+    recurring_interval:1,
+    recurring_series_key:"",
+    review_required:false,
+    reviewers:[],
+    review_approvals:[],
+    comments:[]
+  };
   const [form, setForm] = useState(blank);
   const taskDraftKey = getFormDraftStorageKey(profile?.id, "new-task");
   const [orderedCategories, setOrderedCategories] = useState(() => getStoredCategoryOrder());
@@ -8630,9 +8703,17 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     setForm(readStoredFormDraft(taskDraftKey, fallback));
     setShowModal(true);
   };
-  const openEdit = (t) => { setEditing(t); setTaskFormError(""); setForm(normalizeTask(t)); setShowModal(true); setSelectedTask(null); };
+  const openEdit = (t) => {
+    const normalized = normalizeTask(t);
+    setEditing(normalized);
+    setTaskFormError("");
+    setForm(normalized);
+    setSelectedTask(normalized);
+    setShowModal(true);
+  };
   const closeTaskForm = () => {
     if (!editing) clearStoredFormDraft(taskDraftKey);
+    if (editing) setSelectedTask(normalizeTask(editing));
     setShowModal(false);
   };
   const openTask = (task) => {
@@ -8745,10 +8826,71 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     setSelectedTask((current) => current?.id === updatedTask.id ? normalizeTask(updatedTask) : current);
   };
 
+  const createNextRecurringTask = async (task) => {
+    if (!task?.recurring_enabled || !task?.due_date) return;
+    const nextDueDate = getNextRecurringDueDate(task.due_date, task.recurring_frequency, task.recurring_interval);
+    if (!nextDueDate) return;
+    const seriesKey = task.recurring_series_key || task.id;
+    const existingMatch = tasks.find((entry) => (
+      (entry.recurring_series_key || entry.id) === seriesKey
+      && entry.due_date === nextDueDate
+      && entry.status !== "done"
+    ));
+    if (existingMatch) return;
+
+    const nextTaskPayload = {
+      title: task.title,
+      ministry: task.ministry,
+      assignee: task.assignee,
+      due_date: nextDueDate,
+      status: "todo",
+      notes: buildTaskNotes({
+        notes: task.notes,
+        shareLink: task.share_link,
+        recurringEnabled: task.recurring_enabled,
+        recurringFrequency: task.recurring_frequency,
+        recurringInterval: task.recurring_interval,
+        recurringSeriesKey: seriesKey,
+      }),
+      church_id: churchId,
+      review_required: task.review_required,
+      reviewers: task.reviewers || [],
+      review_approvals: [],
+      review_history: [],
+    };
+
+    if (isPreview) {
+      setTasks((current) => [...current, normalizeTask({ ...nextTaskPayload, id: `task-${Date.now()}` })]);
+      return;
+    }
+
+    let result = await supabase.from("tasks").insert(nextTaskPayload).select().single();
+    if (result.error && /review_required|reviewers|review_approvals|review_history|share_link|recurring_/i.test(result.error.message || "")) {
+      result = await supabase.from("tasks").insert({
+        title: nextTaskPayload.title,
+        ministry: nextTaskPayload.ministry,
+        assignee: nextTaskPayload.assignee,
+        due_date: nextTaskPayload.due_date,
+        status: nextTaskPayload.status,
+        notes: nextTaskPayload.notes,
+        church_id: nextTaskPayload.church_id,
+      }).select().single();
+    }
+    if (result.data) {
+      const normalized = normalizeTask(result.data);
+      setTasks((current) => [...current, normalized]);
+      await notifyTaskAssignment(normalized);
+    }
+  };
+
   const save = async () => {
     setTaskFormError("");
     if (!form.title) {
       setTaskFormError("Please enter a task title.");
+      return;
+    }
+    if (form.recurring_enabled && !form.due_date) {
+      setTaskFormError("Recurring tasks need a due date so Shepherd knows when to create the next one.");
       return;
     }
     rememberCategory(form.ministry);
@@ -8759,11 +8901,20 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       : [];
     const safeApprovals = (form.review_approvals || []).filter((name) => listIncludesPerson(safeReviewers, name));
     const safeForm = normalizeTask({ ...form, assignee: safeAssignee, reviewers: safeReviewers, review_approvals: safeApprovals });
+    const serializedNotes = buildTaskNotes({
+      notes: safeForm.notes,
+      shareLink: normalizeExternalUrl(safeForm.share_link),
+      recurringEnabled: safeForm.recurring_enabled,
+      recurringFrequency: safeForm.recurring_frequency,
+      recurringInterval: safeForm.recurring_interval,
+      recurringSeriesKey: safeForm.recurring_series_key || editing?.recurring_series_key || editing?.id || "",
+    });
     if (isPreview) {
       const record = editing
-        ? { ...editing, ...safeForm }
-        : { ...safeForm, id: `task-${Date.now()}`, church_id: churchId };
+        ? { ...editing, ...safeForm, notes: serializedNotes }
+        : { ...safeForm, id: `task-${Date.now()}`, church_id: churchId, notes: serializedNotes };
       setTasks(editing ? tasks.map((t) => t.id === editing.id ? normalizeTask(record) : t) : [...tasks, normalizeTask(record)]);
+      if (editing) setSelectedTask(normalizeTask(record));
       if (!editing) clearStoredFormDraft(taskDraftKey);
       setShowModal(false);
       return;
@@ -8774,7 +8925,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       assignee: safeForm.assignee,
       due_date: safeForm.due_date,
       status: safeForm.status,
-      notes: safeForm.notes,
+      notes: serializedNotes,
       review_required: safeForm.review_required,
       reviewers: safeForm.reviewers,
       review_approvals: safeForm.review_approvals,
@@ -8790,7 +8941,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
           assignee: safeForm.assignee,
           due_date: safeForm.due_date,
           status: safeForm.status,
-          notes: safeForm.notes,
+          notes: serializedNotes,
         };
         result = await supabase.from("tasks").update(fallbackPayload).eq("id", editing.id).select().single();
       }
@@ -8801,6 +8952,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       if (result.data) {
         const normalized = normalizeTask(result.data);
         setTasks(tasks.map(t=>t.id===editing.id?normalized:t));
+        setSelectedTask(normalized);
         await notifyTaskAssignment(normalized, editing.assignee);
         await recordActivity?.({
           action: "updated",
@@ -8820,7 +8972,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
           assignee: safeForm.assignee,
           due_date: safeForm.due_date,
           status: safeForm.status,
-          notes: safeForm.notes,
+          notes: serializedNotes,
           church_id: churchId,
         };
         result = await supabase.from("tasks").insert(fallbackPayload).select().single();
@@ -8891,6 +9043,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     const updated = normalizeTask(data);
     setTasks(tasks.map(t=>t.id===task.id?updated:t));
     syncTaskInView(updated);
+    if (nextStatus === "done" && task.status !== "done") await createNextRecurringTask(updated);
     if (nextStatus === "in-review" && task.status !== "in-review") await notifyTaskReviewRequested(updated);
     await recordActivity?.({
       action: "status_changed",
@@ -8953,6 +9106,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     const updated = normalizeTask(data);
     setTasks(tasks.map((entry) => entry.id === task.id ? updated : entry));
     syncTaskInView(updated);
+    if (updated.status === "done" && task.status !== "done") await createNextRecurringTask(updated);
     await notifyTaskReviewDecision(updated, status, nowIso);
     await recordActivity?.({
       action: "reviewed",
@@ -9285,6 +9439,42 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                 <input className="input-field" type="date" value={form.due_date} onChange={e=>setForm({...form,due_date:e.target.value})}/>
               </div>
             </div>
+            <div className="task-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>File Or Resource Link</label>
+                <input className="input-field" placeholder="Paste a Google Drive, Dropbox, Canva, or document link" value={form.share_link || ""} onChange={e=>setForm({...form,share_link:e.target.value})}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text,marginTop:20}}>
+                  <input
+                    type="checkbox"
+                    checked={!!form.recurring_enabled}
+                    onChange={(e)=>setForm({
+                      ...form,
+                      recurring_enabled:e.target.checked,
+                      recurring_series_key:e.target.checked ? (form.recurring_series_key || editing?.recurring_series_key || editing?.id || crypto.randomUUID()) : "",
+                    })}
+                  />
+                  Make this a recurring task
+                </label>
+              </div>
+            </div>
+            {form.recurring_enabled && (
+              <div className="task-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Repeat</label>
+                  <select className="input-field" value={form.recurring_frequency || "weekly"} onChange={e=>setForm({...form,recurring_frequency:e.target.value})} style={{background:C.surface}}>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Every</label>
+                  <input className="input-field" type="number" min="1" step="1" value={form.recurring_interval || 1} onChange={e=>setForm({...form,recurring_interval:e.target.value})}/>
+                </div>
+              </div>
+            )}
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Review Workflow</label>
               <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.text}}>
@@ -9379,6 +9569,24 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                 )}
               </div>
             </div>
+            {selectedTask.share_link && (
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Linked File Or Resource</div>
+                <div style={{fontSize:13,marginTop:4,lineHeight:1.6}}>
+                  <a href={normalizeExternalUrl(selectedTask.share_link)} target="_blank" rel="noreferrer" style={{color:C.gold}}>
+                    Open linked resource
+                  </a>
+                </div>
+              </div>
+            )}
+            {selectedTask.recurring_enabled && (
+              <div>
+                <div style={{fontSize:12,color:C.muted}}>Recurring Task</div>
+                <div style={{fontSize:13,color:C.text,marginTop:4}}>
+                  {getRecurringTaskLabel(selectedTask.recurring_frequency, selectedTask.recurring_interval)}
+                </div>
+              </div>
+            )}
             <div>
               <div style={{fontSize:12,color:C.muted}}>Review Workflow</div>
               {selectedTask.review_required ? (

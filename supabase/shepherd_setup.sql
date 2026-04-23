@@ -648,6 +648,13 @@ alter table public.transactions add column if not exists added_by_id uuid refere
 alter table public.transactions add column if not exists added_by text;
 alter table public.transactions add column if not exists created_at timestamptz not null default now();
 
+update public.transactions
+set
+  added_by_id = coalesce(added_by_id, '725a6cc4-106d-4c7f-9819-b994c1927f53'::uuid),
+  added_by = coalesce(nullif(added_by, ''), 'Yabs Techale')
+where church_id = '11111111-1111-1111-1111-111111111111'::uuid
+  and (added_by is null or added_by = '' or added_by_id is null);
+
 alter table public.transactions
   enable row level security;
 

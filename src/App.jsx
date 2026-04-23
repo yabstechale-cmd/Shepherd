@@ -1586,7 +1586,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
         id: `purchase-order-reminder-${order.id}`,
         tone: C.gold,
         title: "Purchase order needs a decision",
-        detail: `${order.title} is still awaiting review and is needed by ${fmtDate(order.needed_by)}.`,
+        detail: `${order.title} is still awaiting review and is requested for ${fmtDate(order.needed_by)}.`,
         target: "budget",
         createdAt: reminderThreshold.getTime(),
       });
@@ -9637,7 +9637,6 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     title: "",
     amount: "",
     ministry: defaultMinistry,
-    budgetLineItem: "",
     neededBy: "",
     purchaseLink: "",
     includedInBudget: "yes",
@@ -9656,8 +9655,6 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     ...(financeView ? ledgerMinistryNames : visibleMinistries),
     purchaseOrderForm.ministry,
   ].filter(Boolean))].sort((left, right) => left.localeCompare(right));
-  const selectedPurchaseOrderMinistryRecord = (ministries || []).find((entry) => entry.name === purchaseOrderForm.ministry);
-  const selectedPurchaseOrderBudgetItems = normalizeBudgetItems(selectedPurchaseOrderMinistryRecord?.budget_items);
   const mentionableNames = [...new Set((previewUsers || []).map((user) => user.full_name).filter(Boolean))];
   const mentionableStaff = mentionableNames.map((name) => ({ fullName: name, token: getStaffMentionToken(name) })).filter((entry) => entry.token);
   const activePurchaseOrderCommentId = Object.keys(purchaseOrderCommentCursor).find((id) => typeof purchaseOrderCommentCursor[id] === "number") || "";
@@ -9712,7 +9709,6 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       title: "",
       amount: "",
       ministry,
-      budgetLineItem: "",
       neededBy: "",
       purchaseLink: "",
       includedInBudget: "yes",
@@ -9848,7 +9844,15 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       .filter(Boolean)
   )];
   const ministryLineItemSuggestions = selectedMinistryBudgetItems.map((item) => item.label);
-  const purchaseOrderLineItemSuggestions = selectedPurchaseOrderBudgetItems.map((item) => item.label);
+  const getBudgetLineTotals = (summary, item) => {
+    const spent = (summary.transactionRows || [])
+      .filter((transaction) => transaction.amount < 0 && (transaction.category || "") === item.label)
+      .reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount || 0)), 0);
+    return {
+      initial: Number(item.amount || 0),
+      leftover: Number(item.amount || 0) - spent,
+    };
+  };
 
   const save = async () => {
     if (!form.description||!form.amount||!form.category||!form.ministry) {
@@ -10027,10 +10031,6 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       setPurchaseOrderError("Please complete the required purchase order fields.");
       return;
     }
-    if (purchaseOrderForm.includedInBudget === "yes" && !purchaseOrderForm.budgetLineItem) {
-      setPurchaseOrderError("Choose a budget line item when this request was included in the yearly budget proposal.");
-      return;
-    }
     const parsedAmount = Number.parseFloat(purchaseOrderForm.amount || "0");
     if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
       setPurchaseOrderError("Enter a valid dollar amount for this purchase order.");
@@ -10048,7 +10048,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     const payload = {
       church_id: churchId,
       ministry: purchaseOrderForm.ministry,
-      budget_line_item: purchaseOrderForm.includedInBudget === "yes" ? purchaseOrderForm.budgetLineItem : "",
+      budget_line_item: "",
       title: purchaseOrderForm.title,
       amount: parsedAmount,
       needed_by: purchaseOrderForm.neededBy || null,
@@ -10506,7 +10506,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 value={purchaseOrderForm.ministry}
                 onChange={(e) => {
                   setSelectedLedgerMinistry(e.target.value);
-                  setPurchaseOrderForm({ ...purchaseOrderForm, ministry: e.target.value, budgetLineItem: "" });
+                  setPurchaseOrderForm({ ...purchaseOrderForm, ministry: e.target.value });
                 }}
                 style={{background:C.surface}}
               >
@@ -10543,17 +10543,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Price</label>
               <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={purchaseOrderForm.amount} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,amount:e.target.value})}/>
             </div>
-            {purchaseOrderForm.includedInBudget === "yes" && (
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Budget Line Item</label>
-                <input className="input-field" list="purchase-order-line-items" placeholder={selectedPurchaseOrderBudgetItems.length > 0 ? "Choose a line item" : "Add line items to this budget first"} value={purchaseOrderForm.budgetLineItem} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,budgetLineItem:e.target.value})}/>
-                <datalist id="purchase-order-line-items">
-                  {purchaseOrderLineItemSuggestions.map((item) => <option key={item} value={item} />)}
-                </datalist>
-              </div>
-            )}
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date Needed By</label>
+              <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Date Requested For</label>
               <input className="input-field" type="date" value={purchaseOrderForm.neededBy} onChange={(e)=>setPurchaseOrderForm({...purchaseOrderForm,neededBy:e.target.value})}/>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -10645,9 +10636,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
           <div style={{display:"flex",gap:10,justifyContent:"space-between",flexWrap:"wrap"}}>
             {financeView && budgetForm.id ? (
               <button
-                className="btn-outline"
                 onClick={removeBudgetMinistry}
-                style={{display:"flex",alignItems:"center",justifyContent:"center",padding:10,color:C.danger,borderColor:"rgba(224,82,82,.35)"}}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",padding:0,color:C.danger,border:"none",background:"transparent",cursor:"pointer"}}
                 aria-label="Remove ministry"
                 title="Remove ministry"
               >
@@ -10763,12 +10753,26 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               <div className="card" style={{padding:16,background:C.surface,textAlign:"left"}}>
                 <div style={{fontSize:12,color:C.gold,textTransform:"uppercase",letterSpacing:".12em",fontWeight:700}}>Budget Lines</div>
                 <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginTop:12}}>
-                  {summary.budgetItems.length > 0 ? summary.budgetItems.map((item) => (
-                    <div key={`${summary.ministry}-${item.label}`} style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:12,color:C.muted,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",background:C.card}}>
-                      <span>{item.label}</span>
-                      <span style={{color:C.text,fontWeight:700}}>{fmt(item.amount)}</span>
+                  {summary.budgetItems.length > 0 ? summary.budgetItems.map((item) => {
+                    const lineTotals = getBudgetLineTotals(summary, item);
+                    return (
+                    <div key={`${summary.ministry}-${item.label}`} style={{display:"grid",gap:8,fontSize:12,color:C.muted,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",background:C.card}}>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:12}}>
+                        <span style={{color:C.text,fontWeight:700}}>{item.label}</span>
+                        <span style={{color:lineTotals.leftover >= 0 ? C.success : C.danger,fontWeight:700}}>{fmt(lineTotals.leftover)}</span>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                        <div>
+                          <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".08em"}}>Initial</span>
+                          <div style={{color:C.text,marginTop:2}}>{fmt(lineTotals.initial)}</div>
+                        </div>
+                        <div>
+                          <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".08em"}}>Leftover</span>
+                          <div style={{color:lineTotals.leftover >= 0 ? C.success : C.danger,marginTop:2}}>{fmt(lineTotals.leftover)}</div>
+                        </div>
+                      </div>
                     </div>
-                  )) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>No budget line items have been set yet.</div>}
+                  )}) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>No budget line items have been set yet.</div>}
                 </div>
               </div>
               <div className="card" style={{padding:16,background:C.surface,textAlign:"left"}}>
@@ -10836,11 +10840,13 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:12,alignItems:"start",border:"none",background:"transparent",padding:0,cursor:"pointer",textAlign:"left"}}
             >
               <div style={{display:"flex",flexDirection:"column",gap:6,textAlign:"left"}}>
-                <div style={{fontSize:18,color:C.text,fontWeight:600,lineHeight:1.35}}>{order.title}</div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+                  <div style={{fontSize:18,color:C.text,fontWeight:600,lineHeight:1.35}}>{order.title}</div>
                   <span className={`badge ${getTag(order.ministry)}`}>{order.ministry}</span>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
                   <span style={{fontSize:12,color:C.text}}>{fmt(order.amount)}</span>
-                  <span style={{fontSize:12,color:C.muted}}>{order.needed_by ? `Needed by ${fmtDate(order.needed_by)}` : "No date needed yet"}</span>
+                  <span style={{fontSize:12,color:C.muted}}>{order.needed_by ? `Requested for ${fmtDate(order.needed_by)}` : "No requested date set"}</span>
                   <span style={{fontSize:12,color:C.muted}}>Requested by {order.requested_by}</span>
                 </div>
               </div>
@@ -10862,9 +10868,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                     <span style={{fontSize:11,color:order.status === "approved" ? C.success : order.status === "denied" ? C.danger : C.gold,textTransform:"capitalize"}}>{order.status}</span>
                     {canDeletePurchaseOrder(profile, order) && (
                       <button
-                        className="btn-outline"
                         onClick={() => deletePurchaseOrder(order)}
-                        style={{display:"flex",alignItems:"center",justifyContent:"center",padding:8,color:C.muted,borderColor:C.border}}
+                        style={{display:"flex",alignItems:"center",justifyContent:"center",padding:0,color:C.danger,border:"none",background:"transparent",cursor:"pointer"}}
                         aria-label="Delete purchase order"
                         title="Delete purchase order"
                       >
@@ -10876,7 +10881,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 <div style={{display:"grid",gap:6,textAlign:"left"}}>
                   <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Requested by:</span> {order.requested_by}{order.requester_email ? ` • ${order.requester_email}` : ""}</div>
                   <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Amount:</span> {fmt(order.amount)}</div>
-                  <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Needed by:</span> {order.needed_by ? fmtDate(order.needed_by) : "No date needed yet"}</div>
+                  <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Requested for:</span> {order.needed_by ? fmtDate(order.needed_by) : "No requested date set"}</div>
                   {order.budget_line_item && (
                     <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Budget line item:</span> {order.budget_line_item}</div>
                   )}
@@ -10987,9 +10992,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                           <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
                             <button className="btn-outline" onClick={() => beginEditPurchaseOrderComment(order.id, comment)} style={{padding:"6px 10px",fontSize:12}}>Edit</button>
                             <button
-                              className="btn-outline"
                               onClick={() => deletePurchaseOrderComment(order, comment)}
-                              style={{display:"flex",alignItems:"center",justifyContent:"center",padding:8,fontSize:12,borderColor:"rgba(224,82,82,.35)",color:C.danger}}
+                              style={{display:"flex",alignItems:"center",justifyContent:"center",padding:0,fontSize:12,border:"none",background:"transparent",color:C.danger,cursor:"pointer"}}
                               aria-label="Delete purchase order comment"
                               title="Delete purchase order comment"
                             >

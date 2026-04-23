@@ -81,6 +81,8 @@ const previewNotifications = [
   },
 ];
 
+const EMAIL_TEMPLATE_VERSION = "beefree-export-2026-04-23";
+
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -169,7 +171,7 @@ Deno.serve(async (req) => {
       sent.push(notification.title);
     }
 
-    return jsonResponse(200, { sent, recipientEmail });
+    return jsonResponse(200, { sent, recipientEmail, emailTemplateVersion: EMAIL_TEMPLATE_VERSION });
   } catch (error) {
     return jsonResponse(500, { error: error instanceof Error ? error.message : "Preview emails failed." });
   }

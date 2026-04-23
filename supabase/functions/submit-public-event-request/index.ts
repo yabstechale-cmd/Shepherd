@@ -19,6 +19,8 @@ const REQUIRED_FIELDS = [
   "signature",
 ];
 
+const EMAIL_TEMPLATE_VERSION = "beefree-export-2026-04-23";
+
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -282,6 +284,7 @@ Deno.serve(async (req) => {
       submitted: true,
       churchName: church.name,
       publicAccessToken: insertedRequest?.public_access_token || null,
+      emailTemplateVersion: EMAIL_TEMPLATE_VERSION,
     });
   } catch (error) {
     return jsonResponse(500, { error: error instanceof Error ? error.message : "We couldn't submit that request." });

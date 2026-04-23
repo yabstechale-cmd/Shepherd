@@ -18,6 +18,8 @@ const routeByTarget: Record<string, string> = {
   account: "/account",
 };
 
+const EMAIL_TEMPLATE_VERSION = "beefree-export-2026-04-23";
+
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -170,7 +172,7 @@ Deno.serve(async (req) => {
 
     await adminClient.from("notifications").update({ emailed_at: new Date().toISOString() }).eq("id", notification.id);
 
-    return jsonResponse(200, { sent: true });
+    return jsonResponse(200, { sent: true, emailTemplateVersion: EMAIL_TEMPLATE_VERSION });
   } catch (error) {
     return jsonResponse(500, { error: error instanceof Error ? error.message : "Notification email failed." });
   }

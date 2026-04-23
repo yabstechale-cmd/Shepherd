@@ -9547,12 +9547,22 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                       </select>
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                      <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>How often should it repeat?</label>
+                      <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>
+                        {form.recurring_pattern === "daily"
+                          ? "Repeat every how many days?"
+                          : form.recurring_pattern === "weekly"
+                            ? "Repeat every how many weeks?"
+                            : "Repeat every how many months?"}
+                      </label>
                       <input className="input-field" type="number" min="1" step="1" value={form.recurring_interval || 1} onChange={e=>setForm({...form,recurring_interval:e.target.value})}/>
                     </div>
                   </div>
                   <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
-                    Monthly options follow the weekday of the due date, so setting a due date first gives the most accurate repeat schedule.
+                    {form.recurring_pattern === "monthly-date"
+                      ? `Example: 6 with "Every month on the same date" means every 6 months on the same calendar date.`
+                      : TASK_MONTHLY_ORDINALS.includes(form.recurring_pattern || "")
+                        ? `Example: 2 with "${getRecurringTaskLabel(form.recurring_pattern, 1, form.due_date)}" means every 2 months on that same weekday pattern.`
+                        : "Monthly options follow the weekday of the due date, so setting a due date first gives the most accurate repeat schedule."}
                   </div>
                 </>
               )}

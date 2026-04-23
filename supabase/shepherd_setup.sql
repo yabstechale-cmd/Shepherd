@@ -633,6 +633,8 @@ create table if not exists public.transactions (
   ministry text not null,
   category text,
   date date not null default current_date,
+  added_by_id uuid references public.profiles(id) on delete set null,
+  added_by text,
   created_at timestamptz not null default now()
 );
 
@@ -642,6 +644,8 @@ alter table public.transactions add column if not exists amount numeric;
 alter table public.transactions add column if not exists ministry text;
 alter table public.transactions add column if not exists category text;
 alter table public.transactions add column if not exists date date not null default current_date;
+alter table public.transactions add column if not exists added_by_id uuid references public.profiles(id) on delete set null;
+alter table public.transactions add column if not exists added_by text;
 alter table public.transactions add column if not exists created_at timestamptz not null default now();
 
 alter table public.transactions

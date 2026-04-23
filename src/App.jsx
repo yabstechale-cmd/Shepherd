@@ -519,7 +519,7 @@ const getBudgetScopeMinistries = (profile) => {
   if (!isMinistryLedgerLead(profile)) return [];
   return assignedMinistries;
 };
-const canViewBudget = (profile) => isFinanceUser(profile) || getBudgetScopeMinistries(profile).length > 0;
+const canViewBudget = (profile) => isFinanceUser(profile) || isSeniorPastor(profile) || getBudgetScopeMinistries(profile).length > 0;
 const canApproveEventRequests = (profile) => isChurchAdministrator(profile);
 const isTaskForUser = (task, fullName) => samePerson(task?.assignee, fullName) || listIncludesPerson(task?.reviewers, fullName);
 const isContentTask = (task) => task?.ministry === "Content/Art";
@@ -9627,6 +9627,10 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     }
   });
   const [selectedLedgerMinistry, setSelectedLedgerMinistry] = useState(defaultMinistry);
+  const [financeSection, setFinanceSection] = useState("hub");
+  const [openBudgetCards, setOpenBudgetCards] = useState({});
+  const [purchaseOrdersOpen, setPurchaseOrdersOpen] = useState(true);
+  const [openPurchaseOrders, setOpenPurchaseOrders] = useState({});
   const [form, setForm] = useState({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
   const [budgetForm, setBudgetForm] = useState({ id: null, ministry: defaultMinistry, budget: "", assignedStaffId: "", items: [{ label: "", amount: "" }] });
   const [purchaseOrderForm, setPurchaseOrderForm] = useState({
@@ -9783,7 +9787,13 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     : transactions.filter((transaction) => visibleMinistries.includes(transaction.ministry));
   const visiblePurchaseOrders = financeView
     ? (purchaseOrders || [])
-    : (purchaseOrders || []).filter((order) => order.requester_id === profile?.id || samePerson(order.requested_by, profile?.full_name));
+    : isSeniorPastor(profile)
+      ? (purchaseOrders || [])
+      : (purchaseOrders || []).filter((order) =>
+          order.requester_id === profile?.id
+          || samePerson(order.requested_by, profile?.full_name)
+          || listIncludesPerson(order.required_approvers, profile?.full_name)
+        );
   const visiblePurchaseOrdersByMinistry = visiblePurchaseOrders.reduce((accumulator, order) => {
     const ministryKey = order.ministry || "Admin";
     accumulator[ministryKey] = [...(accumulator[ministryKey] || []), order];
@@ -9809,9 +9819,27 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         remaining: budgetAmount - spent,
         transactions: ministryTransactions.length,
         purchaseOrders: (visiblePurchaseOrdersByMinistry[ministry] || []).length,
+        transactionRows: ministryTransactions.slice().sort((left, right) => getDateSortValue(right.date) - getDateSortValue(left.date)),
+        budgetItems: normalizeBudgetItems(budgetRow?.budget_items),
       };
     })
     .filter((summary) => financeView || summary.transactions > 0 || summary.budget > 0);
+
+  const purchaseOrderStatusCounts = visiblePurchaseOrders.reduce((counts, order) => {
+    const key = order.status || "pending";
+    return { ...counts, [key]: (counts[key] || 0) + 1 };
+  }, {});
+  const totalBudgetOverview = ministrySummaries.reduce((totals, summary) => ({
+    budget: totals.budget + summary.budget,
+    spent: totals.spent + summary.spent,
+    remaining: totals.remaining + summary.remaining,
+  }), { budget: 0, spent: 0, remaining: 0 });
+  const toggleBudgetCard = (ministry) => {
+    setOpenBudgetCards((current) => ({ ...current, [ministry]: !current[ministry] }));
+  };
+  const togglePurchaseOrder = (orderId) => {
+    setOpenPurchaseOrders((current) => ({ ...current, [orderId]: !current[orderId] }));
+  };
 
   const categorySuggestions = [...new Set(
     budgetScopedTransactions
@@ -9836,13 +9864,31 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     setTransactionError("");
     setTransactionSubmitting(true);
     if (isPreview) {
-      setTransactions([{ ...form, id: `txn-${Date.now()}`, amount: amt, church_id: churchId }, ...transactions]);
+      setTransactions([{ ...form, id: `txn-${Date.now()}`, amount: amt, church_id: churchId, added_by_id: profile?.id || null, added_by: profile?.full_name || "Staff Member", created_at: new Date().toISOString() }, ...transactions]);
       setTransactionSubmitting(false);
       setShowModal(false);
       setForm(resetTransactionForm(defaultMinistry));
       return;
     }
-    const { data, error } = await supabase.from("transactions").insert({description:form.description,amount:amt,ministry:form.ministry,category:form.category,date:form.date,church_id:churchId}).select().single();
+    const transactionPayload = {
+      description: form.description,
+      amount: amt,
+      ministry: form.ministry,
+      category: form.category,
+      date: form.date,
+      church_id: churchId,
+      added_by_id: profile?.id || null,
+      added_by: profile?.full_name || "Staff Member",
+    };
+    let { data, error } = await supabase.from("transactions").insert(transactionPayload).select().single();
+    if (error && /added_by/i.test(String(error.message || ""))) {
+      const fallbackPayload = { ...transactionPayload };
+      delete fallbackPayload.added_by_id;
+      delete fallbackPayload.added_by;
+      const fallback = await supabase.from("transactions").insert(fallbackPayload).select().single();
+      data = fallback.data;
+      error = fallback.error;
+    }
     setTransactionSubmitting(false);
     if (error) {
       setTransactionError(error.message || "This transaction could not be saved yet.");
@@ -10617,10 +10663,52 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
           </div>
         </div>
       )}
-      {!showModal && !showPurchaseOrderModal && !showBudgetModal && (
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16,marginBottom:28}}>
+      {!showModal && !showPurchaseOrderModal && !showBudgetModal && financeSection === "hub" && (
+        <div style={{display:"grid",gap:18,marginBottom:28}}>
+          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12}}>
+            <div className="card" style={{padding:18,textAlign:"left",background:C.surface}}>
+              <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".1em"}}>Starting Budget</div>
+              <div style={{fontSize:24,color:C.text,fontWeight:700,marginTop:8}}>{fmt(totalBudgetOverview.budget)}</div>
+            </div>
+            <div className="card" style={{padding:18,textAlign:"left",background:C.surface}}>
+              <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".1em"}}>Amount Spent</div>
+              <div style={{fontSize:24,color:C.danger,fontWeight:700,marginTop:8}}>{fmt(totalBudgetOverview.spent)}</div>
+            </div>
+            <div className="card" style={{padding:18,textAlign:"left",background:C.surface}}>
+              <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".1em"}}>Remaining Budget</div>
+              <div style={{fontSize:24,color:totalBudgetOverview.remaining >= 0 ? C.success : C.danger,fontWeight:700,marginTop:8}}>{fmt(totalBudgetOverview.remaining)}</div>
+            </div>
+          </div>
+          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:16}}>
+            <button className="card" onClick={() => setFinanceSection("budgets")} style={{padding:24,textAlign:"left",cursor:"pointer",border:`1px solid ${C.border}`,background:C.card}}>
+              <div style={{...sectionTitleStyle,fontSize:28}}>Ministry Budgets</div>
+              <p style={{fontSize:13,color:C.muted,lineHeight:1.6,margin:"8px 0 0"}}>
+                Open each ministry budget, review line items, see transaction history, and edit budget structure.
+              </p>
+              <div style={{fontSize:12,color:C.gold,fontWeight:700,marginTop:18}}>Open Ministry Budgets</div>
+            </button>
+            <button className="card" onClick={() => setFinanceSection("purchase-orders")} style={{padding:24,textAlign:"left",cursor:"pointer",border:`1px solid ${C.border}`,background:C.card}}>
+              <div style={{...sectionTitleStyle,fontSize:28}}>Purchase Orders</div>
+              <p style={{fontSize:13,color:C.muted,lineHeight:1.6,margin:"8px 0 0"}}>
+                Review requests, open each order for details, comment, and approve or deny when assigned as reviewer.
+              </p>
+              <div style={{fontSize:12,color:C.gold,fontWeight:700,marginTop:18}}>{visiblePurchaseOrders.length} Requests</div>
+            </button>
+          </div>
+        </div>
+      )}
+      {!showModal && !showPurchaseOrderModal && !showBudgetModal && financeSection === "budgets" && (
+      <>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+        <div>
+          <h3 style={{...sectionTitleStyle,textAlign:"left",fontSize:30}}>Ministry Budgets</h3>
+          <div style={{fontSize:12,color:C.muted,marginTop:4}}>Each ministry budget is its own collapsible line.</div>
+        </div>
+        <button className="btn-outline" onClick={() => setFinanceSection("hub")}>Back To Finance Hub</button>
+      </div>
+      <div style={{display:"grid",gap:14,marginBottom:28}}>
         {ministrySummaries.length === 0 && (
-          <div className="card" style={{padding:24,textAlign:"left",gridColumn:"1 / -1"}}>
+          <div className="card" style={{padding:24,textAlign:"left"}}>
             <div style={{...sectionTitleStyle,fontSize:24,marginBottom:8}}>No budgets yet</div>
             <div style={{fontSize:13,color:C.muted,lineHeight:1.6}}>
               {financeView
@@ -10629,41 +10717,36 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             </div>
           </div>
         )}
-        {ministrySummaries.map((summary) => (
-          <div key={summary.ministry} className="stat-card" style={{borderTop:`3px solid ${CATEGORY_STYLES[summary.ministry]?.color || C.gold}`}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+        {ministrySummaries.map((summary) => {
+          const isOpen = !!openBudgetCards[summary.ministry];
+          return (
+          <div key={summary.ministry} className="card" style={{padding:18,borderTop:`3px solid ${CATEGORY_STYLES[summary.ministry]?.color || C.gold}`,display:"grid",gap:14}}>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",alignItems:"start",gap:14}}>
               <div style={{textAlign:"left"}}>
                 <div style={{...sectionTitleStyle,fontSize:24}}>{summary.ministry}</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:4}}>{summary.transactions} transactions</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:2}}>{summary.purchaseOrders} purchase orders</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4}}>{summary.transactions} transactions • {summary.purchaseOrders} purchase orders</div>
               </div>
-              {financeView && (
-                <button
-                  className="btn-outline"
-                  onClick={() => openBudgetModal(summary.ministry)}
-                  style={{padding:"7px 9px",minWidth:0}}
-                  aria-label={`Edit ${summary.ministry} budget`}
-                  title={`Edit ${summary.ministry} budget`}
-                >
-                  <Icons.pen/>
-                </button>
-              )}
+              <button className="btn-outline" onClick={() => toggleBudgetCard(summary.ministry)} style={{padding:"7px 12px"}}>
+                {isOpen ? "Collapse" : "Open"}
+              </button>
             </div>
-            <div style={{display:"grid",gap:8,marginTop:18}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.muted}}>
-                <span>Budget</span>
-                <span style={{color:C.text}}>{fmt(summary.budget)}</span>
+            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(120px,1fr))",gap:10}}>
+              <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>Starting Budget</div>
+                <div style={{fontSize:16,color:C.text,fontWeight:700,marginTop:4}}>{fmt(summary.budget)}</div>
               </div>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.muted}}>
-                <span>Spent</span>
-                <span style={{color:C.danger}}>{fmt(summary.spent)}</span>
+              <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>Spent</div>
+                <div style={{fontSize:16,color:C.danger,fontWeight:700,marginTop:4}}>{fmt(summary.spent)}</div>
               </div>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.muted}}>
-                <span>Remaining</span>
-                <span style={{color:summary.remaining >= 0 ? C.success : C.danger}}>{fmt(summary.remaining)}</span>
+              <div style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
+                <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>Remaining</div>
+                <div style={{fontSize:16,color:summary.remaining >= 0 ? C.success : C.danger,fontWeight:700,marginTop:4}}>{fmt(summary.remaining)}</div>
               </div>
             </div>
-            <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
+            {isOpen && (
+              <div style={{display:"grid",gap:16}}>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <button className="btn-gold" onClick={() => openTransactionModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
                 <Icons.plus/>Add Transaction
               </button>
@@ -10676,12 +10759,49 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 </button>
               )}
             </div>
+            <div style={{display:"grid",gap:16,alignItems:"start"}}>
+              <div className="card" style={{padding:16,background:C.surface,textAlign:"left"}}>
+                <div style={{fontSize:12,color:C.gold,textTransform:"uppercase",letterSpacing:".12em",fontWeight:700}}>Budget Lines</div>
+                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginTop:12}}>
+                  {summary.budgetItems.length > 0 ? summary.budgetItems.map((item) => (
+                    <div key={`${summary.ministry}-${item.label}`} style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:12,color:C.muted,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",background:C.card}}>
+                      <span>{item.label}</span>
+                      <span style={{color:C.text,fontWeight:700}}>{fmt(item.amount)}</span>
+                    </div>
+                  )) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>No budget line items have been set yet.</div>}
+                </div>
+              </div>
+              <div className="card" style={{padding:16,background:C.surface,textAlign:"left"}}>
+                <div style={{fontSize:12,color:C.gold,textTransform:"uppercase",letterSpacing:".12em",fontWeight:700}}>Transactions</div>
+                <div style={{fontSize:11,color:C.muted,marginTop:4}}>Shows when each transaction was added to Shepherd.</div>
+                <div style={{display:"grid",gap:10,marginTop:12}}>
+                  {summary.transactionRows.length > 0 ? summary.transactionRows.map((transaction) => (
+                    <div key={transaction.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:12,padding:"10px 0",borderTop:`1px solid ${C.border}`}}>
+                      <div>
+                        <div style={{fontSize:13,color:C.text,fontWeight:700}}>{transaction.description}</div>
+                        <div style={{fontSize:11,color:C.muted,marginTop:4}}>{transaction.category || "Uncategorized"} • Transaction date {fmtDate(transaction.date)}</div>
+                        <div style={{fontSize:11,color:C.muted,marginTop:3}}>Added {fmtActivityDate(transaction.created_at || transaction.date)} by {transaction.added_by || "Legacy Entry"}</div>
+                      </div>
+                      <div style={{fontSize:13,color:transaction.amount < 0 ? C.danger : C.success,fontWeight:700,textAlign:"right"}}>
+                        {transaction.amount < 0 ? "-" : "+"}{fmt(transaction.amount)}
+                      </div>
+                    </div>
+                  )) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6,padding:"12px 0",borderTop:`1px solid ${C.border}`}}>No transactions have been added to this budget yet.</div>}
+                </div>
+              </div>
+            </div>
+              </div>
+            )}
           </div>
-        ))}
+        )})}
       </div>
+      </>
       )}
+      {!showModal && !showPurchaseOrderModal && !showBudgetModal && financeSection === "purchase-orders" && (
       <div className="card" style={{overflow:"hidden"}}>
         <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
+          <div>
           <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{financeView ? "Purchase Orders" : "Your Purchase Orders"}</h3>
           <div style={{fontSize:12,color:C.muted,marginTop:4,textAlign:"left"}}>
             {financeView
@@ -10689,9 +10809,17 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
               : "Submit purchase requests tied to your ministry budgets so Finance can review them."}
           </div>
           <div style={{fontSize:11,color:C.muted,marginTop:6,lineHeight:1.5,textAlign:"left"}}>
-            {financeView
-              ? "Finance Director access includes all ministry budgets and purchase requests."
-              : "Ministry options are based on the budgets assigned to your profile."}
+            {visiblePurchaseOrders.length} total • {purchaseOrderStatusCounts["in-review"] || 0} in review • {purchaseOrderStatusCounts.approved || 0} approved • {purchaseOrderStatusCounts.denied || 0} denied
+          </div>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button className="btn-outline" onClick={() => setFinanceSection("hub")} style={{padding:"7px 12px"}}>
+              Back To Hub
+            </button>
+            <button className="btn-outline" onClick={() => setPurchaseOrdersOpen((current) => !current)} style={{padding:"7px 12px"}}>
+              {purchaseOrdersOpen ? "Collapse" : "Expand"}
+            </button>
+          </div>
           </div>
           {purchaseOrderError && !showPurchaseOrderModal && (
             <div style={{fontSize:12,color:C.danger,marginTop:8,textAlign:"left"}}>
@@ -10699,19 +10827,36 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             </div>
           )}
         </div>
-        {visiblePurchaseOrders.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No purchase orders yet.</div>}
-        {visiblePurchaseOrders.map((order)=>(
-          <div key={order.id} style={{padding:"18px",borderTop:`1px solid ${C.border}`,display:"grid",gap:16}}>
+        {purchaseOrdersOpen && visiblePurchaseOrders.length===0&&<div style={{padding:"40px",textAlign:"center",color:C.muted}}>No purchase orders yet.</div>}
+        {purchaseOrdersOpen && visiblePurchaseOrders.map((order)=>(
+          <div key={order.id} style={{margin:14,padding:16,border:`1px solid ${C.border}`,borderRadius:16,background:C.card,display:"grid",gap:16}}>
+            <button
+              type="button"
+              onClick={() => togglePurchaseOrder(order.id)}
+              style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:12,alignItems:"start",border:"none",background:"transparent",padding:0,cursor:"pointer",textAlign:"left"}}
+            >
+              <div style={{display:"flex",flexDirection:"column",gap:6,textAlign:"left"}}>
+                <div style={{fontSize:18,color:C.text,fontWeight:600,lineHeight:1.35}}>{order.title}</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+                  <span className={`badge ${getTag(order.ministry)}`}>{order.ministry}</span>
+                  <span style={{fontSize:12,color:C.text}}>{fmt(order.amount)}</span>
+                  <span style={{fontSize:12,color:C.muted}}>{order.needed_by ? `Needed by ${fmtDate(order.needed_by)}` : "No date needed yet"}</span>
+                  <span style={{fontSize:12,color:C.muted}}>Requested by {order.requested_by}</span>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <span style={{fontSize:11,color:order.status === "approved" ? C.success : order.status === "denied" ? C.danger : C.gold,textTransform:"capitalize",fontWeight:700}}>{order.status}</span>
+                <span style={{fontSize:18,color:C.gold}}>{openPurchaseOrders[order.id] ? "−" : "+"}</span>
+              </div>
+            </button>
+            {openPurchaseOrders[order.id] && (
+            <>
             <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.15fr) minmax(280px,.9fr)",gap:18,alignItems:"start"}}>
-              <div style={{display:"flex",flexDirection:"column",gap:12,textAlign:"left"}}>
+              <div className="card" style={{padding:16,background:C.surface,display:"flex",flexDirection:"column",gap:12,textAlign:"left"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
                   <div style={{display:"flex",flexDirection:"column",gap:6,textAlign:"left"}}>
-                    <div style={{fontSize:18,color:C.text,fontWeight:600,lineHeight:1.35}}>{order.title}</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
-                      <span className={`badge ${getTag(order.ministry)}`}>{order.ministry}</span>
-                      <span style={{fontSize:12,color:C.text}}>{fmt(order.amount)}</span>
-                      <span style={{fontSize:12,color:C.muted}}>{order.needed_by ? `Needed by ${fmtDate(order.needed_by)}` : "No date needed yet"}</span>
-                    </div>
+                    <div style={{fontSize:12,color:C.gold,textTransform:"uppercase",letterSpacing:".12em",fontWeight:700}}>Request Details</div>
+                    <div style={{fontSize:12,color:C.muted}}>Submitted {fmtActivityDate(order.created_at)}</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
                     <span style={{fontSize:11,color:order.status === "approved" ? C.success : order.status === "denied" ? C.danger : C.gold,textTransform:"capitalize"}}>{order.status}</span>
@@ -10730,6 +10875,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 </div>
                 <div style={{display:"grid",gap:6,textAlign:"left"}}>
                   <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Requested by:</span> {order.requested_by}{order.requester_email ? ` • ${order.requester_email}` : ""}</div>
+                  <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Amount:</span> {fmt(order.amount)}</div>
+                  <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Needed by:</span> {order.needed_by ? fmtDate(order.needed_by) : "No date needed yet"}</div>
                   {order.budget_line_item && (
                     <div style={{fontSize:12,color:C.muted}}><span style={{color:C.text,fontWeight:600}}>Budget line item:</span> {order.budget_line_item}</div>
                   )}
@@ -10894,9 +11041,12 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 <div style={{fontSize:13,color:C.muted,textAlign:"left"}}>Discussion collapsed. Expand it when you want to catch up or reply.</div>
               )}
             </div>
+            </>
+            )}
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

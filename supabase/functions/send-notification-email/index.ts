@@ -18,7 +18,7 @@ const routeByTarget: Record<string, string> = {
   account: "/account",
 };
 
-const EMAIL_TEMPLATE_VERSION = "beefree-export-2026-04-23";
+const EMAIL_TEMPLATE_VERSION = "shepherd-clean-dark-2026-04-23";
 
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {

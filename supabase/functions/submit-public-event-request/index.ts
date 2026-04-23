@@ -19,7 +19,7 @@ const REQUIRED_FIELDS = [
   "signature",
 ];
 
-const EMAIL_TEMPLATE_VERSION = "shepherd-clean-dark-2026-04-23";
+const EMAIL_TEMPLATE_VERSION = "shepherd-clean-dark-no-church-2026-04-23";
 
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {

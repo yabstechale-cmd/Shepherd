@@ -10,6 +10,7 @@ export function escapeHtml(value: unknown) {
 type ShepherdNotificationEmailOptions = {
   title: string;
   detail: string;
+  detailHtml?: string;
   actionUrl: string;
   actionLabel?: string;
   churchName?: string;
@@ -22,6 +23,7 @@ type ShepherdNotificationEmailOptions = {
 export function renderShepherdNotificationEmail({
   title,
   detail,
+  detailHtml,
   actionUrl,
   actionLabel = "Open Shepherd",
   churchName: _churchName = "Shepherd",
@@ -32,6 +34,7 @@ export function renderShepherdNotificationEmail({
 }: ShepherdNotificationEmailOptions) {
   const safeTitle = escapeHtml(title);
   const safeDetail = escapeHtml(detail);
+  const renderedDetail = detailHtml || safeDetail;
   const safeEyebrow = escapeHtml(eyebrow || "Shepherd Notification");
   const safePreview = escapeHtml(previewText || `${title} - ${detail}`);
   const safeActionLabel = escapeHtml(actionLabel);
@@ -96,7 +99,7 @@ export function renderShepherdNotificationEmail({
                               ${safeDetailLabel}
                             </div>
                             <div style="font-family:'DM Sans',Arial,Helvetica,sans-serif;font-size:17px;line-height:26px;font-weight:400;color:#e6edf7;">
-                              ${safeDetail}
+                              ${renderedDetail}
                             </div>
                           </td>
                         </tr>

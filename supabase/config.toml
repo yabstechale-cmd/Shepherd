@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.send-notification-preview]
 verify_jwt = false
+
+[functions.send-shepherd-update-test]
+verify_jwt = false

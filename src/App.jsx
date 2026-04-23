@@ -1585,13 +1585,11 @@ const dedupeNotifications = (items) => {
 const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile) => {
   if (!profile?.full_name) return [];
   const fullName = profile.full_name;
-  const isAdminViewer = hasAdministrativeOversight(profile, null);
   const seniorPastorViewer =
     profile?.role === "senior_pastor"
     || (profile?.staff_roles || []).includes("senior_pastor")
     || samePerson(profile?.title, "Senior Pastor");
   const financeDirectorViewer = isFinanceDirector(profile);
-  const purchaseOrderReviewer = canReviewPurchaseOrders(profile);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endOfTomorrow = new Date(startOfToday);
@@ -1601,22 +1599,8 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
 
   tasks.forEach((task) => {
     const assignedToMe = samePerson(task.assignee, fullName);
-    const reviewerForMe = listIncludesPerson(task.reviewers, fullName) && !listIncludesPerson(task.review_approvals, fullName);
-    const createdAt = task.created_at ? new Date(task.created_at) : null;
     const dueDate = parseAppDate(task.due_date);
     const dueDay = dueDate ? new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate()) : null;
-
-    if (assignedToMe && task.status !== "done" && createdAt && now.getTime() - createdAt.getTime() < 3 * 86400000) {
-      items.push({
-        id: `assigned-${task.id}`,
-        tone: C.blue,
-        title: "New task assigned",
-        detail: `${task.title} was assigned to you.`,
-        target: "tasks",
-        taskId: task.id,
-        createdAt: createdAt.getTime(),
-      });
-    }
 
     if (assignedToMe && task.status !== "done" && isAfterDueDate(task.due_date, now)) {
       items.push({
@@ -1661,71 +1645,12 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
         createdAt: dueDay.getTime(),
       });
     }
-
-    if (reviewerForMe && task.status === "in-review") {
-      const reviewCycleKey = `${task.review_approvals?.length || 0}-${task.review_history?.length || 0}-${task.status || "todo"}`;
-      items.push({
-        id: `review-${task.id}-${normalizeName(fullName)}-${reviewCycleKey}`,
-        tone: C.purple,
-        title: "Review requested",
-        detail: `${task.title} is waiting on your review.`,
-        target: "tasks",
-        taskId: task.id,
-        createdAt: dueDay?.getTime() || createdAt?.getTime() || now.getTime(),
-      });
-    }
-
-    (task.comments || []).forEach((comment) => {
-      const commentDate = comment.created_at ? new Date(comment.created_at) : null;
-      if (!commentDate) return;
-      if (now.getTime() - commentDate.getTime() > 14 * 86400000) return;
-
-      if (assignedToMe && !samePerson(comment.author, fullName)) {
-        items.push({
-          id: `task-comment-${task.id}-${comment.id}-${normalizeName(fullName)}`,
-          tone: C.blue,
-          title: "New comment on your task",
-          detail: `${comment.author} commented on ${task.title}.`,
-          target: "tasks",
-          taskId: task.id,
-          commentId: comment.id,
-          createdAt: commentDate.getTime(),
-        });
-      }
-
-      if (!commentMentionsProfile(comment, profile)) return;
-      if (samePerson(comment.author, fullName)) return;
-      items.push({
-        id: `comment-mention-${task.id}-${comment.id}-${normalizeName(fullName)}`,
-        tone: C.blue,
-        title: "You were mentioned in a task",
-        detail: `${comment.author} mentioned you in ${task.title}.`,
-        target: "tasks",
-        taskId: task.id,
-        commentId: comment.id,
-        createdAt: commentDate.getTime(),
-      });
-    });
   });
 
   (purchaseOrders || []).forEach((order) => {
-    const createdAt = order.created_at ? new Date(order.created_at) : null;
     const neededBy = order.needed_by ? new Date(order.needed_by) : null;
     const reminderThreshold = neededBy ? new Date(neededBy.getTime() - (48 * 60 * 60 * 1000)) : null;
     const isAwaitingDecision = ["pending", "in-review"].includes(order.status || "pending");
-    const isRequester = order.requester_id === profile?.id || samePerson(order.requested_by, fullName);
-    const reviewRequestedForMe = canApprovePurchaseOrder(profile, order);
-
-    if (purchaseOrderReviewer && reviewRequestedForMe) {
-      items.push({
-        id: `purchase-order-new-${order.id}-${normalizeName(fullName)}`,
-        tone: C.blue,
-        title: "New purchase order request",
-        detail: `${order.requested_by || "A staff member"} submitted ${order.title}.`,
-        target: "budget",
-        createdAt: createdAt?.getTime() || now.getTime(),
-      });
-    }
 
     if (financeDirectorViewer && isAwaitingDecision && reminderThreshold && now.getTime() >= reminderThreshold.getTime()) {
       items.push({
@@ -1737,62 +1662,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
         createdAt: reminderThreshold.getTime(),
       });
     }
-
-    if (isRequester && order.status === "approved") {
-      items.push({
-        id: `purchase-order-approved-${order.id}`,
-        tone: C.success,
-        title: "Purchase order approved",
-        detail: `${order.title} was approved${order.decided_by ? ` by ${order.decided_by}` : ""}.`,
-        target: "budget",
-        createdAt: new Date(order.decided_at || order.created_at || now).getTime(),
-      });
-    }
-
-    if (isRequester && order.status === "denied") {
-      items.push({
-        id: `purchase-order-denied-${order.id}`,
-        tone: C.danger,
-        title: "Purchase order denied",
-        detail: `${order.title} was denied${order.decided_by ? ` by ${order.decided_by}` : ""}.`,
-        target: "budget",
-        createdAt: new Date(order.decided_at || order.created_at || now).getTime(),
-      });
-    }
-
-    (order.comments || []).forEach((comment) => {
-      if (!commentMentionsProfile(comment, profile)) return;
-      if (samePerson(comment.author, fullName)) return;
-      const commentDate = comment.created_at ? new Date(comment.created_at) : null;
-      if (!commentDate) return;
-      if (now.getTime() - commentDate.getTime() > 14 * 86400000) return;
-      items.push({
-        id: `purchase-order-comment-mention-${order.id}-${comment.id}-${normalizeName(fullName)}`,
-        tone: C.blue,
-        title: "You were mentioned in a purchase order",
-        detail: `${comment.author} mentioned you in ${order.title}.`,
-        target: "budget",
-        createdAt: commentDate.getTime(),
-      });
-    });
   });
-
-  if (isAdminViewer) {
-    (eventRequests || []).forEach((request) => {
-      if (request.status !== "new") return;
-      const createdAt = request.created_at ? new Date(request.created_at) : null;
-      if (!createdAt) return;
-      if (now.getTime() - createdAt.getTime() > 7 * 86400000) return;
-      items.push({
-        id: `event-request-${request.id}`,
-        tone: C.gold,
-        title: "New event request submitted",
-        detail: `${request.contact_name} submitted ${request.event_name}.`,
-        target: "events-board",
-        createdAt: createdAt.getTime(),
-      });
-    });
-  }
 
   (eventRequests || []).forEach((request) => {
     if (!isEventApplicant(profile, request)) return;
@@ -1808,46 +1678,6 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
       target: "events-board",
       createdAt: decisionAt.getTime(),
     });
-  });
-
-  (staffAvailabilityRequests || []).forEach((request) => {
-    const createdAt = request.created_at ? new Date(request.created_at) : null;
-    const decidedAt = request.decided_at ? new Date(request.decided_at) : null;
-    const isRequester = request.requester_id === profile?.id || samePerson(request.requested_by, fullName);
-    const reviewRequestedForMe = canApproveAvailabilityRequest(profile, request);
-
-    if (reviewRequestedForMe && createdAt) {
-      items.push({
-        id: `availability-review-${request.id}-${normalizeName(fullName)}`,
-        tone: C.gold,
-        title: "PTO request needs review",
-        detail: `${request.requested_by || "A staff member"} submitted a PTO request.`,
-        target: "operations-board",
-        createdAt: createdAt.getTime(),
-      });
-    }
-
-    if (isRequester && request.status === "approved" && decidedAt) {
-      items.push({
-        id: `availability-approved-${request.id}`,
-        tone: C.success,
-        title: "PTO request approved",
-        detail: `${request.request_type} was approved${request.decided_by ? ` by ${request.decided_by}` : ""}.`,
-        target: "operations-board",
-        createdAt: decidedAt.getTime(),
-      });
-    }
-
-    if (isRequester && request.status === "denied" && decidedAt) {
-      items.push({
-        id: `availability-denied-${request.id}`,
-        tone: C.danger,
-        title: "PTO request denied",
-        detail: `${request.request_type} was denied${request.decided_by ? ` by ${request.decided_by}` : ""}.`,
-        target: "operations-board",
-        createdAt: decidedAt.getTime(),
-      });
-    }
   });
 
   return items

@@ -73,6 +73,11 @@ const stripGoogleCalendarMetadata = (notes) => String(notes || "")
   .join("\n")
   .replace(/\n{3,}/g, "\n\n")
   .trim();
+const getChurchGoogleCalendarLabel = (church, index = 0, total = 1) => {
+  const churchName = String(church?.name || "Church").trim() || "Church";
+  const base = `${churchName}_google calendar`;
+  return total > 1 ? `${base} ${index + 1}` : base;
+};
 const startOfWeekMonday = (value) => {
   const parsed = parseAppDate(value) || new Date();
   const base = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
@@ -2293,7 +2298,16 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
       </div>
       <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1}}>
         {nav.map(({id,label,I: iconComponent})=>(
-          <div key={id} className={`nav-item${active===id?" active":""}`} onClick={()=>setActive(id)} title={collapsed?label:""} style={{justifyContent:collapsed?"center":"flex-start"}}>
+          <div
+            key={id}
+            className={`nav-item${active===id?" active":""}`}
+            onClick={() => {
+              if (id === "budget") window.dispatchEvent(new CustomEvent("shepherd:return-finance-home"));
+              setActive(id);
+            }}
+            title={collapsed?label:""}
+            style={{justifyContent:collapsed?"center":"flex-start"}}
+          >
             <div style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
               {iconComponent()}
               {id === "dashboard" && unreadCount > 0 && (
@@ -2380,11 +2394,8 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   const officialGoogleCalendarIds = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
     ? church.google_calendar_ids
     : (church?.google_calendar_id ? [church.google_calendar_id] : []);
-  const officialGoogleCalendarTitles = Array.isArray(church?.google_calendar_titles) && church.google_calendar_titles.length
-    ? church.google_calendar_titles
-    : (church?.google_calendar_title ? [church.google_calendar_title] : []);
   const officialGoogleCalendarTitleMap = Object.fromEntries(
-    officialGoogleCalendarIds.map((id, index) => [id, officialGoogleCalendarTitles[index] || "Imported Calendar"])
+    officialGoogleCalendarIds.map((id, index) => [id, getChurchGoogleCalendarLabel(church, index, officialGoogleCalendarIds.length)])
   );
   const churchId = church?.id || profile?.church_id || null;
   const canManageSettings = canManageCalendarSettings(profile);
@@ -2680,9 +2691,8 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
           timeMin: startWindow,
           timeMax: endWindow,
         });
-        const sourceTitle = googleCalendars.find((calendar) => calendar.id === calendarId)?.title
-          || officialGoogleCalendarTitleMap[calendarId]
-          || "Imported Calendar";
+        const sourceTitle = officialGoogleCalendarTitleMap[calendarId]
+          || getChurchGoogleCalendarLabel(church, officialGoogleCalendarIds.indexOf(calendarId), officialGoogleCalendarIds.length);
         const calendarImports = (data?.items || [])
           .map((entry) => {
             const eventDate = getGoogleEventDate(entry.start?.dateTime || entry.start?.date);
@@ -2753,11 +2763,12 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
     setGoogleCalendarActionMessage("");
     try {
       const selectedCalendars = googleCalendars.filter((entry) => selectedGoogleCalendarIds.includes(entry.id));
+      const selectedCalendarTitles = selectedGoogleCalendarIds.map((id, index) => getChurchGoogleCalendarLabel(church, index, selectedGoogleCalendarIds.length));
       const payload = {
         google_calendar_id: selectedGoogleCalendarIds[0] || null,
-        google_calendar_title: selectedCalendars[0]?.title || officialGoogleCalendarTitles[0] || "Church Calendar",
+        google_calendar_title: selectedCalendarTitles[0] || null,
         google_calendar_ids: selectedGoogleCalendarIds,
-        google_calendar_titles: selectedCalendars.map((entry) => entry.title),
+        google_calendar_titles: selectedCalendarTitles,
       };
       const { data, error } = await supabase.from("churches").update(payload).eq("id", church.id).select().single();
       if (error) throw error;
@@ -2775,9 +2786,9 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
     if (!confirmDestructiveAction("Remove this imported Google calendar and clear its events from the shared calendar view?")) return;
     const nextIds = officialGoogleCalendarIds.filter((id) => id !== calendarId);
     const nextTitles = officialGoogleCalendarIds
-      .map((id, index) => ({ id, title: officialGoogleCalendarTitles[index] || "" }))
+      .map((id, index) => ({ id, title: getChurchGoogleCalendarLabel(church, index, officialGoogleCalendarIds.length) }))
       .filter((entry) => entry.id !== calendarId)
-      .map((entry) => entry.title);
+      .map((entry, index, entries) => getChurchGoogleCalendarLabel(church, index, entries.length));
     setGoogleCalendarSaving(true);
     setGoogleCalendarActionError("");
     setGoogleCalendarActionMessage("");
@@ -4012,7 +4023,7 @@ function TrashPage({ trashItems, clearTrash, restoreTrashItem }) {
 
 const FAQ_CATEGORY_ORDER = ["Dashboard", "Focus Bar", "Tasks", "Frameworks", "Event Planning", "Calendar", "Calendar Settings", "Google Calendar", "Operations", "Access", "Finances", "Trash", "Account"];
 const FAQ_ITEMS = [
-  { tag: "Dashboard", question: "What should I check first on the Dashboard?", answer: "Start with unread notifications, then check Church Lock Up and your Focus Bar. The Dashboard is meant to show what needs your attention before you jump into a board." },
+  { tag: "Dashboard", question: "What should I check first on the Dashboard?", answer: "Start with unread notifications, then check Church Lock Up and your Focus Bar. The Dashboard shows what needs attention before you jump into Tasks, Frameworks, Calendar, Operations, or Finances." },
   { tag: "Dashboard", question: "Why do some dashboard cards collapse?", answer: "Collapsible cards keep the Dashboard from becoming noisy. Open the sections you need that day and collapse the ones that are not immediately relevant." },
   { tag: "Dashboard", question: "What is Team Snapshot for?", answer: "Team Snapshot gives senior leadership a quick view of what staff are actively focused on and what else is on their plate. It is designed for clarity, not surveillance." },
   { tag: "Dashboard", question: "Why do I see Church Lock Up on my Dashboard?", answer: "Everyone benefits from knowing who is assigned to lock up for the current week. The Dashboard card makes that assignment visible without forcing staff into Operations." },
@@ -4025,7 +4036,7 @@ const FAQ_ITEMS = [
   { tag: "Focus Bar", question: "Why does a focus item show an event name?", answer: "If the task comes from event planning, Shepherd shows the event name as context. This keeps the task title readable while still showing what event it belongs to." },
 
   { tag: "Tasks", question: "What happens when a task becomes overdue?", answer: "A task is considered overdue after its due date has passed. Shepherd notifies the assignee and the Senior Pastor so the right people know the item needs attention." },
-  { tag: "Tasks", question: "Where should I change a task's completion status?", answer: "Use the completion status selector on the task card or task detail view. The status should reflect where the task actually is: to do, in progress, in review, or done." },
+  { tag: "Tasks", question: "Where should I change a task's completion status?", answer: "Use the completion status selector on the task card or task detail view, or drag a task between board columns. The dropdown remains available when dragging is not ideal." },
   { tag: "Tasks", question: "When should I use comments on a task?", answer: "Use comments when a decision, update, question, or approval context should stay attached to the work. That keeps the conversation from getting lost in text messages." },
   { tag: "Tasks", question: "Why are some tasks connected to review?", answer: "Some tasks require approval before they are considered complete. Shepherd keeps the task visible through the review workflow so the assignee and reviewer know what is still pending." },
   { tag: "Tasks", question: "Can I delete a task by accident?", answer: "Delete actions use the trash flow where possible, so deleted items can be restored from Trash. That gives the church a safety net for accidental removals." },
@@ -4042,11 +4053,11 @@ const FAQ_ITEMS = [
   { tag: "Event Planning", question: "Why should timeline nodes be connected to tasks?", answer: "Tasks give specific people ownership and due dates. Timeline nodes give the event plan structure. Connecting them lets the plan and task board work together." },
   { tag: "Event Planning", question: "Who can see an event plan?", answer: "Shared event plans are visible to the appropriate church staff so planning does not get trapped with one person. Access still depends on the church's roles and permissions." },
 
-  { tag: "Calendar", question: "Where do calendar items come from?", answer: "The Calendar can show imported Google calendar items, My Tasks, approved event requests, direct church calendar entries, and approved staff availability." },
-  { tag: "Calendar", question: "How do I move around the Calendar?", answer: "Use the month and year controls at the top of the Calendar card to jump to the month you want to review. The calendar keeps the shared church view focused on this year and next year." },
-  { tag: "Calendar", question: "Can I schedule months ahead?", answer: "Yes. The calendar can be navigated ahead within the allowed year range, and events or tasks with future dates can appear when that week is selected." },
-  { tag: "Calendar", question: "Can I look back at past calendar weeks?", answer: "Yes. You can move backward to review past weeks within the allowed calendar range. Older imported data depends on what has been brought into Shepherd." },
-  { tag: "Calendar", question: "Why do filters only show Google calendars and My Tasks?", answer: "The filters were simplified so staff can choose between the imported church calendars and their personal task layer without fighting too many overlapping filter buttons." },
+  { tag: "Calendar", question: "Where do calendar items come from?", answer: "The Calendar currently shows shared church calendar events, imported Google calendar items, and your personal task due dates when My Tasks is turned on." },
+  { tag: "Calendar", question: "How do I move around the Calendar?", answer: "Use the month and year controls at the top of the Calendar card. Shepherd supports the current year and next year so the calendar stays useful without loading unnecessary history." },
+  { tag: "Calendar", question: "Can I see a full month layout?", answer: "Yes. The Calendar includes a full monthly view and a list view so staff can choose between a visual calendar grid and a cleaner agenda-style view." },
+  { tag: "Calendar", question: "Can I click calendar items?", answer: "Yes. Calendar items can be opened to review details, and editable Shepherd-created items can be updated from the calendar." },
+  { tag: "Calendar", question: "Why do filters only show Google calendars and My Tasks?", answer: "The filters stay intentionally simple: imported church Google calendars and My Tasks. That keeps the calendar usable without stacking too many overlapping filter buttons." },
 
   { tag: "Calendar Settings", question: "Who can manage Calendar Settings?", answer: "Calendar Settings are managed by a church admin from Account > Calendar Settings. This keeps the shared church calendar connection controlled and consistent." },
   { tag: "Calendar Settings", question: "Where do I connect Google?", answer: "Go to Account, open Calendar Settings, and use Connect Google. Once connected, the admin can select which calendars Shepherd should import." },
@@ -4054,11 +4065,11 @@ const FAQ_ITEMS = [
   { tag: "Calendar Settings", question: "How do I remove an imported calendar?", answer: "Use Calendar Settings to remove the imported calendar. Removing it should also clear that calendar's imported items from the shared Shepherd calendar view." },
   { tag: "Calendar Settings", question: "Why are settings under Account?", answer: "Calendar connection is an account-level church setting, so it lives beside other protected account controls instead of crowding the daily Calendar page." },
 
-  { tag: "Google Calendar", question: "If Google Calendar changes, does Shepherd update automatically?", answer: "Shepherd refreshes imported calendars when an authorized admin refreshes them. This controlled import approach helps avoid accidental edits and duplicate records." },
+  { tag: "Google Calendar", question: "If Google Calendar changes, does Shepherd update automatically?", answer: "Shepherd refreshes imported calendars when an authorized admin uses Refresh Shared Calendars. This is a controlled import, not a constant background sync." },
   { tag: "Google Calendar", question: "Why is Google Calendar not two-way right now?", answer: "One-way import is safer for this stage. It lets Shepherd read the church calendar without risking unexpected changes back into Google." },
   { tag: "Google Calendar", question: "Why did Shepherd ask to reconnect Google?", answer: "Google access uses tokens. If the live token is missing or expired, an admin may need to reconnect so Shepherd can refresh the shared calendar again." },
   { tag: "Google Calendar", question: "Can we import multiple Google calendars?", answer: "Yes. The admin can select multiple official Google calendars so staff can filter and view the calendars the church wants to share." },
-  { tag: "Google Calendar", question: "Why did a calendar name look wrong?", answer: "Imported events are tied to Google calendar source IDs. If labels look mismatched, the imported calendar list may need to be refreshed or the old imported records cleared and reimported." },
+  { tag: "Google Calendar", question: "How are imported calendars named?", answer: "Imported Google calendars display under a Shepherd-friendly church label, such as Reach Church_google calendar, instead of exposing the raw Google calendar title everywhere." },
 
   { tag: "Operations", question: "Which staff availability items need approval?", answer: "PTO requests go through review. Out Of Office and Sick Day entries are logged directly because they are more immediate status updates." },
   { tag: "Operations", question: "Who approves PTO requests?", answer: "PTO requests are intended to be reviewed by church leadership, including the Senior Pastor and Church Administrator, before they appear as approved time off." },
@@ -4072,11 +4083,11 @@ const FAQ_ITEMS = [
   { tag: "Access", question: "Why does local access sometimes look different from live?", answer: "Local and live can differ if code, database rows, or browser sessions are not in the same state. Refreshing, logging out and back in, or checking the linked staff account often resolves confusion." },
   { tag: "Access", question: "Why does a real account matter more than a staff draft?", answer: "Permissions work best when the staff database is linked to the person's actual Shepherd login. Draft staff records can display names but may not carry full account access." },
 
-  { tag: "Finances", question: "Why can some staff see Finances and others cannot?", answer: "Finances are tied to ministry budgets and finance access. Staff should see budget areas assigned to their actual Shepherd account, while broader finance roles can see more." },
+  { tag: "Finances", question: "Why can some staff see Finances and others cannot?", answer: "Finances are tied to ministry budget assignments and finance access. Staff see budgets assigned to their actual Shepherd account, while the Finance Director can see all ministry budgets." },
   { tag: "Finances", question: "What does Approved Amount For This Year mean?", answer: "It is the amount approved by the board or church leadership for that ministry's yearly budget. Shepherd uses it as the starting reference for budget tracking." },
-  { tag: "Finances", question: "What is a purchase order for?", answer: "Purchase orders help staff request and track spending before money is committed. They create a review trail around planned expenses." },
+  { tag: "Finances", question: "What is a purchase order for?", answer: "Purchase orders help staff request and track spending before money is committed. New requests are tied to a ministry and can be reviewed by the appropriate finance or senior leadership reviewers." },
   { tag: "Finances", question: "Why should budgets be assigned to staff?", answer: "Assigning a ministry budget connects the right staff member to the right financial view. That keeps finances useful without making every budget visible to everyone." },
-  { tag: "Finances", question: "Why are budget cards simplified?", answer: "The cards focus on the essentials: ministry, approved amount, used amount, and remaining balance. Extra tags were removed to reduce visual noise." },
+  { tag: "Finances", question: "How do ministry budget line items work?", answer: "Inside Ministry Budgets, each line item shows its initial amount and remaining amount. Transactions sit under the budget and are ordered by the actual transaction date." },
 
   { tag: "Trash", question: "What does Trash restore?", answer: "Trash holds supported deleted Shepherd items so accidental deletes are less scary. Items can be restored instead of being gone immediately." },
   { tag: "Trash", question: "Why use a trash icon instead of a big delete button?", answer: "The trash icon keeps destructive actions quieter and more consistent across the app while still making deletion available where appropriate." },
@@ -9668,6 +9679,12 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const canManageBudgetLinesForMinistry = (ministry) => financeView || visibleMinistries.includes(ministry);
 
   useEffect(() => {
+    const returnToFinanceHub = () => setFinanceSection("hub");
+    window.addEventListener("shepherd:return-finance-home", returnToFinanceHub);
+    return () => window.removeEventListener("shepherd:return-finance-home", returnToFinanceHub);
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(getPurchaseOrderDiscussionStateStorageKey(profile?.id), JSON.stringify(purchaseOrderDiscussionOpen));
   }, [profile?.id, purchaseOrderDiscussionOpen]);
@@ -10759,7 +10776,6 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                     <div key={`${summary.ministry}-${item.label}`} style={{display:"grid",gap:8,fontSize:12,color:C.muted,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",background:C.card}}>
                       <div style={{display:"flex",justifyContent:"space-between",gap:12}}>
                         <span style={{color:C.text,fontWeight:700}}>{item.label}</span>
-                        <span style={{color:lineTotals.leftover >= 0 ? C.success : C.danger,fontWeight:700}}>{fmt(lineTotals.leftover)}</span>
                       </div>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                         <div>
@@ -10767,7 +10783,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                           <div style={{color:C.text,marginTop:2}}>{fmt(lineTotals.initial)}</div>
                         </div>
                         <div>
-                          <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".08em"}}>Leftover</span>
+                          <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".08em"}}>Remaining</span>
                           <div style={{color:lineTotals.leftover >= 0 ? C.success : C.danger,marginTop:2}}>{fmt(lineTotals.leftover)}</div>
                         </div>
                       </div>
@@ -11121,11 +11137,8 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const officialGoogleCalendarIds = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
     ? church.google_calendar_ids
     : (church?.google_calendar_id ? [church.google_calendar_id] : []);
-  const officialGoogleCalendarTitles = Array.isArray(church?.google_calendar_titles) && church.google_calendar_titles.length
-    ? church.google_calendar_titles
-    : (church?.google_calendar_title ? [church.google_calendar_title] : []);
   const officialGoogleCalendarTitleMap = Object.fromEntries(
-    officialGoogleCalendarIds.map((id, index) => [id, officialGoogleCalendarTitles[index] || "Imported Calendar"])
+    officialGoogleCalendarIds.map((id, index) => [id, getChurchGoogleCalendarLabel(church, index, officialGoogleCalendarIds.length)])
   );
   const getGoogleCalendarIdFromNotes = (notes) => {
     const text = String(notes || "");

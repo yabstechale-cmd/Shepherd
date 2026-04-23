@@ -21,6 +21,23 @@ alter table public.churches add column if not exists google_calendar_id text;
 alter table public.churches add column if not exists google_calendar_title text;
 alter table public.churches add column if not exists google_calendar_ids text[] not null default '{}';
 alter table public.churches add column if not exists google_calendar_titles text[] not null default '{}';
+
+update public.churches
+set
+  google_calendar_title = case
+    when google_calendar_id is not null then name || '_google calendar'
+    else google_calendar_title
+  end,
+  google_calendar_titles = case
+    when cardinality(google_calendar_ids) > 0 then array(
+      select name || '_google calendar' || case when cardinality(google_calendar_ids) > 1 then ' ' || calendar_index::text else '' end
+      from generate_subscripts(google_calendar_ids, 1) as s(calendar_index)
+      order by calendar_index
+    )
+    else google_calendar_titles
+  end
+where google_calendar_id is not null
+  or cardinality(google_calendar_ids) > 0;
 alter table public.churches add column if not exists deletion_requested_at timestamptz;
 alter table public.churches add column if not exists deletion_requested_by uuid references auth.users(id) on delete set null;
 alter table public.churches add column if not exists deletion_requested_by_name text;

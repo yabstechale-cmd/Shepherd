@@ -20,6 +20,7 @@ const REQUIRED_FIELDS = [
 ];
 
 const EMAIL_TEMPLATE_VERSION = "shepherd-clean-dark-no-church-2026-04-23";
+const GUEST_CONFIRMATION_TEMPLATE_VERSION = "event-request-confirmation-2026-04-23";
 
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {
@@ -156,6 +157,44 @@ async function sendEventRequestNotifications(
   }));
 }
 
+async function sendRequesterConfirmationEmail(
+  church: { name?: string | null },
+  request: { event_name?: string | null; contact_name?: string | null; email?: string | null; public_access_token?: string | null },
+) {
+  const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
+  const fromEmail = Deno.env.get("SHEPHERD_EMAIL_FROM") || "";
+  if (!resendApiKey || !fromEmail || !request.email || !request.public_access_token) return false;
+
+  const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-s.com").replace(/\/+$/, "");
+  const requestUrl = `${appUrl}/event-request/${request.public_access_token}`;
+  const eventName = request.event_name || "your event request";
+  const requesterName = request.contact_name || "there";
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [request.email],
+      subject: `Shepherd: We received your event request`,
+      html: renderShepherdNotificationEmail({
+        title: "Event Request Received",
+        detail: `Hi ${requesterName}, we received your request for ${eventName}. The Administrator will review it and follow up within one week. Use the button below to check the status, update details while it is still new, answer follow-up questions, or comment on the request.`,
+        actionUrl: requestUrl,
+        actionLabel: "View My Request",
+        churchName: church.name || "Shepherd",
+        eyebrow: "Shepherd Event Request",
+        detailLabel: "Confirmation",
+        footerText: "You received this because you submitted an event request through Shepherd. Keep this email so you can return to your request later.",
+      }),
+    }),
+  });
+
+  return response.ok;
+}
+
 function buildEventRequestPayload(churchId: string, form: Record<string, unknown>, eventTiming: string, tablesNeeded: string) {
   const payload = {
     church_id: churchId,
@@ -269,7 +308,7 @@ Deno.serve(async (req) => {
     const { data: insertedRequest, error: insertError } = await adminClient
       .from("event_requests")
       .insert(payload)
-      .select("id, event_name, contact_name, public_access_token")
+      .select("id, event_name, contact_name, email, public_access_token")
       .single();
     if (insertError) throw insertError;
 
@@ -279,12 +318,15 @@ Deno.serve(async (req) => {
     });
 
     await sendEventRequestNotifications(adminClient, church, insertedRequest);
+    const requesterConfirmationEmailSent = await sendRequesterConfirmationEmail(church, insertedRequest);
 
     return jsonResponse(200, {
       submitted: true,
       churchName: church.name,
       publicAccessToken: insertedRequest?.public_access_token || null,
+      requesterConfirmationEmailSent,
       emailTemplateVersion: EMAIL_TEMPLATE_VERSION,
+      guestConfirmationTemplateVersion: GUEST_CONFIRMATION_TEMPLATE_VERSION,
     });
   } catch (error) {
     return jsonResponse(500, { error: error instanceof Error ? error.message : "We couldn't submit that request." });

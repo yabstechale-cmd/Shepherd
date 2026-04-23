@@ -8,80 +8,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const previewNotifications = [
-  {
-    title: "New Task Assigned",
-    detail: "Prepare Sunday volunteer briefing was assigned to you by Yabs.",
-    target: "/tasks",
-  },
-  {
-    title: "New Comment On A Task",
-    detail: "Shannan commented on Prepare Sunday volunteer briefing.",
-    target: "/tasks",
-  },
-  {
-    title: "You Were Mentioned In A Task",
-    detail: "Eric mentioned you in Update Easter follow-up plan.",
-    target: "/tasks",
-  },
-  {
-    title: "Review Requested",
-    detail: "Finalize camp parent packet is ready for your review.",
-    target: "/tasks",
-  },
-  {
-    title: "Task Due Tomorrow",
-    detail: "Confirm youth room setup needs attention soon.",
-    target: "/tasks",
-  },
-  {
-    title: "Task Overdue",
-    detail: "Submit volunteer background check list is overdue.",
-    target: "/tasks",
-  },
-  {
-    title: "Purchase Order Needs Review",
-    detail: "A staff member submitted Camp supplies for $450.",
-    target: "/finances",
-  },
-  {
-    title: "Purchase Order Approved",
-    detail: "Camp supplies was fully approved.",
-    target: "/finances",
-  },
-  {
-    title: "Purchase Order Denied",
-    detail: "New lobby signage was denied by Finance.",
-    target: "/finances",
-  },
-  {
-    title: "PTO Request Needs Review",
-    detail: "A staff member submitted a PTO request for May 12-May 16.",
-    target: "/operations",
-  },
-  {
-    title: "PTO Request Approved",
-    detail: "PTO Request was fully approved and added to the calendar.",
-    target: "/operations",
-  },
-  {
-    title: "PTO Request Denied",
-    detail: "PTO Request was denied by a reviewer.",
-    target: "/operations",
-  },
-  {
-    title: "Church Lock-Up Assigned",
-    detail: "You are assigned to lock up for 05/04-05/10.",
-    target: "/operations",
-  },
-  {
-    title: "New Event Request Submitted",
-    detail: "A requester submitted Youth Camp Info Meeting.",
-    target: "/events",
-  },
-];
-
 const EMAIL_TEMPLATE_VERSION = "shepherd-clean-dark-no-church-2026-04-23";
+const GUEST_CONFIRMATION_TEMPLATE_VERSION = "event-request-confirmation-2026-04-23";
 
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {
@@ -141,37 +69,38 @@ Deno.serve(async (req) => {
     }
 
     const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-s.com").replace(/\/+$/, "");
-    const sent = [];
-
-    for (const notification of previewNotifications) {
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: [recipientEmail],
-          subject: `Shepherd Preview: ${notification.title}`,
-          html: renderShepherdNotificationEmail({
-            title: notification.title,
-            detail: notification.detail,
-            actionUrl: `${appUrl}${notification.target}`,
-            churchName: church?.name || "Preview Church",
-            eyebrow: "Shepherd Email Preview",
-          }),
+    const guestConfirmationResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [recipientEmail],
+        subject: "Shepherd Preview: Event Request Confirmation",
+        html: renderShepherdNotificationEmail({
+          title: "Event Request Received",
+          detail: "Hi Yabs, we received your request for Youth Camp Info Meeting. The Administrator will review it and follow up within one week. Use the button below to check the status, update details while it is still new, answer follow-up questions, or comment on the request.",
+          actionUrl: `${appUrl}/event-request/preview-request-token`,
+          actionLabel: "View My Request",
+          churchName: church?.name || "Preview Church",
+          eyebrow: "Shepherd Event Request",
+          detailLabel: "Confirmation",
+          footerText: "You received this because you submitted an event request through Shepherd. Keep this email so you can return to your request later.",
         }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        return jsonResponse(502, { error: payload?.message || `Email provider rejected ${notification.title}.` });
-      }
-      sent.push(notification.title);
+      }),
+    });
+    const guestConfirmationPayload = await guestConfirmationResponse.json().catch(() => ({}));
+    if (!guestConfirmationResponse.ok) {
+      return jsonResponse(502, { error: guestConfirmationPayload?.message || "Email provider rejected the event request confirmation preview." });
     }
-
-    return jsonResponse(200, { sent, recipientEmail, emailTemplateVersion: EMAIL_TEMPLATE_VERSION });
+    return jsonResponse(200, {
+      sent: ["Event Request Confirmation"],
+      recipientEmail,
+      emailTemplateVersion: EMAIL_TEMPLATE_VERSION,
+      guestConfirmationTemplateVersion: GUEST_CONFIRMATION_TEMPLATE_VERSION,
+    });
   } catch (error) {
     return jsonResponse(500, { error: error instanceof Error ? error.message : "Preview emails failed." });
   }

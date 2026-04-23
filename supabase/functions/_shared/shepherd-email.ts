@@ -15,6 +15,8 @@ type ShepherdNotificationEmailOptions = {
   churchName?: string;
   eyebrow?: string;
   previewText?: string;
+  detailLabel?: string;
+  footerText?: string;
 };
 
 export function renderShepherdNotificationEmail({
@@ -25,6 +27,8 @@ export function renderShepherdNotificationEmail({
   churchName: _churchName = "Shepherd",
   eyebrow = "Shepherd Notification",
   previewText,
+  detailLabel = "Update",
+  footerText = "You received this because something in Shepherd needs your attention. If this does not look right, open Shepherd and check your current assignments and notifications.",
 }: ShepherdNotificationEmailOptions) {
   const safeTitle = escapeHtml(title);
   const safeDetail = escapeHtml(detail);
@@ -32,6 +36,8 @@ export function renderShepherdNotificationEmail({
   const safePreview = escapeHtml(previewText || `${title} - ${detail}`);
   const safeActionLabel = escapeHtml(actionLabel);
   const safeActionUrl = escapeHtml(actionUrl);
+  const safeDetailLabel = escapeHtml(detailLabel || "Update");
+  const safeFooterText = escapeHtml(footerText);
 
   return `<!doctype html>
 <html lang="en">
@@ -87,7 +93,7 @@ export function renderShepherdNotificationEmail({
                         <tr>
                           <td style="padding:22px 22px 20px 22px;">
                             <div style="font-family:'DM Sans',Arial,Helvetica,sans-serif;font-size:11px;line-height:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#c9a84c;margin-bottom:10px;">
-                              Update
+                              ${safeDetailLabel}
                             </div>
                             <div style="font-family:'DM Sans',Arial,Helvetica,sans-serif;font-size:17px;line-height:26px;font-weight:400;color:#e6edf7;">
                               ${safeDetail}
@@ -108,7 +114,7 @@ export function renderShepherdNotificationEmail({
                     <td style="padding:8px 28px 30px 28px;background:#1c2333;">
                       <div style="height:1px;line-height:1px;background:#30384c;margin:0 0 18px 0;">&nbsp;</div>
                       <p style="margin:0;color:#9ca8bc;font-family:'DM Sans',Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;">
-                        You received this because something in Shepherd needs your attention. If this does not look right, open Shepherd and check your current assignments and notifications.
+                        ${safeFooterText}
                       </p>
                     </td>
                   </tr>

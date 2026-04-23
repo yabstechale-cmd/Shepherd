@@ -1339,6 +1339,18 @@ const commentMentionsProfile = (comment, profile) => {
   });
 };
 const canManageComment = (comment, profile) => samePerson(comment?.author, profile?.full_name);
+const getCommentParticipantNames = (comments = [], currentAuthor = "") => {
+  const seen = new Set();
+  return (comments || [])
+    .map((comment) => String(comment?.author || "").trim())
+    .filter((name) => {
+      if (!name || samePerson(name, currentAuthor)) return false;
+      const key = normalizeName(name);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
 const getStaffMentionToken = (name) => String(name || "").replace(/\s+/g, "").trim();
 const getMentionContext = (value, cursor) => {
   const beforeCursor = value.slice(0, cursor);
@@ -8830,9 +8842,11 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const notifyTaskComment = async (task, comment) => {
     if (!task?.id || !comment?.id || isPreview) return;
     const mentionedNames = getMentionedStaffNames(comment.body, previewUsers);
+    const threadParticipantNames = getCommentParticipantNames(task.comments || [], comment.author || profile?.full_name);
     const generalNames = [
       task.assignee,
       ...(task.reviewers || []),
+      ...threadParticipantNames,
     ].filter(Boolean);
     await createNotificationsForNames({
       users: previewUsers,
@@ -9483,6 +9497,9 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>File Or Resource Link</label>
                 <input className="input-field" placeholder="Paste a Google Drive, Dropbox, Canva, or document link" value={form.share_link || ""} onChange={e=>setForm({...form,share_link:e.target.value})}/>
+                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                  Need to attach something? Paste the file or folder link here instead of uploading it.
+                </div>
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -9796,7 +9813,9 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                     </div>
                   )}
                 </div>
-                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstLast` to notify someone in this task.</div>
+                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                  Need to attach something? Paste a Google Drive, Dropbox, Canva, or document link into the comment. Use `@FirstLast` to notify someone directly.
+                </div>
                 {taskCommentError && <div style={{fontSize:12,color:C.danger,textAlign:"left"}}>{taskCommentError}</div>}
                 <button className="btn-gold" onClick={addComment} style={{alignSelf:"flex-end"}}>Add Comment</button>
               </div>
@@ -10568,9 +10587,11 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     }
     setPurchaseOrders((current) => (current || []).map((entry) => entry.id === order.id ? normalizePurchaseOrder({ ...entry, ...changes }) : entry));
     const mentionedNames = getMentionedStaffNames(commentEntry.body, previewUsers);
+    const threadParticipantNames = getCommentParticipantNames(order.comments || [], commentEntry.author);
     const discussionNames = [
       order.requested_by,
       ...(order.required_approvers || []),
+      ...threadParticipantNames,
       ...mentionedNames,
     ].filter((name) => !samePerson(name, profile?.full_name));
     await createNotificationsForNames({
@@ -11368,7 +11389,9 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                       </div>
                     )}
                   </div>
-                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>Use `@FirstLast` to notify someone in this purchase order.</div>
+                  <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                    Need to attach something? Paste a Google Drive, Dropbox, Canva, or document link into the comment. Use `@FirstLast` to notify someone directly.
+                  </div>
                   <div style={{display:"flex",justifyContent:"flex-end"}}>
                     <button className="btn-outline" onClick={() => addPurchaseOrderComment(order)} style={{padding:"7px 10px"}}>Add Comment</button>
                   </div>

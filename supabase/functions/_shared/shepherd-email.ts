@@ -36,7 +36,7 @@ export function renderShepherdNotificationEmail({
 
   return `
     <!doctype html>
-    <html style="margin:0!important;padding:0!important;background:#0f131d!important;background-color:#0f131d!important;color:#ffffff!important;">
+    <html style="margin:0!important;padding:0!important;background:#0f131d!important;background-color:#0f131d!important;color:#10131b!important;">
 	      <head>
 	        <meta charset="utf-8">
 	        <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -65,7 +65,7 @@ export function renderShepherdNotificationEmail({
 	            min-width: 100% !important;
 	            background-color: #0f131d !important;
 	            background: #0f131d !important;
-	            color: #ffffff !important;
+	            color: #10131b !important;
 	            -webkit-text-size-adjust: 100% !important;
 	          }
 	          a {
@@ -94,20 +94,20 @@ export function renderShepherdNotificationEmail({
 	          .shepherd-text,
 	          [data-ogsc] .shepherd-text,
 	          [data-ogsb] .shepherd-text {
-	            color: #ffffff !important;
-	            -webkit-text-fill-color: #ffffff !important;
+	            color: #10131b !important;
+	            -webkit-text-fill-color: #10131b !important;
 	          }
 	          .shepherd-muted,
 	          [data-ogsc] .shepherd-muted,
 	          [data-ogsb] .shepherd-muted {
-	            color: #f3ead6 !important;
-	            -webkit-text-fill-color: #f3ead6 !important;
+	            color: #4f5868 !important;
+	            -webkit-text-fill-color: #4f5868 !important;
 	          }
 	          .shepherd-title,
 	          [data-ogsc] .shepherd-title,
 	          [data-ogsb] .shepherd-title {
-	            color: #ffffff !important;
-	            -webkit-text-fill-color: #ffffff !important;
+	            color: #10131b !important;
+	            -webkit-text-fill-color: #10131b !important;
 	          }
 	          .shepherd-gold,
 	          [data-ogsc] .shepherd-gold,
@@ -122,11 +122,11 @@ export function renderShepherdNotificationEmail({
 	          }
 	        </style>
 	      </head>
-	      <body bgcolor="#0f131d" style="margin:0!important;padding:0!important;background:#0f131d!important;background-color:#0f131d!important;color:#ffffff!important;">
+	      <body bgcolor="#0f131d" style="margin:0!important;padding:0!important;background:#0f131d!important;background-color:#0f131d!important;color:#10131b!important;">
 	        <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
 	          ${safePreview}
 	        </div>
-	        <table class="shepherd-page" role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#0f131d" style="background:#0f131d!important;background-color:#0f131d!important;margin:0;padding:32px 14px;font-family:Arial,Helvetica,sans-serif;color:#ffffff!important;">
+	        <table class="shepherd-page" role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#0f131d" style="background:#0f131d!important;background-color:#0f131d!important;margin:0;padding:32px 14px;font-family:Arial,Helvetica,sans-serif;color:#10131b!important;">
 	          <tr>
 	            <td align="center" bgcolor="#0f131d" style="background:#0f131d!important;background-color:#0f131d!important;">
 	              <table class="shepherd-card" role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#171d2b" style="max-width:620px;background:#171d2b!important;background-color:#171d2b!important;border:1px solid #2a3448;border-radius:24px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,.35);">
@@ -141,10 +141,10 @@ export function renderShepherdNotificationEmail({
 	                </tr>
 	                <tr>
 	                  <td bgcolor="#171d2b" style="padding:28px 30px 14px;background:#171d2b!important;background-color:#171d2b!important;">
-	                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#111723" style="background:#111723!important;background-color:#111723!important;border:1px solid #c9a84c;border-radius:18px;">
+	                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#f8efe1" style="background:#f8efe1!important;background-color:#f8efe1!important;border:1px solid #d9c98f;border-radius:18px;">
 	                      <tr>
-	                        <td bgcolor="#111723" style="padding:20px 22px;background:#111723!important;background-color:#111723!important;">
-	                          <p class="shepherd-text" style="margin:0;color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;text-shadow:0 0 0 #ffffff!important;font-size:16px;line-height:1.65;font-weight:800;">
+	                        <td bgcolor="#f8efe1" style="padding:20px 22px;background:#f8efe1!important;background-color:#f8efe1!important;">
+	                          <p class="shepherd-text" style="margin:0;color:#10131b!important;-webkit-text-fill-color:#10131b!important;font-size:16px;line-height:1.65;font-weight:700;">
 	                            ${safeDetail}
 	                          </p>
 	                        </td>
@@ -154,11 +154,11 @@ export function renderShepherdNotificationEmail({
 	                </tr>
 	                <tr>
 	                  <td bgcolor="#171d2b" style="padding:0 30px 10px;background:#171d2b!important;background-color:#171d2b!important;">
-	                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#111723" style="background:#111723!important;background-color:#111723!important;border:1px solid #c9a84c;border-radius:16px;">
+	                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#efe2bd" style="background:#efe2bd!important;background-color:#efe2bd!important;border:1px solid #c9a84c;border-radius:16px;">
 	                      <tr>
-	                        <td bgcolor="#111723" style="padding:14px 16px;background:#111723!important;background-color:#111723!important;">
-	                          <div class="shepherd-muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:#c9a84c!important;-webkit-text-fill-color:#c9a84c!important;text-shadow:0 0 0 #c9a84c!important;font-weight:800;margin-bottom:4px;">Church</div>
-	                          <div class="shepherd-title" style="font-size:14px;color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;text-shadow:0 0 0 #ffffff!important;font-weight:800;">${safeChurch}</div>
+	                        <td bgcolor="#efe2bd" style="padding:14px 16px;background:#efe2bd!important;background-color:#efe2bd!important;">
+	                          <div class="shepherd-muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:#5d4b1f!important;-webkit-text-fill-color:#5d4b1f!important;font-weight:800;margin-bottom:4px;">Church</div>
+	                          <div class="shepherd-title" style="font-size:14px;color:#10131b!important;-webkit-text-fill-color:#10131b!important;font-weight:800;">${safeChurch}</div>
 	                        </td>
 	                      </tr>
 	                    </table>

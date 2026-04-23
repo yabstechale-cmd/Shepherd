@@ -4039,10 +4039,10 @@ const FAQ_ITEMS = [
   { tag: "Tasks", question: "Where should I change a task's completion status?", answer: "Use the completion status selector on the task card or task detail view, or drag a task between board columns. The dropdown remains available when dragging is not ideal." },
   { tag: "Tasks", question: "When should I use comments on a task?", answer: "Use comments when a decision, update, question, or approval context should stay attached to the work. That keeps the conversation from getting lost in text messages." },
   { tag: "Tasks", question: "Why are some tasks connected to review?", answer: "Some tasks require approval before they are considered complete. Shepherd keeps the task visible through the review workflow so the assignee and reviewer know what is still pending." },
-  { tag: "Tasks", question: "Can I delete a task by accident?", answer: "Delete actions use the trash flow where possible, so deleted items can be restored from Trash. That gives the church a safety net for accidental removals." },
+  { tag: "Tasks", question: "Can I attach a file or document to a task?", answer: "For now, use a link in the task notes or comments instead of uploading a file. Paste the Google Drive, Dropbox, Canva, document, or folder link so the item stays connected without Shepherd storing the file itself." },
 
   { tag: "Frameworks", question: "What is Frameworks for?", answer: "Frameworks is the entry point for Shepherd's workflow boards. Use it when you need to decide whether the work belongs in events, operations, content, or another board." },
-  { tag: "Frameworks", question: "Is Frameworks the same as Workspaces?", answer: "Yes. The app was renamed from Workspaces to Frameworks so the purpose is clearer for staff." },
+  { tag: "Frameworks", question: "Where should I start if I do not know which board to use?", answer: "Start in Frameworks. It gives you the major workflow cards first, then you can choose the board that matches the work: events, operations, content, or another ministry process." },
   { tag: "Frameworks", question: "Which card should I open for a new event?", answer: "Use Event Requests if the event still needs approval. Use Event Planning when you are building the plan, timeline, checklist, and tasks for an event that needs execution." },
   { tag: "Frameworks", question: "Why are boards separated into cards?", answer: "Cards keep each workflow focused. Staff can enter the exact workflow they need instead of scrolling through unrelated tools." },
   { tag: "Frameworks", question: "Can more cards be added later?", answer: "Yes. Frameworks is built to grow as the church adds workflows like content, facilities, care, or additional operations processes." },
@@ -4077,11 +4077,11 @@ const FAQ_ITEMS = [
   { tag: "Operations", question: "How does Church Lock Up work?", answer: "Operations includes a weekly lock-up assignment from Monday through Sunday. Authorized users can assign, swap, or edit who is responsible that week." },
   { tag: "Operations", question: "Why is lock-up shown on everyone's Dashboard?", answer: "Lock-up affects the whole team after services, so Shepherd surfaces the current assignment where staff will actually see it." },
 
-  { tag: "Access", question: "Why can I see some pages but not edit everything?", answer: "Shepherd uses role and assignment-based access. Some pages are visible for clarity, while protected actions depend on role, ministry assignment, budget assignment, or account manager access." },
+  { tag: "Access", question: "Why can I see something but not change it?", answer: "Shepherd sometimes lets staff see a record for awareness while limiting who can edit it. If a field is locked, it usually means that action belongs to an admin, Finance Director, account manager, assignee, reviewer, or ministry lead." },
   { tag: "Access", question: "What does the lock icon mean?", answer: "A lock means the area exists, but your current account does not have access to open or manage it. This helps staff know the feature is there without exposing controls." },
-  { tag: "Access", question: "Who can manage staff access?", answer: "Church administrators, senior leaders, or Shepherd Account Managers can manage staff access depending on the specific setting." },
-  { tag: "Access", question: "Why does local access sometimes look different from live?", answer: "Local and live can differ if code, database rows, or browser sessions are not in the same state. Refreshing, logging out and back in, or checking the linked staff account often resolves confusion." },
-  { tag: "Access", question: "Why does a real account matter more than a staff draft?", answer: "Permissions work best when the staff database is linked to the person's actual Shepherd login. Draft staff records can display names but may not carry full account access." },
+  { tag: "Access", question: "Who should I ask if I need access to something?", answer: "Ask your church administrator or Shepherd Account Manager first. For ministry budgets or purchase orders, ask the Finance Director because those areas depend on budget assignments." },
+  { tag: "Access", question: "Why can I only assign some work to myself?", answer: "Standard staff can create their own tasks so day-to-day work stays simple. Leadership and admin-level users have broader assignment controls when they need to delegate work across the team." },
+  { tag: "Access", question: "What should happen if I try to edit a locked field?", answer: "Shepherd should make the restriction clear instead of quietly failing. Locked fields are being labeled with permission notices so staff know whether they need an admin, Finance Director, or reviewer to make the change." },
 
   { tag: "Finances", question: "Why can some staff see Finances and others cannot?", answer: "Finances are tied to ministry budget assignments and finance access. Staff see budgets assigned to their actual Shepherd account, while the Finance Director can see all ministry budgets." },
   { tag: "Finances", question: "What does Approved Amount For This Year mean?", answer: "It is the amount approved by the board or church leadership for that ministry's yearly budget. Shepherd uses it as the starting reference for budget tracking." },
@@ -4090,7 +4090,7 @@ const FAQ_ITEMS = [
   { tag: "Finances", question: "How do ministry budget line items work?", answer: "Inside Ministry Budgets, each line item shows its initial amount and remaining amount. Transactions sit under the budget and are ordered by the actual transaction date." },
 
   { tag: "Trash", question: "What does Trash restore?", answer: "Trash holds supported deleted Shepherd items so accidental deletes are less scary. Items can be restored instead of being gone immediately." },
-  { tag: "Trash", question: "Why use a trash icon instead of a big delete button?", answer: "The trash icon keeps destructive actions quieter and more consistent across the app while still making deletion available where appropriate." },
+  { tag: "Trash", question: "Will Shepherd ask before deleting something?", answer: "Yes. Destructive actions should ask for confirmation so an accidental click does not immediately remove important work." },
   { tag: "Trash", question: "Can everything be restored from Trash?", answer: "Trash supports the main Shepherd item types that have been wired into the restore flow. Some system records or external Google imports may need a refresh or reimport instead." },
   { tag: "Trash", question: "Who should clear Trash?", answer: "Only someone confident the deleted items are no longer needed should clear Trash. Restoring first is safer when there is any doubt." },
   { tag: "Trash", question: "Will deleting an imported calendar clear its events?", answer: "Removing an imported Google calendar should clear that calendar's imported events from the shared view. That is separate from deleting normal Shepherd tasks or records." },
@@ -9242,6 +9242,11 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                 <select className="input-field" value={canAssignToAnyone ? form.assignee : (profile?.full_name || "")} onChange={e=>setForm({...form,assignee:e.target.value})} style={{background:C.surface}} disabled={!canAssignToAnyone}>
                   {allowedAssignees.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
+                {!canAssignToAnyone && (
+                  <div style={{fontSize:11,color:C.danger,lineHeight:1.5,textAlign:"left"}}>
+                    You do not have authorization to assign this task to someone else.
+                  </div>
+                )}
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-start",textAlign:"left"}}>
                 <label style={{fontSize:12,color:C.muted,textAlign:"left",width:"100%"}}>Due Date</label>
@@ -10599,10 +10604,20 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Ministry</label>
               <input className="input-field" value={budgetForm.ministry} onChange={(e)=>setBudgetForm({...budgetForm,ministry:e.target.value})} placeholder="Ministry name" readOnly={!financeView} />
+              {!financeView && (
+                <div style={{fontSize:11,color:C.danger,lineHeight:1.5,textAlign:"left"}}>
+                  You do not have authorization to rename this ministry budget.
+                </div>
+              )}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Approved Amount For This Year</label>
               <input className="input-field" type="number" inputMode="decimal" placeholder="$0.00" value={budgetForm.budget} onChange={(e)=>setBudgetForm({...budgetForm,budget:e.target.value})} readOnly={!financeView}/>
+              {!financeView && (
+                <div style={{fontSize:11,color:C.danger,lineHeight:1.5,textAlign:"left"}}>
+                  You do not have authorization to edit the approved budget amount.
+                </div>
+              )}
             </div>
             {financeView && (
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -11416,6 +11431,11 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
               <option value="churchEvents">Church Events</option>
               <option value="myTasks">My Tasks</option>
             </select>
+            {!!editingCalendarEventId && (
+              <div style={{fontSize:11,color:C.danger,lineHeight:1.5,textAlign:"left"}}>
+                You do not have authorization to change which calendar this item belongs to after it is created.
+              </div>
+            )}
           </div>
           <div style={{display:"grid",gap:6}}>
             <label style={{fontSize:12,color:C.muted}}>{calendarItemForm.calendar_type === "myTasks" ? "Task Name" : "Event Name"}</label>

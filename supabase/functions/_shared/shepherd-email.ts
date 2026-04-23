@@ -132,9 +132,9 @@ export function renderShepherdNotificationEmail({
 	              <table class="shepherd-card" role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#171d2b" style="max-width:620px;background:#171d2b!important;background-color:#171d2b!important;border:1px solid #2a3448;border-radius:24px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,.35);">
 	                <tr>
 	                  <td class="shepherd-header" bgcolor="#151a27" style="padding:28px 30px 20px;background:#151a27!important;background-color:#151a27!important;background-image:linear-gradient(135deg,#20283a 0%,#151a27 58%,#2d2614 100%)!important;border-bottom:1px solid #2a3448;">
-	                    <div style="display:inline-block;width:38px;height:38px;border-radius:12px;background:#c9a84c;background-color:#c9a84c;background-image:linear-gradient(#c9a84c,#c9a84c);color:#111827;text-align:center;line-height:38px;font-weight:800;font-size:18px;margin-bottom:14px;">S</div>
+	                    <div style="display:inline-block;width:38px;height:38px;border-radius:12px;background:#c9a84c;background-color:#c9a84c;background-image:linear-gradient(#c9a84c,#c9a84c);color:#111827;text-align:center;line-height:38px;font-weight:700;font-size:28px;margin-bottom:14px;font-family:Georgia,'Times New Roman',serif;">S</div>
 	                    <div class="shepherd-gold" style="font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#c9a84c!important;-webkit-text-fill-color:#c9a84c!important;text-shadow:0 0 0 #c9a84c!important;font-weight:700;margin-bottom:8px;">${safeEyebrow}</div>
-	                    <h1 style="margin:0;color:#fff7e8!important;-webkit-text-fill-color:#fff7e8!important;text-shadow:0 0 0 #fff7e8!important;font-size:30px;line-height:1.15;font-family:Georgia,'Times New Roman',serif;font-weight:500;">
+	                    <h1 style="margin:0;color:#fff7e8!important;-webkit-text-fill-color:#fff7e8!important;text-shadow:0 0 0 #fff7e8!important;font-size:48px;line-height:1.15;font-family:Georgia,'Times New Roman',serif;font-weight:500;">
 	                      ${safeTitle}
 	                    </h1>
 	                  </td>

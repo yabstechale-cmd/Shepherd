@@ -11885,6 +11885,8 @@ export default function App() {
   const loadedUserIdRef = useRef(null);
   const tutorialAutoPromptedUserRef = useRef(null);
   const loggedAuthEventKeysRef = useRef(new Set());
+  const profileRef = useRef(null);
+  const churchRef = useRef(null);
 
   const allowedPages = new Set([
     "dashboard",
@@ -12511,8 +12513,8 @@ export default function App() {
         });
       }
       else {
-        const signingOutProfile = profile;
-        const signingOutChurch = church;
+        const signingOutProfile = profileRef.current;
+        const signingOutChurch = churchRef.current;
         if (event === "SIGNED_OUT" && signingOutProfile?.id && signingOutChurch?.id) {
           createActivityLog({
             churchId: signingOutChurch.id,
@@ -12543,7 +12545,7 @@ export default function App() {
       }
     });
     return () => subscription.unsubscribe();
-  }, [church, profile, recordAuthActivity]);
+  }, [recordAuthActivity]);
   const logout = async () => {
     await recordActivity?.({
       action: "requested",
@@ -12554,6 +12556,14 @@ export default function App() {
     });
     await supabase.auth.signOut();
   };
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  useEffect(() => {
+    churchRef.current = church;
+  }, [church]);
 
   if (loading) return (
     <>

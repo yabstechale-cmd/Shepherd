@@ -1572,6 +1572,13 @@ const createActivityLog = async ({
   if (error) return null;
   return data ? normalizeActivityLog(data) : null;
 };
+const getAuthActivitySummary = (action, actorName) => {
+  const safeName = actorName || "A user";
+  if (action === "session_restored") return `${safeName} opened Shepherd with an active session.`;
+  if (action === "logged_in") return `${safeName} logged in.`;
+  if (action === "logged_out") return `${safeName} logged out.`;
+  return `${safeName} had account session activity.`;
+};
 const dedupeNotifications = (items) => {
   const seen = new Set();
   return (items || [])
@@ -11940,10 +11947,9 @@ export default function App() {
     userId,
     email = "",
     action,
-    summary,
     sessionKey = "",
   }) => {
-    if (!userId || !action || !summary) return null;
+    if (!userId || !action) return null;
     const dedupeKey = sessionKey ? `${action}:${userId}:${sessionKey}` : "";
     if (dedupeKey && loggedAuthEventKeysRef.current.has(dedupeKey)) return null;
 
@@ -11964,6 +11970,7 @@ export default function App() {
 
     if (!actorRow?.id || !actorChurchId) return null;
     if (dedupeKey) loggedAuthEventKeysRef.current.add(dedupeKey);
+    const actorName = actorRow.full_name || actorRow.email || "A user";
 
     return createActivityLog({
       churchId: actorChurchId,
@@ -11971,8 +11978,8 @@ export default function App() {
       action,
       entityType: "auth_session",
       entityId: actorRow.id,
-      entityTitle: actorRow.full_name || actorRow.email || "User",
-      summary,
+      entityTitle: actorName,
+      summary: getAuthActivitySummary(action, actorName),
       metadata: {
         email: email || actorRow.email || "",
         session_key: sessionKey || null,
@@ -12486,7 +12493,6 @@ export default function App() {
           userId: session.user.id,
           email: session.user.email || "",
           action: "session_restored",
-          summary: `${session.user.user_metadata?.full_name || session.user.email || "A user"} opened Shepherd with an active session.`,
           sessionKey: session.access_token || session.user.id,
         });
       }
@@ -12506,7 +12512,6 @@ export default function App() {
               userId: session.user.id,
               email: session.user.email || "",
               action: "logged_in",
-              summary: `${session.user.user_metadata?.full_name || session.user.email || "A user"} logged in.`,
               sessionKey: session.access_token || session.user.id,
             });
           }

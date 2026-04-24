@@ -3152,6 +3152,13 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
           window.localStorage.setItem(`shepherd-profile-photo:${profile.id}`, photoUrl);
         }
         setProfile((current) => current ? normalizeAccessUser({ ...current, photo_url: photoUrl }) : current);
+        await recordActivity?.({
+          action: "updated",
+          entityType: "account_profile",
+          entityId: profile.id,
+          entityTitle: profile.full_name || profile.email || "User",
+          summary: `${profile.full_name || profile.email || "A user"} updated their profile photo.`,
+        });
         setPhotoMessage("Profile photo updated.");
       } catch (error) {
         setPhotoError(error?.message || "We couldn't save that profile photo yet.");
@@ -3188,6 +3195,13 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
         window.localStorage.removeItem(`shepherd-profile-photo:${profile.id}`);
       }
       setProfile((current) => current ? normalizeAccessUser({ ...current, photo_url: "" }) : current);
+      await recordActivity?.({
+        action: "updated",
+        entityType: "account_profile",
+        entityId: profile.id,
+        entityTitle: profile.full_name || profile.email || "User",
+        summary: `${profile.full_name || profile.email || "A user"} removed their profile photo.`,
+      });
       setPhotoMessage("Profile photo removed.");
     } catch (error) {
       setPhotoError(error?.message || "We couldn't remove that profile photo yet.");
@@ -3294,6 +3308,14 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       await supabase.from("church_staff").update({ email: emailForm.nextEmail.trim() }).eq("id", profile.staff_id);
     }
     setProfile((current) => current ? { ...current, email: emailForm.nextEmail.trim() } : current);
+    await recordActivity?.({
+      action: "updated",
+      entityType: "account_email",
+      entityId: profile.id,
+      entityTitle: profile.full_name || profile.email || "User",
+      summary: `${profile.full_name || profile.email || "A user"} started an email change for their Shepherd account.`,
+      metadata: { next_email: emailForm.nextEmail.trim() },
+    });
     setEmailForm({ nextEmail: emailForm.nextEmail.trim(), currentPassword: "" });
     setEmailMessage("Email update started. Check the new inbox and complete the verification step before the change is finalized.");
   };
@@ -3326,6 +3348,13 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       setPasswordError(error.message || "We couldn't update that password.");
       return;
     }
+    await recordActivity?.({
+      action: "updated",
+      entityType: "account_password",
+      entityId: profile.id,
+      entityTitle: profile.full_name || profile.email || "User",
+      summary: `${profile.full_name || profile.email || "A user"} updated their Shepherd password.`,
+    });
     setPasswordForm({ currentPassword: "", password: "", confirmPassword: "" });
     setPasswordMessage("Password updated after verification.");
   };
@@ -3347,6 +3376,13 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       setResetError(error.message || "We couldn't send that reset email.");
       return;
     }
+    await recordActivity?.({
+      action: "requested",
+      entityType: "account_password_reset",
+      entityId: profile?.id || recoveryEmail,
+      entityTitle: profile?.full_name || recoveryEmail || "User",
+      summary: `${profile?.full_name || recoveryEmail || "A user"} requested a password reset email.`,
+    });
     setResetMessage("Password reset email sent. Use the link in that email to choose a new password.");
   };
 
@@ -11848,7 +11884,7 @@ export default function App() {
   const deadlineNotificationKeysRef = useRef(new Set());
   const loadedUserIdRef = useRef(null);
   const tutorialAutoPromptedUserRef = useRef(null);
-  const loggedLoginActivityRef = useRef(new Set());
+  const loggedAuthEventKeysRef = useRef(new Set());
 
   const allowedPages = new Set([
     "dashboard",
@@ -11897,6 +11933,50 @@ export default function App() {
     }
     return saved;
   }, [church?.id, profile]);
+
+  const recordAuthActivity = useCallback(async ({
+    userId,
+    email = "",
+    action,
+    summary,
+    sessionKey = "",
+  }) => {
+    if (!userId || !action || !summary) return null;
+    const dedupeKey = sessionKey ? `${action}:${userId}:${sessionKey}` : "";
+    if (dedupeKey && loggedAuthEventKeysRef.current.has(dedupeKey)) return null;
+
+    let actorRow = null;
+    let actorChurchId = "";
+
+    const { data: profileRow } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (profileRow) {
+      actorRow = normalizeAccessUser(profileRow);
+      actorChurchId = profileRow.church_id || "";
+    } else {
+      const { data: staffRow } = await supabase.from("church_staff").select("*").eq("auth_user_id", userId).maybeSingle();
+      if (staffRow) {
+        actorRow = normalizeAccessUser(createProfilePayload(userId, staffRow.church_id, staffRow, email || staffRow.email || ""));
+        actorChurchId = staffRow.church_id || "";
+      }
+    }
+
+    if (!actorRow?.id || !actorChurchId) return null;
+    if (dedupeKey) loggedAuthEventKeysRef.current.add(dedupeKey);
+
+    return createActivityLog({
+      churchId: actorChurchId,
+      actorProfile: actorRow,
+      action,
+      entityType: "auth_session",
+      entityId: actorRow.id,
+      entityTitle: actorRow.full_name || actorRow.email || "User",
+      summary,
+      metadata: {
+        email: email || actorRow.email || "",
+        session_key: sessionKey || null,
+      },
+    });
+  }, []);
 
   const notifications = useMemo(
     () => dedupeNotifications([
@@ -12176,21 +12256,6 @@ export default function App() {
           current_focus_updated_at: match?.current_focus_updated_at || null,
         });
       }));
-      const loginActivityKey = `${prof.church_id}:${uid}`;
-      if (!loggedLoginActivityRef.current.has(loginActivityKey) && enhancedProfile?.id) {
-        loggedLoginActivityRef.current.add(loginActivityKey);
-        createActivityLog({
-          churchId: prof.church_id,
-          actorProfile: enhancedProfile,
-          action: "logged_in",
-          entityType: "login",
-          entityId: enhancedProfile.id,
-          entityTitle: enhancedProfile.full_name || enhancedProfile.email || "User",
-          summary: `${enhancedProfile.full_name || enhancedProfile.email || "A user"} logged in.`,
-        }).then((saved) => {
-          if (saved && canViewActivityLog(enhancedProfile)) setActivityLogs((current) => [saved, ...(current || []).filter((entry) => entry.id !== saved.id)].slice(0, 120));
-        });
-      }
       setLoading(false);
 
       Promise.all([
@@ -12413,7 +12478,16 @@ export default function App() {
       }
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
-      if (session) loadData(session.user.id);
+      if (session) {
+        await loadData(session.user.id);
+        await recordAuthActivity({
+          userId: session.user.id,
+          email: session.user.email || "",
+          action: "session_restored",
+          summary: `${session.user.user_metadata?.full_name || session.user.email || "A user"} opened Shepherd with an active session.`,
+          sessionKey: session.access_token || session.user.id,
+        });
+      }
       else setLoading(false);
     };
     initializeSession();
@@ -12423,11 +12497,37 @@ export default function App() {
       if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
         return;
       }
-      if (event === "SIGNED_IN" && nextUserId && loadedUserIdRef.current === nextUserId) {
-        return;
+      if (session) {
+        loadData(session.user.id).then(async () => {
+          if (event === "SIGNED_IN") {
+            await recordAuthActivity({
+              userId: session.user.id,
+              email: session.user.email || "",
+              action: "logged_in",
+              summary: `${session.user.user_metadata?.full_name || session.user.email || "A user"} logged in.`,
+              sessionKey: session.access_token || session.user.id,
+            });
+          }
+        });
       }
-      if (session) loadData(session.user.id);
       else {
+        const signingOutProfile = profile;
+        const signingOutChurch = church;
+        if (event === "SIGNED_OUT" && signingOutProfile?.id && signingOutChurch?.id) {
+          createActivityLog({
+            churchId: signingOutChurch.id,
+            actorProfile: signingOutProfile,
+            action: "logged_out",
+            entityType: "auth_session",
+            entityId: signingOutProfile.id,
+            entityTitle: signingOutProfile.full_name || signingOutProfile.email || "User",
+            summary: `${signingOutProfile.full_name || signingOutProfile.email || "A user"} logged out.`,
+          }).then((saved) => {
+            if (saved && canViewActivityLog(signingOutProfile)) {
+              setActivityLogs((current) => [saved, ...(current || []).filter((entry) => entry.id !== saved.id)].slice(0, 120));
+            }
+          });
+        }
         loadedUserIdRef.current = null;
         setProfile(null);
         setChurch(null);
@@ -12438,13 +12538,22 @@ export default function App() {
         setPreviewUsers([]);
         setPersistentNotifications([]);
         setActivityLogs([]);
-        loggedLoginActivityRef.current.clear();
+        loggedAuthEventKeysRef.current.clear();
         setLoading(false);
       }
     });
     return () => subscription.unsubscribe();
-  }, []);
-  const logout = () => supabase.auth.signOut();
+  }, [church, profile, recordAuthActivity]);
+  const logout = async () => {
+    await recordActivity?.({
+      action: "requested",
+      entityType: "account_session",
+      entityId: profile?.id || "",
+      entityTitle: profile?.full_name || profile?.email || "User",
+      summary: `${profile?.full_name || profile?.email || "A user"} chose to sign out of Shepherd.`,
+    });
+    await supabase.auth.signOut();
+  };
 
   if (loading) return (
     <>

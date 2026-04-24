@@ -6,24 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const updateItems = [
-  "Improved the Finance area with a cleaner Finance Hub and separate Ministry Budgets and Purchase Orders pages.",
-  "Updated Ministry Budget cards to show starting budget, amount spent, remaining budget, transactions, and budget line details.",
-  "Added transaction details showing when a transaction happened and who added it.",
-  "Improved Purchase Orders so requests are easier to open, review, comment on, approve, or deny.",
-  "Added clearer save and error feedback so actions should no longer silently fail.",
-  "Added drag-and-drop movement for tasks and items between statuses, while keeping the dropdown status selector.",
-  "Clarified finance visibility: staff only see assigned ministry budgets, while the Finance Director can see all budgets.",
-  "Updated the Calendar with a cleaner full-month view and list view options.",
-  "Improved Google Calendar imports and calendar filter labels.",
-  "Updated FAQ answers so they better reflect how Shepherd currently works.",
-  "Added guidance that task attachments should be shared as links rather than uploads for now.",
-  "Added clearer red permission notices when a user cannot edit certain locked fields.",
-  "Expanded the dashboard greeting Scripture rotation from 8 verses to 40.",
-  "Updated the Scripture rotation to include fuller verses about work, God’s goodness, God’s glory, speech, humility, peace, wisdom, and Christian living.",
-  "Polished small UI details across Finance, Calendar, FAQ, and permission messaging.",
-];
-
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -31,14 +13,24 @@ function jsonResponse(status: number, payload: Record<string, unknown>) {
   });
 }
 
-function renderUpdateList() {
+function renderUpdateList({
+  recipientName = "Yabs",
+  intro = "Here is a quick rundown of the Shepherd updates that are now live:",
+  updateItems = [],
+  closing = "Thank you for all the input and feedback you have shared so far. More improvements are already on the way as Shepherd continues to grow.",
+}: {
+  recipientName?: string;
+  intro?: string;
+  updateItems?: string[];
+  closing?: string;
+}) {
   return `
-    <p style="margin:0 0 16px 0;">Hi Yabs,</p>
-    <p style="margin:0 0 18px 0;">Here is a quick rundown of the Shepherd updates that are now live:</p>
+    <p style="margin:0 0 16px 0;">Hi ${recipientName},</p>
+    <p style="margin:0 0 18px 0;">${intro}</p>
     <ul style="margin:0;padding-left:22px;">
       ${updateItems.map((item) => `<li style="margin:0 0 10px 0;">${item}</li>`).join("")}
     </ul>
-    <p style="margin:18px 0 0 0;">Thank you for all the input and feedback you have shared so far. More improvements are already on the way as Shepherd continues to grow.</p>
+    <p style="margin:18px 0 0 0;">${closing}</p>
   `;
 }
 
@@ -47,6 +39,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
   try {
+    const body = await req.json().catch(() => ({}));
     const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
     const fromEmail = Deno.env.get("SHEPHERD_EMAIL_FROM") || "";
     if (!resendApiKey || !fromEmail) {
@@ -54,7 +47,22 @@ Deno.serve(async (req) => {
     }
 
     const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-s.com").replace(/\/+$/, "");
-    const recipientEmail = "yabstechale@gmail.com";
+    const recipientEmail = String(body?.recipientEmail || "yabstechale@gmail.com").trim();
+    const recipientName = String(body?.recipientName || "Yabs").trim();
+    const subject = String(body?.subject || "Shepherd Updates Are Live").trim();
+    const title = String(body?.title || "Shepherd Updates Are Live").trim();
+    const intro = String(body?.intro || "Here is a quick rundown of the Shepherd updates that are now live.").trim();
+    const detail = String(body?.detail || intro).trim();
+    const closing = String(body?.closing || "Thank you for all the input and feedback you have shared so far. More improvements are already on the way as Shepherd continues to grow.").trim();
+    const footerText = String(body?.footerText || "You received this because Shepherd is preparing a user update email. Once approved, Shepherd can send a personalized version to each active user.").trim();
+    const updateItems = Array.isArray(body?.updateItems)
+      ? body.updateItems.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+
+    if (!recipientEmail) {
+      return jsonResponse(400, { error: "recipientEmail is required." });
+    }
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -64,16 +72,16 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: fromEmail,
         to: [recipientEmail],
-        subject: "Shepherd Updates Are Live",
+        subject,
         html: renderShepherdNotificationEmail({
-          title: "Shepherd Updates Are Live",
-          detail: "Here is a quick rundown of the Shepherd updates that are now live.",
-          detailHtml: renderUpdateList(),
+          title,
+          detail,
+          detailHtml: renderUpdateList({ recipientName, intro, updateItems, closing }),
           actionUrl: appUrl,
           actionLabel: "Open Shepherd",
           eyebrow: "Shepherd Update",
           detailLabel: "What Changed",
-          footerText: "You received this test because Shepherd is preparing a user update email. Once approved, Shepherd can send a personalized version to each active user.",
+          footerText,
         }),
       }),
     });

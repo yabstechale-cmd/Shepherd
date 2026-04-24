@@ -193,6 +193,7 @@ const DASHBOARD_SECTION_STATE_STORAGE_PREFIX = "shepherd-dashboard-sections";
 const TASK_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-task-discussion-sections";
 const PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX = "shepherd-po-discussion-sections";
 const CURRENT_WORK_FOCUS_STORAGE_PREFIX = "shepherd-current-work-focus";
+const FAVORITES_STORAGE_PREFIX = "shepherd-favorites";
 const FORM_DRAFT_STORAGE_PREFIX = "shepherd-form-draft";
 const GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX = "shepherd-google-calendar-oauth-state";
 const ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY = "shepherd-account-settings-branch";
@@ -242,6 +243,7 @@ const Icon = ({ d, size = 20 }) => (
 const Icons = {
   home:     () => <Icon d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" />,
   tasks:    () => <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />,
+  star:     () => <Icon d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9L12 3z" />,
   heart:    () => <Icon d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />,
   budget:   () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
   ministry: () => <Icon d="M3 21V7l9-4 9 4v14M9 21V12h6v9" />,
@@ -791,12 +793,37 @@ const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}
 const getArchivedNotificationStorageKey = (profileId) => `${ARCHIVED_NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
 const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
 const getStaffNotepadStorageKey = (profileId) => `${STAFF_NOTEPAD_STORAGE_PREFIX}:${profileId || "anonymous"}`;
+const getFavoritesStorageKey = (profileId) => `${FAVORITES_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getTaskColumnStateStorageKey = (profileId) => `${TASK_COLUMN_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getDashboardSectionStateStorageKey = (profileId) => `${DASHBOARD_SECTION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getTaskDiscussionStateStorageKey = (profileId) => `${TASK_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getPurchaseOrderDiscussionStateStorageKey = (profileId) => `${PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getCurrentWorkFocusStorageKey = (profileId) => `${CURRENT_WORK_FOCUS_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getFormDraftStorageKey = (profileId, draftName) => `${FORM_DRAFT_STORAGE_PREFIX}:${profileId || "anonymous"}:${draftName}`;
+const FAVORITABLE_PAGES = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "workspaces", label: "Frameworks" },
+  { id: "tasks", label: "Tasks" },
+  { id: "calendar", label: "Calendar" },
+  { id: "events-board", label: "Events" },
+  { id: "operations-board", label: "Operations" },
+  { id: "content-media-board", label: "Content & Media" },
+  { id: "budget", label: "Finances" },
+  { id: "church-team", label: "Church Team" },
+  { id: "faq", label: "FAQ" },
+];
+const getFavoritePageLabel = (pageId) => FAVORITABLE_PAGES.find((entry) => entry.id === pageId)?.label || "Page";
+const normalizeFavoriteItem = (item) => ({
+  key: String(item?.key || ""),
+  kind: String(item?.kind || "page"),
+  title: String(item?.title || "").trim(),
+  subtitle: String(item?.subtitle || "").trim(),
+  pageId: item?.pageId || null,
+  taskId: item?.taskId || null,
+  eventId: item?.eventId || null,
+  eventKind: item?.eventKind || null,
+  createdAt: item?.createdAt || new Date().toISOString(),
+});
 const readStoredFormDraft = (storageKey, fallback) => {
   if (typeof window === "undefined" || !storageKey) return fallback;
   try {
@@ -2245,7 +2272,7 @@ function ShepherdTutorial({ profile, church, onClose, onComplete }) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
-function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount, onStartTutorial }) {
+function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount, onStartTutorial, isFavorite, toggleFavorite }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
     {id:"workspaces",label:"Frameworks",I:Icons.workspace},
@@ -2295,6 +2322,26 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
               )}
             </div>
             {!collapsed&&<span>{label}</span>}
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleFavorite?.({
+                    key: `page:${id}`,
+                    kind: "page",
+                    title: label,
+                    subtitle: "Pinned page",
+                    pageId: id,
+                  });
+                }}
+                aria-label={`${isFavorite?.(`page:${id}`) ? "Remove" : "Add"} ${label} favorite`}
+                title={isFavorite?.(`page:${id}`) ? "Remove favorite" : "Add favorite"}
+                style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",color:isFavorite?.(`page:${id}`) ? C.gold : C.muted,cursor:"pointer",padding:4}}
+              >
+                <Icons.star />
+              </button>
+            )}
           </div>
         ))}
       </nav>
@@ -4841,7 +4888,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
   );
 }
 
-function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, setTasks, moveItemToTrash, previewUsers, recordActivity }) {
+function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, setTasks, moveItemToTrash, previewUsers, recordActivity, eventOpenRequest, clearEventOpenRequest, isFavorite, toggleFavorite }) {
   const [eventsSection, setEventsSection] = useState("home");
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
@@ -5265,6 +5312,28 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     }
     return undefined;
   }, [eventRequestDraftKey, eventPlanDraftKey, showEventForm, showWorkflowModal, selectedWorkflow, selectedRequest]);
+
+  useEffect(() => {
+    if (!eventOpenRequest?.id) return;
+    if (eventOpenRequest.kind === "workflow") {
+      const match = (eventWorkflows || []).find((entry) => entry.id === eventOpenRequest.id);
+      if (!match) return;
+      setEventsSection("planning");
+      setSelectedRequest(null);
+      setSelectedWorkflow(match);
+      setPlanningFilter(samePerson(match.owner_name, profile?.full_name) ? "mine" : "others");
+      clearEventOpenRequest?.();
+      return;
+    }
+    if (eventOpenRequest.kind === "request") {
+      const match = (requests || []).find((entry) => entry.id === eventOpenRequest.id);
+      if (!match) return;
+      setEventsSection("requests");
+      setSelectedWorkflow(null);
+      setSelectedRequest(match);
+      clearEventOpenRequest?.();
+    }
+  }, [eventOpenRequest, eventWorkflows, requests, profile?.full_name, clearEventOpenRequest]);
 
   useEffect(() => {
     if (!showEventForm) return;
@@ -5906,6 +5975,22 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                     </div>
                   </div>
                   <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <button
+                      className="btn-outline"
+                      type="button"
+                      onClick={() => toggleFavorite?.({
+                        key: `event-workflow:${selectedWorkflow.id}`,
+                        kind: "event",
+                        title: selectedWorkflow.event_name || selectedWorkflow.title,
+                        subtitle: "Event plan",
+                        eventId: selectedWorkflow.id,
+                        eventKind: "workflow",
+                        pageId: "events-board",
+                      })}
+                      style={{color:isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? C.gold : C.text}}
+                    >
+                      <Icons.star /> {isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? "Starred" : "Star"}
+                    </button>
                     {canEditWorkflow(selectedWorkflow) && (
                       <button className="btn-outline" onClick={() => openWorkflowModal(selectedWorkflow)}>Edit Event Details</button>
                     )}
@@ -6225,9 +6310,27 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
 	                  <button className="btn-outline" onClick={()=>setSelectedRequest(null)} style={{marginBottom:14}}>Back to Event Requests</button>
 	                  <h3 style={{...sectionTitleStyle,textAlign:"left"}}>{requestDetails.event_name}</h3>
 	                </div>
-	                <button className="btn-outline" onClick={() => copyRequesterEventRequestLink(requestDetails)}>
-	                  Copy Requester Share Link
-	                </button>
+	                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+	                  <button
+	                    className="btn-outline"
+	                    type="button"
+	                    onClick={() => toggleFavorite?.({
+	                      key: `event-request:${requestDetails.id}`,
+	                      kind: "event",
+	                      title: requestDetails.event_name,
+	                      subtitle: "Event request",
+	                      eventId: requestDetails.id,
+	                      eventKind: "request",
+	                      pageId: "events-board",
+	                    })}
+	                    style={{color:isFavorite?.(`event-request:${requestDetails.id}`) ? C.gold : C.text}}
+	                  >
+	                    <Icons.star /> {isFavorite?.(`event-request:${requestDetails.id}`) ? "Starred" : "Star"}
+	                  </button>
+	                  <button className="btn-outline" onClick={() => copyRequesterEventRequestLink(requestDetails)}>
+	                    Copy Requester Share Link
+	                  </button>
+	                </div>
 	              </div>
               <div style={{display:"grid",gap:14,textAlign:"left"}}>
                 <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -7831,7 +7934,7 @@ function PublicEventRequestPage({ churchCode = "" }) {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile, setPreviewUsers, churchLockupAssignments, notifications, archivedNotifications, unreadCount, readNotificationIds, archiveNotification, restoreNotification, openNotificationTarget }) {
+function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile, setPreviewUsers, churchLockupAssignments, notifications, archivedNotifications, unreadCount, readNotificationIds, archiveNotification, restoreNotification, openNotificationTarget, favorites, openFavorite, toggleFavorite, isFavorite }) {
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const canSeeTeamSnapshot = !!profile && (
     profile?.role === "senior_pastor"
@@ -7879,6 +7982,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
       return false;
     }
   });
+  const [notificationBellOpen, setNotificationBellOpen] = useState(false);
   const [personalNotepadEntries, setPersonalNotepadEntries] = useState(() => {
     if (typeof window === "undefined" || !profile?.id) return [];
     try {
@@ -8092,21 +8196,69 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
       items.splice(targetIndex, 0, draggedItem);
       return items;
     });
+  const favoriteItems = (favorites || []).slice(0, 8);
   };
 
   return (
     <div className="fadeIn mobile-pad" style={widePageStyle}>
-      <div style={{marginBottom:28}}>
-        <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:42,fontWeight:500,color:C.text,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
-        <p style={{color:C.muted,marginTop:4,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
-          {profile?.canSeeTeamOverview
-            ? profile?.readOnlyOversight
-              ? "You can see the whole church team's workload this week in read-only mode."
-              : `${dailyVerse.text} ${dailyVerse.reference}`
-            : hasAdminOversight
-              ? "You can see the full church workload with an administrative operations lens."
-              : `Here is your ministry workload and the shared church picture for ${roleLabel(profile)}.`}
-        </p>
+      <div style={{marginBottom:28,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",position:"relative"}}>
+        <div style={{flex:"1 1 420px",minWidth:0}}>
+          <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:42,fontWeight:500,color:C.text,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
+          <p style={{color:C.muted,marginTop:4,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
+            {profile?.canSeeTeamOverview
+              ? profile?.readOnlyOversight
+                ? "You can see the whole church team's workload this week in read-only mode."
+                : `${dailyVerse.text} ${dailyVerse.reference}`
+              : hasAdminOversight
+                ? "You can see the full church workload with an administrative operations lens."
+                : `Here is your ministry workload and the shared church picture for ${roleLabel(profile)}.`}
+          </p>
+        </div>
+        <div style={{position:"relative",display:"flex",justifyContent:"flex-end",marginLeft:"auto"}}>
+          <button
+            type="button"
+            onClick={() => setNotificationBellOpen((current) => !current)}
+            aria-label="Open notifications"
+            style={{position:"relative",display:"inline-flex",alignItems:"center",justifyContent:"center",width:46,height:46,borderRadius:14,border:`1px solid ${C.goldDim}`,background:C.goldGlow,color:C.gold,cursor:"pointer"}}
+          >
+            <Icons.bell />
+            {unreadCount > 0 && (
+              <span style={{position:"absolute",top:-6,right:-6,minWidth:18,height:18,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+          {notificationBellOpen && (
+            <div style={{position:"absolute",top:"calc(100% + 10px)",right:0,width:"min(420px, calc(100vw - 28px))",padding:16,border:`1px solid ${C.border}`,borderRadius:18,background:C.card,boxShadow:"0 18px 42px rgba(0,0,0,.35)",display:"grid",gap:12,zIndex:30}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontSize:15,fontWeight:600,color:C.text}}>Notifications</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:4}}>{unreadCount} unread</div>
+                </div>
+                <button type="button" className="btn-outline" onClick={() => setNotificationBellOpen(false)} style={{padding:"6px 10px",fontSize:12}}>Close</button>
+              </div>
+              {notifications.length === 0 ? (
+                <div style={{padding:"16px 14px",border:`1px dashed ${C.border}`,borderRadius:12,fontSize:12,color:C.muted,textAlign:"left"}}>
+                  No notifications right now.
+                </div>
+              ) : notifications.slice(0, 6).map((item) => (
+                <div key={`bell-${item.id}`} style={{display:"grid",gridTemplateColumns:"12px 1fr auto",gap:12,alignItems:"start",padding:"12px 12px",border:`1px solid ${!readNotificationIds.includes(item.id) ? C.goldDim : C.border}`,borderRadius:12,background:!readNotificationIds.includes(item.id) ? C.goldGlow : "rgba(255,255,255,.02)"}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:!readNotificationIds.includes(item.id) ? item.tone : C.muted,marginTop:5}} />
+                  <div style={{textAlign:"left"}}>
+                    <div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.title}</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.55}}>{item.detail}</div>
+                  </div>
+                  <button type="button" className="btn-gold-compact" onClick={() => { openNotificationTarget?.(item); setNotificationBellOpen(false); }}>Open</button>
+                </div>
+              ))}
+              {archivedNotifications.length > 0 && (
+                <div style={{fontSize:11,color:C.muted,textAlign:"left"}}>
+                  {archivedNotifications.length} archived notification{archivedNotifications.length === 1 ? "" : "s"} are still available below in your dashboard history.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
         <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -8251,6 +8403,35 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
           </div>
         )}
       </div>
+      <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
+        <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{textAlign:"left"}}>
+            <h3 style={sectionTitleStyle}>Favorites</h3>
+            <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.5}}>
+              Pin a page, task, or event so it stays easy to reopen.
+            </div>
+          </div>
+        </div>
+        {favoriteItems.length > 0 ? (
+          <div style={{display:"grid",gap:10}}>
+            {favoriteItems.map((item) => (
+              <div key={item.key} className="card" style={{padding:"14px 16px",display:"grid",gridTemplateColumns:"auto 1fr auto auto",gap:12,alignItems:"center",textAlign:"left",background:"rgba(255,255,255,.03)"}}>
+                <div style={{color:C.gold,display:"flex",alignItems:"center",justifyContent:"center"}}><Icons.star /></div>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:600,color:C.text,lineHeight:1.4}}>{item.title}</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:2,lineHeight:1.5}}>{item.subtitle || (item.kind === "page" ? "Pinned page" : item.kind === "task" ? "Pinned task" : "Pinned event")}</div>
+                </div>
+                <button type="button" className="btn-gold-compact" onClick={() => openFavorite?.(item)}>Open</button>
+                <button type="button" className="btn-outline" onClick={() => toggleFavorite?.(item)} style={{padding:"6px 10px",fontSize:12}}>Remove</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{padding:"18px 14px",border:`1px dashed ${C.border}`,borderRadius:12,fontSize:13,color:C.muted,textAlign:"left"}}>
+            Star pages from the sidebar, tasks from task details, or events from the Events Board to pin them here for yourself.
+          </div>
+        )}
+      </div>
       {canSeeTeamSnapshot && previewUsers.length > 0 && (
         <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -8341,105 +8522,6 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
           )}
         </div>
       )}
-      <div className="card" style={{padding:22,marginBottom:20,display:"grid",alignContent:"start"}}>
-        <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div style={{textAlign:"left"}}>
-            <h3 style={sectionTitleStyle}>Notifications</h3>
-            <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.5}}>
-              {unreadCount} unread notification{unreadCount === 1 ? "" : "s"}
-            </div>
-          </div>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"flex-end",marginLeft:"auto"}}>
-            <button type="button" className="btn-gold-compact" onClick={() => setNotificationsOpen((current) => !current)}>
-              {notificationsOpen ? "Collapse" : "Expand"}
-            </button>
-          </div>
-        </div>
-        {notificationsOpen ? (
-          <>
-            {notifications.length === 0 && <p style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"left"}}>No notifications right now.</p>}
-            {notifications.map((item) => (
-              <div
-                className="dashboard-note-row"
-                key={item.id}
-                style={{
-                  display:"flex",
-                  gap:12,
-                  marginBottom:14,
-                  padding:"12px 12px 14px",
-                  borderBottom:`1px solid ${C.border}`,
-                  border:`1px solid ${!readNotificationIds.includes(item.id) ? C.goldDim : C.border}`,
-                  borderRadius:12,
-                  alignItems:"flex-start",
-                  background:!readNotificationIds.includes(item.id) ? C.goldGlow : "rgba(255,255,255,.02)",
-                  opacity:!readNotificationIds.includes(item.id) ? 1 : 0.68,
-                }}
-              >
-                <div style={{width:10,height:10,borderRadius:"50%",background:!readNotificationIds.includes(item.id) ? item.tone : C.muted,marginTop:5,flexShrink:0}} />
-                <div style={{textAlign:"left"}}>
-                  <div style={{fontSize:13,fontWeight:500,color:C.text,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <span>{item.title}</span>
-                    {!readNotificationIds.includes(item.id) && (
-                      <span className="badge" style={{fontSize:9,background:`${C.gold}22`,color:C.gold,border:`1px solid ${C.goldDim}`}}>
-                        New
-                      </span>
-                    )}
-                  </div>
-                  <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
-                </div>
-                <button type="button" className="btn-gold-compact" onClick={()=>openNotificationTarget?.(item)} style={{marginLeft:"auto"}}>
-                  Open
-                </button>
-                <button type="button" className="btn-outline" onClick={() => archiveNotification?.(item.id)} style={{padding:"6px 10px",marginLeft:8}}>
-                  Archive
-                </button>
-              </div>
-            ))}
-            {archivedNotifications.length > 0 && (
-              <div style={{display:"grid",gap:10,marginTop:10}}>
-                <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
-                  <div style={{textAlign:"left"}}>
-                    <div style={{fontSize:12,color:C.muted}}>Archived</div>
-                    <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>
-                      {archivedNotifications.length} archived notification{archivedNotifications.length === 1 ? "" : "s"}
-                    </div>
-                  </div>
-                  <button type="button" className="btn-gold-compact" onClick={() => setArchivedNotificationsOpen((current) => !current)}>
-                    {archivedNotificationsOpen ? "Collapse" : "Expand"}
-                  </button>
-                </div>
-                {archivedNotificationsOpen && archivedNotifications.map((item) => (
-                  <div
-                    className="dashboard-note-row"
-                    key={`archived-${item.id}`}
-                    style={{
-                      display:"flex",
-                      gap:12,
-                      padding:"12px 12px 14px",
-                      border:`1px solid ${C.border}`,
-                      borderRadius:12,
-                      alignItems:"flex-start",
-                      background:"rgba(255,255,255,.02)",
-                      opacity:0.6,
-                    }}
-                  >
-                    <div style={{width:10,height:10,borderRadius:"50%",background:C.muted,marginTop:5,flexShrink:0}} />
-                    <div style={{textAlign:"left"}}>
-                      <div style={{fontSize:13,fontWeight:500,color:C.text}}>{item.title}</div>
-                      <div style={{fontSize:12,color:C.muted,marginTop:3,lineHeight:1.5}}>{item.detail}</div>
-                    </div>
-                    <button type="button" className="btn-gold-compact" onClick={() => restoreNotification?.(item.id)} style={{marginLeft:"auto"}}>
-                      Restore
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        ) : (
-          <div style={{fontSize:13,color:C.muted,textAlign:"left",marginTop:4}}>Notifications collapsed. Expand this section to review and open them.</div>
-        )}
-      </div>
       <div>
         <div className="card" style={{padding:22}}>
           <div className="section-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -8539,7 +8621,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
-function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveItemToTrash, taskOpenRequest, clearTaskOpenRequest, recordActivity }) {
+function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveItemToTrash, taskOpenRequest, clearTaskOpenRequest, recordActivity, isFavorite, toggleFavorite }) {
   const isPreview = churchId === "preview";
   const canCreateTasks = true;
   const canAssignToAnyone = hasAdministrativeOversight(profile, church);
@@ -9475,6 +9557,21 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"nowrap"}}>
               <button className="btn-outline" onClick={()=>setSelectedTask(null)}>Back to Tasks</button>
               <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexShrink:0}}>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => toggleFavorite?.({
+                    key: `task:${selectedTask.id}`,
+                    kind: "task",
+                    title: selectedTask.title,
+                    subtitle: selectedTask.ministry ? `${selectedTask.ministry} task` : "Task",
+                    taskId: selectedTask.id,
+                    pageId: "tasks",
+                  })}
+                  style={{padding:"8px 10px",fontSize:12,color:isFavorite?.(`task:${selectedTask.id}`) ? C.gold : C.text}}
+                >
+                  <Icons.star /> {isFavorite?.(`task:${selectedTask.id}`) ? "Starred" : "Star"}
+                </button>
                 {canEditTask(profile, church, selectedTask) ? (
                   <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,maxWidth:"100%",background:C.card,padding:"8px 10px",fontSize:12}}>
                     <option value="todo">Not Started</option>
@@ -11876,9 +11973,11 @@ export default function App() {
   const [ministries, setMinistries] = useState([]);
   const [eventRequests, setEventRequests] = useState(null);
   const [trashItems, setTrashItems] = useState([]);
+  const [favorites, setFavorites] = useState([]);
   const [previewUsers, setPreviewUsers] = useState([]);
   const [active, setActive] = useState(getStoredActivePage);
   const [taskOpenRequest, setTaskOpenRequest] = useState(null);
+  const [eventOpenRequest, setEventOpenRequest] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
@@ -12077,8 +12176,41 @@ export default function App() {
     setTaskOpenRequest(null);
   }, []);
 
+  const clearEventOpenRequest = useCallback(() => {
+    setEventOpenRequest(null);
+  }, []);
+
   const startTutorial = useCallback(() => {
     setShowTutorial(true);
+  }, []);
+
+  const favoriteKeySet = useMemo(
+    () => new Set((favorites || []).map((item) => item.key).filter(Boolean)),
+    [favorites]
+  );
+  const isFavorite = useCallback((key) => favoriteKeySet.has(key), [favoriteKeySet]);
+  const toggleFavorite = useCallback((item) => {
+    const normalized = normalizeFavoriteItem(item);
+    if (!normalized.key || !normalized.title) return;
+    setFavorites((current) => {
+      const exists = (current || []).some((entry) => entry.key === normalized.key);
+      if (exists) return (current || []).filter((entry) => entry.key !== normalized.key);
+      return [normalized, ...(current || [])].slice(0, 24);
+    });
+  }, []);
+  const openFavorite = useCallback((item) => {
+    if (!item) return;
+    if (item.kind === "task" && item.taskId) {
+      setTaskOpenRequest({ taskId: item.taskId, commentId: null, requestId: crypto.randomUUID() });
+      setActive("tasks");
+      return;
+    }
+    if (item.kind === "event" && item.eventId) {
+      setEventOpenRequest({ id: item.eventId, kind: item.eventKind || "workflow", requestId: crypto.randomUUID() });
+      setActive("events-board");
+      return;
+    }
+    setActive(item.pageId || "dashboard");
   }, []);
 
   const completeTutorial = useCallback(() => {
@@ -12216,10 +12348,13 @@ export default function App() {
       setReadNotificationIds(raw ? JSON.parse(raw) : []);
       const archivedRaw = window.localStorage.getItem(getArchivedNotificationStorageKey(prof.id));
       setArchivedNotificationIds(archivedRaw ? JSON.parse(archivedRaw) : []);
+      const favoritesRaw = window.localStorage.getItem(getFavoritesStorageKey(prof.id));
+      setFavorites(favoritesRaw ? JSON.parse(favoritesRaw).map(normalizeFavoriteItem) : []);
     } else {
       setReadNotificationIds([]);
       setArchivedNotificationIds([]);
       setPersistentNotifications([]);
+      setFavorites([]);
       setTrashItems([]);
     }
     if (prof?.church_id) {
@@ -12310,6 +12445,11 @@ export default function App() {
     if (!profile?.id) return;
     window.localStorage.setItem(getArchivedNotificationStorageKey(profile.id), JSON.stringify(cleanedArchivedNotificationIds));
   }, [profile?.id, cleanedArchivedNotificationIds]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    window.localStorage.setItem(getFavoritesStorageKey(profile.id), JSON.stringify(favorites));
+  }, [profile?.id, favorites]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -12616,14 +12756,14 @@ export default function App() {
   }
 
   const pages = {
-    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
+    dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} />,
-    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget}/>,
+    "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
     workspaces: <Workspaces setActive={setActive}/>,
-    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity}/>,
+    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity} eventOpenRequest={eventOpenRequest} clearEventOpenRequest={clearEventOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setTasks={setTasks} setActive={setActive} churchId={church?.id} recordActivity={recordActivity} />,
     "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} recordActivity={recordActivity} />,
-    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest} recordActivity={recordActivity}/>,
+    tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest} recordActivity={recordActivity} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     faq: <FAQPage onStartTutorial={startTutorial} />,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,
     budget:     <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church?.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} recordActivity={recordActivity}/>,
@@ -12635,7 +12775,7 @@ export default function App() {
     <>
       <GS/>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
+        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>
         <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
       </div>
       {showTutorial && (

@@ -12505,6 +12505,15 @@ export default function App() {
       if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
         return;
       }
+      if (
+        session
+        && nextUserId
+        && nextUserId === loadedUserIdRef.current
+        && profileRef.current?.id === nextUserId
+        && (event === "SIGNED_IN" || event === "USER_UPDATED")
+      ) {
+        return;
+      }
       if (session) {
         loadData(session.user.id).then(async () => {
           if (event === "SIGNED_IN") {

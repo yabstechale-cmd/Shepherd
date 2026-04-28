@@ -243,7 +243,7 @@ const Icon = ({ d, size = 20 }) => (
 const Icons = {
   home:     () => <Icon d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" />,
   tasks:    () => <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />,
-  star:     () => <Icon d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9L12 3z" />,
+  pin:      () => <Icon d="M14 3 21 10l-2 2-3-1-4 4v5l-1 1-2-6-6-2 1-1h5l4-4-1-3 2-2Z" />,
   heart:    () => <Icon d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />,
   budget:   () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
   ministry: () => <Icon d="M3 21V7l9-4 9 4v14M9 21V12h6v9" />,
@@ -800,30 +800,22 @@ const getTaskDiscussionStateStorageKey = (profileId) => `${TASK_DISCUSSION_STATE
 const getPurchaseOrderDiscussionStateStorageKey = (profileId) => `${PURCHASE_ORDER_DISCUSSION_STATE_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getCurrentWorkFocusStorageKey = (profileId) => `${CURRENT_WORK_FOCUS_STORAGE_PREFIX}:${profileId || "anonymous"}`;
 const getFormDraftStorageKey = (profileId, draftName) => `${FORM_DRAFT_STORAGE_PREFIX}:${profileId || "anonymous"}:${draftName}`;
-const FAVORITABLE_PAGES = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "workspaces", label: "Frameworks" },
-  { id: "tasks", label: "Tasks" },
-  { id: "calendar", label: "Calendar" },
-  { id: "events-board", label: "Events" },
-  { id: "operations-board", label: "Operations" },
-  { id: "content-media-board", label: "Content & Media" },
-  { id: "budget", label: "Finances" },
-  { id: "church-team", label: "Church Team" },
-  { id: "faq", label: "FAQ" },
-];
-const getFavoritePageLabel = (pageId) => FAVORITABLE_PAGES.find((entry) => entry.id === pageId)?.label || "Page";
 const normalizeFavoriteItem = (item) => ({
   key: String(item?.key || ""),
   kind: String(item?.kind || "page"),
   title: String(item?.title || "").trim(),
   subtitle: String(item?.subtitle || "").trim(),
   pageId: item?.pageId || null,
+  destinationKind: item?.destinationKind || null,
+  section: item?.section || null,
+  timeOffMode: item?.timeOffMode || null,
+  lockupMode: item?.lockupMode || null,
   taskId: item?.taskId || null,
   eventId: item?.eventId || null,
   eventKind: item?.eventKind || null,
   createdAt: item?.createdAt || new Date().toISOString(),
 });
+const isSupportedFavoriteItem = (item) => ["board", "board-section", "task", "event"].includes(String(item?.kind || ""));
 const readStoredFormDraft = (storageKey, fallback) => {
   if (typeof window === "undefined" || !storageKey) return fallback;
   try {
@@ -2272,7 +2264,7 @@ function ShepherdTutorial({ profile, church, onClose, onComplete }) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
-function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount, onStartTutorial, isFavorite, toggleFavorite }) {
+function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount, onStartTutorial }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
     {id:"workspaces",label:"Frameworks",I:Icons.workspace},
@@ -2322,26 +2314,6 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
               )}
             </div>
             {!collapsed&&<span>{label}</span>}
-            {!collapsed && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  toggleFavorite?.({
-                    key: `page:${id}`,
-                    kind: "page",
-                    title: label,
-                    subtitle: "Pinned page",
-                    pageId: id,
-                  });
-                }}
-                aria-label={`${isFavorite?.(`page:${id}`) ? "Remove" : "Add"} ${label} favorite`}
-                title={isFavorite?.(`page:${id}`) ? "Remove favorite" : "Add favorite"}
-                style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",color:isFavorite?.(`page:${id}`) ? C.gold : C.muted,cursor:"pointer",padding:4}}
-              >
-                <Icons.star />
-              </button>
-            )}
           </div>
         ))}
       </nav>
@@ -5314,7 +5286,22 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   }, [eventRequestDraftKey, eventPlanDraftKey, showEventForm, showWorkflowModal, selectedWorkflow, selectedRequest]);
 
   useEffect(() => {
-    if (!eventOpenRequest?.id) return;
+    if (!eventOpenRequest) return;
+    if (eventOpenRequest.kind === "board") {
+      setEventsSection("home");
+      setSelectedWorkflow(null);
+      setSelectedRequest(null);
+      clearEventOpenRequest?.();
+      return;
+    }
+    if (eventOpenRequest.kind === "section") {
+      setEventsSection(eventOpenRequest.section === "requests" ? "requests" : "planning");
+      setSelectedWorkflow(null);
+      setSelectedRequest(null);
+      clearEventOpenRequest?.();
+      return;
+    }
+    if (!eventOpenRequest.id) return;
     if (eventOpenRequest.kind === "workflow") {
       const match = (eventWorkflows || []).find((entry) => entry.id === eventOpenRequest.id);
       if (!match) return;
@@ -5769,6 +5756,21 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
             )}
           </div>
           <div className="events-board-actions" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={() => toggleFavorite?.({
+                key: "board:events-board",
+                kind: "board",
+                title: "Events Board",
+                subtitle: "Pinned board",
+                pageId: "events-board",
+                destinationKind: "board",
+              })}
+              style={{color:isFavorite?.("board:events-board") ? C.gold : C.text}}
+            >
+              <Icons.pin /> {isFavorite?.("board:events-board") ? "Pinned" : "Pin"}
+            </button>
             {eventsSection !== "home" && (
               <button className="btn-outline" onClick={() => setEventsSection("home")}>Back to Events Board</button>
             )}
@@ -5776,32 +5778,66 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
         </div>
         {eventsSection === "home" && (
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
-            <button
+            <div
               className="card"
-              onClick={() => setEventsSection("planning")}
-              style={{padding:22,textAlign:"left",background:C.surface,cursor:"pointer",display:"grid",gap:10,minHeight:180}}
+              style={{padding:22,textAlign:"left",background:C.surface,display:"grid",gap:10,minHeight:180}}
             >
-              <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Planning</div>
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Planning</div>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => toggleFavorite?.({
+                    key: "events:planning",
+                    kind: "board-section",
+                    title: "Event Planning",
+                    subtitle: "Pinned events page",
+                    pageId: "events-board",
+                    destinationKind: "section",
+                    section: "planning",
+                  })}
+                  style={{padding:"7px 10px",fontSize:12,color:isFavorite?.("events:planning") ? C.gold : C.text,flexShrink:0}}
+                >
+                  <Icons.pin /> {isFavorite?.("events:planning") ? "Pinned" : "Pin"}
+                </button>
+              </div>
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
                 Build planning workflows for upcoming events and organize them between your own plans and the rest of the team.
               </div>
               <div style={{marginTop:"auto",justifySelf:"end"}}>
-                <span className="btn-gold-compact">Open planning</span>
+                <button type="button" className="btn-gold-compact" onClick={() => setEventsSection("planning")}>Open planning</button>
               </div>
-            </button>
-            <button
+            </div>
+            <div
               className="card"
-              onClick={() => setEventsSection("requests")}
-              style={{padding:22,textAlign:"left",background:C.surface,cursor:"pointer",display:"grid",gap:10,minHeight:180}}
+              style={{padding:22,textAlign:"left",background:C.surface,display:"grid",gap:10,minHeight:180}}
             >
-              <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Requests</div>
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Requests</div>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => toggleFavorite?.({
+                    key: "events:requests",
+                    kind: "board-section",
+                    title: "Event Requests",
+                    subtitle: "Pinned events page",
+                    pageId: "events-board",
+                    destinationKind: "section",
+                    section: "requests",
+                  })}
+                  style={{padding:"7px 10px",fontSize:12,color:isFavorite?.("events:requests") ? C.gold : C.text,flexShrink:0}}
+                >
+                  <Icons.pin /> {isFavorite?.("events:requests") ? "Pinned" : "Pin"}
+                </button>
+              </div>
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
                 Intake, review, approve, and archive incoming event requests for the church.
               </div>
               <div style={{marginTop:"auto",justifySelf:"end"}}>
-                <span className="btn-gold-compact">Open requests</span>
+                <button type="button" className="btn-gold-compact" onClick={() => setEventsSection("requests")}>Open requests</button>
               </div>
-            </button>
+            </div>
           </div>
         )}
         {eventsSection === "planning" && (
@@ -5989,7 +6025,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                       })}
                       style={{color:isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? C.gold : C.text}}
                     >
-                      <Icons.star /> {isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? "Starred" : "Star"}
+                      <Icons.pin /> {isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? "Pinned" : "Pin"}
                     </button>
                     {canEditWorkflow(selectedWorkflow) && (
                       <button className="btn-outline" onClick={() => openWorkflowModal(selectedWorkflow)}>Edit Event Details</button>
@@ -6325,7 +6361,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
 	                    })}
 	                    style={{color:isFavorite?.(`event-request:${requestDetails.id}`) ? C.gold : C.text}}
 	                  >
-	                    <Icons.star /> {isFavorite?.(`event-request:${requestDetails.id}`) ? "Starred" : "Star"}
+	                    <Icons.pin /> {isFavorite?.(`event-request:${requestDetails.id}`) ? "Pinned" : "Pin"}
 	                  </button>
 	                  <button className="btn-outline" onClick={() => copyRequesterEventRequestLink(requestDetails)}>
 	                    Copy Requester Share Link
@@ -6516,7 +6552,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   );
 }
 
-function Workspaces({ setActive }) {
+function Workspaces({ setActive, isFavorite, toggleFavorite }) {
   const boards = [
     {
       id: "events-board",
@@ -6548,25 +6584,40 @@ function Workspaces({ setActive }) {
       </div>
       <div className="frameworks-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,280px),1fr))",gap:18}}>
         {boards.map((board) => (
-          <button
+          <div
             key={board.id}
-            onClick={() => setActive(board.id)}
             className="card framework-card"
-            style={{padding:22,textAlign:"left",cursor:"pointer",background:C.card,border:`1px solid ${C.border}`,display:"flex",flexDirection:"column",minHeight:180,maxWidth:"100%",minWidth:0,overflow:"hidden"}}
+            style={{padding:22,textAlign:"left",background:C.card,border:`1px solid ${C.border}`,display:"flex",flexDirection:"column",minHeight:180,maxWidth:"100%",minWidth:0,overflow:"hidden"}}
           >
-            <div className="framework-card-title" style={{...sectionTitleStyle,overflowWrap:"anywhere"}}>{board.name}</div>
+            <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+              <div className="framework-card-title" style={{...sectionTitleStyle,overflowWrap:"anywhere"}}>{board.name}</div>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => toggleFavorite?.({
+                  key: `board:${board.id}`,
+                  kind: "board",
+                  title: board.name,
+                  subtitle: "Pinned board",
+                  pageId: board.id,
+                })}
+                style={{padding:"7px 10px",fontSize:12,color:isFavorite?.(`board:${board.id}`) ? C.gold : C.text,flexShrink:0}}
+              >
+                <Icons.pin /> {isFavorite?.(`board:${board.id}`) ? "Pinned" : "Pin"}
+              </button>
+            </div>
             <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6,overflowWrap:"break-word"}}>{board.summary}</div>
             <div style={{marginTop:"auto",alignSelf:"flex-end"}}>
-              <span className="btn-gold-compact">Open board</span>
+              <button type="button" className="btn-gold-compact" onClick={() => setActive(board.id)}>Open board</button>
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>
   );
 }
 
-function ContentMediaBoard({ tasks, setTasks, setActive, churchId, recordActivity }) {
+function ContentMediaBoard({ tasks, setTasks, setActive, churchId, recordActivity, isFavorite, toggleFavorite }) {
   const isPreview = churchId === "preview";
   const [draggingTaskId, setDraggingTaskId] = useState(null);
   const [dragOverStatus, setDragOverStatus] = useState("");
@@ -6636,6 +6687,20 @@ function ContentMediaBoard({ tasks, setTasks, setActive, churchId, recordActivit
             </p>
           </div>
           <div className="events-board-actions" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={() => toggleFavorite?.({
+                key: "board:content-media-board",
+                kind: "board",
+                title: "Content & Media Board",
+                subtitle: "Pinned board",
+                pageId: "content-media-board",
+              })}
+              style={{color:isFavorite?.("board:content-media-board") ? C.gold : C.text}}
+            >
+              <Icons.pin /> {isFavorite?.("board:content-media-board") ? "Pinned" : "Pin"}
+            </button>
             <button className="btn-outline" onClick={() => setActive("tasks")}>Open Tasks</button>
           </div>
         </div>
@@ -6769,7 +6834,7 @@ function PlaceholderBoard({ title, summary, systems }) {
   );
 }
 
-function OperationsBoard({ profile, church, previewUsers, staffAvailabilityRequests, setStaffAvailabilityRequests, churchLockupAssignments, setChurchLockupAssignments, setCalendarEvents, recordActivity }) {
+function OperationsBoard({ profile, church, previewUsers, staffAvailabilityRequests, setStaffAvailabilityRequests, churchLockupAssignments, setChurchLockupAssignments, setCalendarEvents, recordActivity, operationsOpenRequest, clearOperationsOpenRequest, isFavorite, toggleFavorite }) {
   const [operationsSection, setOperationsSection] = useState("home");
   const [timeOffMode, setTimeOffMode] = useState("");
   const [lockupMode, setLockupMode] = useState("home");
@@ -7253,6 +7318,29 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     });
   };
 
+  useEffect(() => {
+    if (!operationsOpenRequest?.requestId) return;
+    setOperationsMessage("");
+    setOperationsError("");
+    if (operationsOpenRequest.section === "time-off") {
+      setOperationsSection("time-off");
+      setTimeOffMode(operationsOpenRequest.timeOffMode || "");
+      setLockupMode("home");
+      clearOperationsOpenRequest?.();
+      return;
+    }
+    if (operationsOpenRequest.section === "lock-up") {
+      setOperationsSection("lock-up");
+      setTimeOffMode("");
+      setLockupMode(operationsOpenRequest.lockupMode || "home");
+      clearOperationsOpenRequest?.();
+      return;
+    }
+    resetOperationsFlow();
+    setOperationsSection("home");
+    clearOperationsOpenRequest?.();
+  }, [operationsOpenRequest, clearOperationsOpenRequest]);
+
   const renderLockupForm = () => (
     <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,background:C.surface}}>
       <div>
@@ -7583,13 +7671,28 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
             Build the internal systems that help your church run smoothly behind the scenes, starting with staff coverage and time-off workflows.
           </div>
         </div>
+        <div style={{display:"flex",justifyContent:"flex-end"}}>
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={() => toggleFavorite?.({
+              key: "board:operations-board",
+              kind: "board",
+              title: "Operations Board",
+              subtitle: "Pinned board",
+              pageId: "operations-board",
+            })}
+            style={{color:isFavorite?.("board:operations-board") ? C.gold : C.text}}
+          >
+            <Icons.pin /> {isFavorite?.("board:operations-board") ? "Pinned" : "Pin"}
+          </button>
+        </div>
         {operationsSection === "home" ? (
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:18}}>
             {cards.map((card) => (
-              <button
+              <div
                 key={card.id}
                 className="card"
-                onClick={() => openWorkflowCard(card.id)}
                 style={{
                   padding:22,
                   textAlign:"left",
@@ -7598,17 +7701,33 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                   minHeight:180,
                   background:C.surface,
                   border:`1px solid ${C.border}`,
-                  cursor:"pointer",
                 }}
               >
-                <div style={{fontSize:18,fontWeight:600,color:C.text,maxWidth:320}}>{card.name}</div>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                  <div style={{fontSize:18,fontWeight:600,color:C.text,maxWidth:320}}>{card.name}</div>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => toggleFavorite?.({
+                      key: `operations:${card.id}`,
+                      kind: "board-section",
+                      title: card.name,
+                      subtitle: "Pinned operations workflow",
+                      pageId: "operations-board",
+                      section: card.id,
+                    })}
+                    style={{padding:"7px 10px",fontSize:12,color:isFavorite?.(`operations:${card.id}`) ? C.gold : C.text,flexShrink:0}}
+                  >
+                    <Icons.pin /> {isFavorite?.(`operations:${card.id}`) ? "Pinned" : "Pin"}
+                  </button>
+                </div>
                 <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
                   {card.summary}
                 </div>
                 <div style={{marginTop:"auto",justifySelf:"end"}}>
-                  <span className="btn-gold-compact">Open workflow</span>
+                  <button type="button" className="btn-gold-compact" onClick={() => openWorkflowCard(card.id)}>Open workflow</button>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         ) : (
@@ -7642,18 +7761,35 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                       summary: "Record a sick day quickly so operations and leadership can track availability.",
                     },
                   ].map((option) => (
-                    <button
+                    <div
                       key={option.id}
                       className="card"
-                      onClick={() => chooseTimeOffMode(option.id)}
-                      style={{padding:20,textAlign:"left",background:C.card,display:"grid",gap:10,cursor:"pointer",minHeight:160}}
+                      style={{padding:20,textAlign:"left",background:C.card,display:"grid",gap:10,minHeight:160}}
                     >
-                      <div style={{fontSize:18,fontWeight:600,color:C.text}}>{option.title}</div>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+                        <div style={{fontSize:18,fontWeight:600,color:C.text}}>{option.title}</div>
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          onClick={() => toggleFavorite?.({
+                            key: `operations:time-off:${option.id}`,
+                            kind: "board-section",
+                            title: option.title,
+                            subtitle: "Pinned operations page",
+                            pageId: "operations-board",
+                            section: "time-off",
+                            timeOffMode: option.id,
+                          })}
+                          style={{padding:"7px 10px",fontSize:12,color:isFavorite?.(`operations:time-off:${option.id}`) ? C.gold : C.text,flexShrink:0}}
+                        >
+                          <Icons.pin /> {isFavorite?.(`operations:time-off:${option.id}`) ? "Pinned" : "Pin"}
+                        </button>
+                      </div>
                       <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>{option.summary}</div>
                       <div style={{marginTop:"auto",justifySelf:"end"}}>
-                        <span className="btn-gold-compact">Open form</span>
+                        <button type="button" className="btn-gold-compact" onClick={() => chooseTimeOffMode(option.id)}>Open form</button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -8416,10 +8552,10 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
           <div style={{display:"grid",gap:10}}>
             {favoriteItems.map((item) => (
               <div key={item.key} className="card" style={{padding:"14px 16px",display:"grid",gridTemplateColumns:"auto 1fr auto auto",gap:12,alignItems:"center",textAlign:"left",background:"rgba(255,255,255,.03)"}}>
-                <div style={{color:C.gold,display:"flex",alignItems:"center",justifyContent:"center"}}><Icons.star /></div>
+                <div style={{color:C.gold,display:"flex",alignItems:"center",justifyContent:"center"}}><Icons.pin /></div>
                 <div style={{minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:600,color:C.text,lineHeight:1.4}}>{item.title}</div>
-                  <div style={{fontSize:12,color:C.muted,marginTop:2,lineHeight:1.5}}>{item.subtitle || (item.kind === "page" ? "Pinned page" : item.kind === "task" ? "Pinned task" : "Pinned event")}</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:2,lineHeight:1.5}}>{item.subtitle || (item.kind === "task" ? "Pinned task" : item.kind === "event" ? "Pinned event" : "Pinned shortcut")}</div>
                 </div>
                 <button type="button" className="btn-gold-compact" onClick={() => openFavorite?.(item)}>Open</button>
                 <button type="button" className="btn-outline" onClick={() => toggleFavorite?.(item)} style={{padding:"6px 10px",fontSize:12}}>Remove</button>
@@ -8428,7 +8564,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
           </div>
         ) : (
           <div style={{padding:"18px 14px",border:`1px dashed ${C.border}`,borderRadius:12,fontSize:13,color:C.muted,textAlign:"left"}}>
-            Star pages from the sidebar, tasks from task details, or events from the Events Board to pin them here for yourself.
+            Pin boards, workflow pages, tasks, or events so your most-used Shepherd destinations stay within quick reach.
           </div>
         )}
       </div>
@@ -9570,7 +9706,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                   })}
                   style={{padding:"8px 10px",fontSize:12,color:isFavorite?.(`task:${selectedTask.id}`) ? C.gold : C.text}}
                 >
-                  <Icons.star /> {isFavorite?.(`task:${selectedTask.id}`) ? "Starred" : "Star"}
+                  <Icons.pin /> {isFavorite?.(`task:${selectedTask.id}`) ? "Pinned" : "Pin"}
                 </button>
                 {canEditTask(profile, church, selectedTask) ? (
                   <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,maxWidth:"100%",background:C.card,padding:"8px 10px",fontSize:12}}>
@@ -11978,6 +12114,7 @@ export default function App() {
   const [active, setActive] = useState(getStoredActivePage);
   const [taskOpenRequest, setTaskOpenRequest] = useState(null);
   const [eventOpenRequest, setEventOpenRequest] = useState(null);
+  const [operationsOpenRequest, setOperationsOpenRequest] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
@@ -12180,6 +12317,10 @@ export default function App() {
     setEventOpenRequest(null);
   }, []);
 
+  const clearOperationsOpenRequest = useCallback(() => {
+    setOperationsOpenRequest(null);
+  }, []);
+
   const startTutorial = useCallback(() => {
     setShowTutorial(true);
   }, []);
@@ -12191,7 +12332,7 @@ export default function App() {
   const isFavorite = useCallback((key) => favoriteKeySet.has(key), [favoriteKeySet]);
   const toggleFavorite = useCallback((item) => {
     const normalized = normalizeFavoriteItem(item);
-    if (!normalized.key || !normalized.title) return;
+    if (!normalized.key || !normalized.title || !isSupportedFavoriteItem(normalized)) return;
     setFavorites((current) => {
       const exists = (current || []).some((entry) => entry.key === normalized.key);
       if (exists) return (current || []).filter((entry) => entry.key !== normalized.key);
@@ -12208,6 +12349,25 @@ export default function App() {
     if (item.kind === "event" && item.eventId) {
       setEventOpenRequest({ id: item.eventId, kind: item.eventKind || "workflow", requestId: crypto.randomUUID() });
       setActive("events-board");
+      return;
+    }
+    if (item.pageId === "events-board") {
+      setEventOpenRequest({
+        kind: item.destinationKind || "board",
+        section: item.section || "home",
+        requestId: crypto.randomUUID(),
+      });
+      setActive("events-board");
+      return;
+    }
+    if (item.pageId === "operations-board") {
+      setOperationsOpenRequest({
+        section: item.section || "home",
+        timeOffMode: item.timeOffMode || "",
+        lockupMode: item.lockupMode || "home",
+        requestId: crypto.randomUUID(),
+      });
+      setActive("operations-board");
       return;
     }
     setActive(item.pageId || "dashboard");
@@ -12349,7 +12509,7 @@ export default function App() {
       const archivedRaw = window.localStorage.getItem(getArchivedNotificationStorageKey(prof.id));
       setArchivedNotificationIds(archivedRaw ? JSON.parse(archivedRaw) : []);
       const favoritesRaw = window.localStorage.getItem(getFavoritesStorageKey(prof.id));
-      setFavorites(favoritesRaw ? JSON.parse(favoritesRaw).map(normalizeFavoriteItem) : []);
+      setFavorites(favoritesRaw ? JSON.parse(favoritesRaw).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : []);
     } else {
       setReadNotificationIds([]);
       setArchivedNotificationIds([]);
@@ -12759,10 +12919,10 @@ export default function App() {
     dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
     account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} />,
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
-    workspaces: <Workspaces setActive={setActive}/>,
+    workspaces: <Workspaces setActive={setActive} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity} eventOpenRequest={eventOpenRequest} clearEventOpenRequest={clearEventOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
-    "content-media-board": <ContentMediaBoard tasks={tasks} setTasks={setTasks} setActive={setActive} churchId={church?.id} recordActivity={recordActivity} />,
-    "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} recordActivity={recordActivity} />,
+    "content-media-board": <ContentMediaBoard tasks={tasks} setTasks={setTasks} setActive={setActive} churchId={church?.id} recordActivity={recordActivity} isFavorite={isFavorite} toggleFavorite={toggleFavorite} />,
+    "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} recordActivity={recordActivity} operationsOpenRequest={operationsOpenRequest} clearOperationsOpenRequest={clearOperationsOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite} />,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest} recordActivity={recordActivity} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     faq: <FAQPage onStartTutorial={startTutorial} />,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,
@@ -12775,7 +12935,7 @@ export default function App() {
     <>
       <GS/>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>
+        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
         <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
       </div>
       {showTutorial && (

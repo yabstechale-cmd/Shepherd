@@ -281,6 +281,7 @@ const Icons = {
   trash:    () => <Icon d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v6M14 11v6" />,
   settings: () => <Icon d="M12 3l1.8 2.3 2.8-.3.9 2.7 2.6 1.1-1 2.6 1 2.6-2.6 1.1-.9 2.7-2.8-.3L12 21l-1.8-2.3-2.8.3-.9-2.7-2.6-1.1 1-2.6-1-2.6 2.6-1.1.9-2.7 2.8.3L12 3zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
   refresh:  () => <Icon d="M21 12a9 9 0 11-2.64-6.36M21 4v6h-6" />,
+  archive:  () => <Icon d="M3 7h18M5 7l1 13h12l1-13M9 11h6M10 3h4l1 4H9l1-4z" />,
   lock:     () => <Icon d="M7 11V8a5 5 0 0110 0v3M5 11h14v10H5z" />,
   help:     () => <Icon d="M9.1 9a3 3 0 115.8 1c-.5 1.7-2.9 2.1-2.9 4M12 18h.01M12 22a10 10 0 110-20 10 10 0 010 20z" />,
 };
@@ -6065,7 +6066,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                                 aria-label={workflow.is_archived ? `Restore ${workflow.event_name || workflow.title}` : `Archive ${workflow.event_name || workflow.title}`}
                                 title={workflow.is_archived ? "Restore event plan" : "Archive event plan"}
                               >
-                                <Icons.trash />
+                                <Icons.archive />
                               </button>
                             )}
                             {canEditWorkflow(workflow) && (
@@ -6134,7 +6135,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                     </button>
                     {canEditWorkflow(selectedWorkflow) && (
                       <button className="btn-outline" onClick={() => setWorkflowArchivedState(selectedWorkflow, !selectedWorkflow.is_archived)}>
-                        {selectedWorkflow.is_archived ? "Restore Plan" : "Archive Plan"}
+                        <Icons.archive /> {selectedWorkflow.is_archived ? "Restore Plan" : "Archive Plan"}
                       </button>
                     )}
                     {canEditWorkflow(selectedWorkflow) && (

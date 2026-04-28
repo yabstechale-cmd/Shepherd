@@ -8196,8 +8196,8 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
       items.splice(targetIndex, 0, draggedItem);
       return items;
     });
-  const favoriteItems = (favorites || []).slice(0, 8);
   };
+  const favoriteItems = (favorites || []).slice(0, 8);
 
   return (
     <div className="fadeIn mobile-pad" style={widePageStyle}>

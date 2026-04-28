@@ -243,7 +243,7 @@ const Icon = ({ d, size = 20 }) => (
 const Icons = {
   home:     () => <Icon d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" />,
   tasks:    () => <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />,
-  pin:      () => <Icon d="M14 3 21 10l-2 2-3-1-4 4v5l-1 1-2-6-6-2 1-1h5l4-4-1-3 2-2Z" />,
+  pin:      () => <Icon d="M14 3l7 7-2 2-3-1-2 2 4 8-1 1-8-4-2 2 1 3-2 2-7-7 2-2 3 1 2-2-4-8 1-1 8 4 2-2-1-3 2-2z" />,
   heart:    () => <Icon d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />,
   budget:   () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
   ministry: () => <Icon d="M3 21V7l9-4 9 4v14M9 21V12h6v9" />,
@@ -382,10 +382,10 @@ const GS = () => (
     .table-row:last-child{border-bottom:none}
     @media (max-width: 760px){
       .app-shell{flex-direction:column}
-      .app-sidebar{width:100% !important;min-height:auto !important;border-right:none !important;border-bottom:1px solid ${C.border}}
-      .app-sidebar-nav{display:flex;gap:8px;overflow-x:auto;padding:10px 12px !important;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;touch-action:pan-x}
-      .app-sidebar-nav .nav-item{margin-bottom:0;flex-shrink:0}
-      .app-sidebar-footer{padding:10px 12px !important}
+      .app-sidebar{width:100% !important;height:auto !important;min-height:auto !important;position:relative !important;top:auto !important;border-right:none !important;border-bottom:1px solid ${C.border};overflow:visible !important}
+      .app-sidebar-footer{order:2;padding:10px 12px !important;border-top:none !important;border-bottom:1px solid ${C.border};margin-top:0 !important}
+      .app-sidebar-nav{order:3;display:flex;align-items:center;gap:8px;overflow-x:auto;overflow-y:hidden;padding:10px 12px !important;flex:none !important;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;touch-action:pan-x}
+      .app-sidebar-nav .nav-item{margin-bottom:0;flex-shrink:0;align-self:center}
       .section-header{flex-direction:row;align-items:flex-start !important;justify-content:space-between;flex-wrap:wrap;gap:12px}
       .section-header > :first-child{flex:1;min-width:0}
       .section-header .btn-outline,.section-header .btn-gold{justify-content:center}

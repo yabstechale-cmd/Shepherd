@@ -265,6 +265,18 @@ const Icons = {
   lock:     () => <Icon d="M7 11V8a5 5 0 0110 0v3M5 11h14v10H5z" />,
   help:     () => <Icon d="M9.1 9a3 3 0 115.8 1c-.5 1.7-2.9 2.1-2.9 4M12 18h.01M12 22a10 10 0 110-20 10 10 0 010 20z" />,
 };
+const pinToggleButtonStyle = (active) => ({
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "none",
+  border: "none",
+  padding: 4,
+  color: active ? C.gold : C.muted,
+  cursor: "pointer",
+  lineHeight: 0,
+  flexShrink: 0,
+});
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
   <svg
     width={size}
@@ -2276,7 +2288,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
     {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
-      <div className="app-sidebar" style={{width:collapsed?64:220,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"relative",overflow:"hidden"}}>
+      <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
       <div style={{position:"absolute",bottom:40,right:collapsed?-10:20,width:80,opacity:.05}}>
         <BrandMark size={80} color={C.gold}/>
       </div>
@@ -2293,7 +2305,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
         </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>
       </div>
-      <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1}}>
+      <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1,overflowY:"auto",overflowX:"hidden"}}>
         {nav.map(({id,label,I: iconComponent})=>(
           <div
             key={id}
@@ -2317,7 +2329,7 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
           </div>
         ))}
       </nav>
-      <div className="app-sidebar-footer" style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`}}>
+      <div className="app-sidebar-footer" style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`,marginTop:"auto",background:C.surface,position:"relative",zIndex:1}}>
         <button
           onClick={onStartTutorial}
           title="Open Shepherd walkthrough"
@@ -5758,7 +5770,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
           <div className="events-board-actions" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
             <button
               type="button"
-              className="btn-outline"
               onClick={() => toggleFavorite?.({
                 key: "board:events-board",
                 kind: "board",
@@ -5767,9 +5778,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                 pageId: "events-board",
                 destinationKind: "board",
               })}
-              style={{color:isFavorite?.("board:events-board") ? C.gold : C.text}}
+              aria-label={isFavorite?.("board:events-board") ? "Unpin Events Board" : "Pin Events Board"}
+              title={isFavorite?.("board:events-board") ? "Unpin Events Board" : "Pin Events Board"}
+              style={pinToggleButtonStyle(isFavorite?.("board:events-board"))}
             >
-              <Icons.pin /> {isFavorite?.("board:events-board") ? "Pinned" : "Pin"}
+              <Icons.pin />
             </button>
             {eventsSection !== "home" && (
               <button className="btn-outline" onClick={() => setEventsSection("home")}>Back to Events Board</button>
@@ -5786,7 +5799,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                 <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Planning</div>
                 <button
                   type="button"
-                  className="btn-outline"
                   onClick={() => toggleFavorite?.({
                     key: "events:planning",
                     kind: "board-section",
@@ -5796,9 +5808,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                     destinationKind: "section",
                     section: "planning",
                   })}
-                  style={{padding:"7px 10px",fontSize:12,color:isFavorite?.("events:planning") ? C.gold : C.text,flexShrink:0}}
+                  aria-label={isFavorite?.("events:planning") ? "Unpin Event Planning" : "Pin Event Planning"}
+                  title={isFavorite?.("events:planning") ? "Unpin Event Planning" : "Pin Event Planning"}
+                  style={pinToggleButtonStyle(isFavorite?.("events:planning"))}
                 >
-                  <Icons.pin /> {isFavorite?.("events:planning") ? "Pinned" : "Pin"}
+                  <Icons.pin />
                 </button>
               </div>
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
@@ -5816,7 +5830,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                 <div style={{fontSize:18,fontWeight:600,color:C.text}}>Event Requests</div>
                 <button
                   type="button"
-                  className="btn-outline"
                   onClick={() => toggleFavorite?.({
                     key: "events:requests",
                     kind: "board-section",
@@ -5826,9 +5839,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                     destinationKind: "section",
                     section: "requests",
                   })}
-                  style={{padding:"7px 10px",fontSize:12,color:isFavorite?.("events:requests") ? C.gold : C.text,flexShrink:0}}
+                  aria-label={isFavorite?.("events:requests") ? "Unpin Event Requests" : "Pin Event Requests"}
+                  title={isFavorite?.("events:requests") ? "Unpin Event Requests" : "Pin Event Requests"}
+                  style={pinToggleButtonStyle(isFavorite?.("events:requests"))}
                 >
-                  <Icons.pin /> {isFavorite?.("events:requests") ? "Pinned" : "Pin"}
+                  <Icons.pin />
                 </button>
               </div>
               <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
@@ -6012,7 +6027,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                   </div>
                   <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                     <button
-                      className="btn-outline"
                       type="button"
                       onClick={() => toggleFavorite?.({
                         key: `event-workflow:${selectedWorkflow.id}`,
@@ -6023,9 +6037,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                         eventKind: "workflow",
                         pageId: "events-board",
                       })}
-                      style={{color:isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? C.gold : C.text}}
+                      aria-label={isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? "Unpin event plan" : "Pin event plan"}
+                      title={isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? "Unpin event plan" : "Pin event plan"}
+                      style={pinToggleButtonStyle(isFavorite?.(`event-workflow:${selectedWorkflow.id}`))}
                     >
-                      <Icons.pin /> {isFavorite?.(`event-workflow:${selectedWorkflow.id}`) ? "Pinned" : "Pin"}
+                      <Icons.pin />
                     </button>
                     {canEditWorkflow(selectedWorkflow) && (
                       <button className="btn-outline" onClick={() => openWorkflowModal(selectedWorkflow)}>Edit Event Details</button>
@@ -6348,7 +6364,6 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
 	                </div>
 	                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
 	                  <button
-	                    className="btn-outline"
 	                    type="button"
 	                    onClick={() => toggleFavorite?.({
 	                      key: `event-request:${requestDetails.id}`,
@@ -6359,9 +6374,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
 	                      eventKind: "request",
 	                      pageId: "events-board",
 	                    })}
-	                    style={{color:isFavorite?.(`event-request:${requestDetails.id}`) ? C.gold : C.text}}
+	                    aria-label={isFavorite?.(`event-request:${requestDetails.id}`) ? "Unpin event request" : "Pin event request"}
+	                    title={isFavorite?.(`event-request:${requestDetails.id}`) ? "Unpin event request" : "Pin event request"}
+	                    style={pinToggleButtonStyle(isFavorite?.(`event-request:${requestDetails.id}`))}
 	                  >
-	                    <Icons.pin /> {isFavorite?.(`event-request:${requestDetails.id}`) ? "Pinned" : "Pin"}
+	                    <Icons.pin />
 	                  </button>
 	                  <button className="btn-outline" onClick={() => copyRequesterEventRequestLink(requestDetails)}>
 	                    Copy Requester Share Link
@@ -6593,7 +6610,6 @@ function Workspaces({ setActive, isFavorite, toggleFavorite }) {
               <div className="framework-card-title" style={{...sectionTitleStyle,overflowWrap:"anywhere"}}>{board.name}</div>
               <button
                 type="button"
-                className="btn-outline"
                 onClick={() => toggleFavorite?.({
                   key: `board:${board.id}`,
                   kind: "board",
@@ -6601,9 +6617,11 @@ function Workspaces({ setActive, isFavorite, toggleFavorite }) {
                   subtitle: "Pinned board",
                   pageId: board.id,
                 })}
-                style={{padding:"7px 10px",fontSize:12,color:isFavorite?.(`board:${board.id}`) ? C.gold : C.text,flexShrink:0}}
+                aria-label={isFavorite?.(`board:${board.id}`) ? `Unpin ${board.name}` : `Pin ${board.name}`}
+                title={isFavorite?.(`board:${board.id}`) ? `Unpin ${board.name}` : `Pin ${board.name}`}
+                style={pinToggleButtonStyle(isFavorite?.(`board:${board.id}`))}
               >
-                <Icons.pin /> {isFavorite?.(`board:${board.id}`) ? "Pinned" : "Pin"}
+                <Icons.pin />
               </button>
             </div>
             <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6,overflowWrap:"break-word"}}>{board.summary}</div>
@@ -6689,7 +6707,6 @@ function ContentMediaBoard({ tasks, setTasks, setActive, churchId, recordActivit
           <div className="events-board-actions" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
             <button
               type="button"
-              className="btn-outline"
               onClick={() => toggleFavorite?.({
                 key: "board:content-media-board",
                 kind: "board",
@@ -6697,9 +6714,11 @@ function ContentMediaBoard({ tasks, setTasks, setActive, churchId, recordActivit
                 subtitle: "Pinned board",
                 pageId: "content-media-board",
               })}
-              style={{color:isFavorite?.("board:content-media-board") ? C.gold : C.text}}
+              aria-label={isFavorite?.("board:content-media-board") ? "Unpin Content & Media Board" : "Pin Content & Media Board"}
+              title={isFavorite?.("board:content-media-board") ? "Unpin Content & Media Board" : "Pin Content & Media Board"}
+              style={pinToggleButtonStyle(isFavorite?.("board:content-media-board"))}
             >
-              <Icons.pin /> {isFavorite?.("board:content-media-board") ? "Pinned" : "Pin"}
+              <Icons.pin />
             </button>
             <button className="btn-outline" onClick={() => setActive("tasks")}>Open Tasks</button>
           </div>
@@ -7674,7 +7693,6 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         <div style={{display:"flex",justifyContent:"flex-end"}}>
           <button
             type="button"
-            className="btn-outline"
             onClick={() => toggleFavorite?.({
               key: "board:operations-board",
               kind: "board",
@@ -7682,9 +7700,11 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
               subtitle: "Pinned board",
               pageId: "operations-board",
             })}
-            style={{color:isFavorite?.("board:operations-board") ? C.gold : C.text}}
+            aria-label={isFavorite?.("board:operations-board") ? "Unpin Operations Board" : "Pin Operations Board"}
+            title={isFavorite?.("board:operations-board") ? "Unpin Operations Board" : "Pin Operations Board"}
+            style={pinToggleButtonStyle(isFavorite?.("board:operations-board"))}
           >
-            <Icons.pin /> {isFavorite?.("board:operations-board") ? "Pinned" : "Pin"}
+            <Icons.pin />
           </button>
         </div>
         {operationsSection === "home" ? (
@@ -7707,7 +7727,6 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                   <div style={{fontSize:18,fontWeight:600,color:C.text,maxWidth:320}}>{card.name}</div>
                   <button
                     type="button"
-                    className="btn-outline"
                     onClick={() => toggleFavorite?.({
                       key: `operations:${card.id}`,
                       kind: "board-section",
@@ -7716,9 +7735,11 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                       pageId: "operations-board",
                       section: card.id,
                     })}
-                    style={{padding:"7px 10px",fontSize:12,color:isFavorite?.(`operations:${card.id}`) ? C.gold : C.text,flexShrink:0}}
+                    aria-label={isFavorite?.(`operations:${card.id}`) ? `Unpin ${card.name}` : `Pin ${card.name}`}
+                    title={isFavorite?.(`operations:${card.id}`) ? `Unpin ${card.name}` : `Pin ${card.name}`}
+                    style={pinToggleButtonStyle(isFavorite?.(`operations:${card.id}`))}
                   >
-                    <Icons.pin /> {isFavorite?.(`operations:${card.id}`) ? "Pinned" : "Pin"}
+                    <Icons.pin />
                   </button>
                 </div>
                 <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
@@ -7770,7 +7791,6 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                         <div style={{fontSize:18,fontWeight:600,color:C.text}}>{option.title}</div>
                         <button
                           type="button"
-                          className="btn-outline"
                           onClick={() => toggleFavorite?.({
                             key: `operations:time-off:${option.id}`,
                             kind: "board-section",
@@ -7780,9 +7800,11 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                             section: "time-off",
                             timeOffMode: option.id,
                           })}
-                          style={{padding:"7px 10px",fontSize:12,color:isFavorite?.(`operations:time-off:${option.id}`) ? C.gold : C.text,flexShrink:0}}
+                          aria-label={isFavorite?.(`operations:time-off:${option.id}`) ? `Unpin ${option.title}` : `Pin ${option.title}`}
+                          title={isFavorite?.(`operations:time-off:${option.id}`) ? `Unpin ${option.title}` : `Pin ${option.title}`}
+                          style={pinToggleButtonStyle(isFavorite?.(`operations:time-off:${option.id}`))}
                         >
-                          <Icons.pin /> {isFavorite?.(`operations:time-off:${option.id}`) ? "Pinned" : "Pin"}
+                          <Icons.pin />
                         </button>
                       </div>
                       <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>{option.summary}</div>
@@ -9695,7 +9717,6 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
               <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexShrink:0}}>
                 <button
                   type="button"
-                  className="btn-outline"
                   onClick={() => toggleFavorite?.({
                     key: `task:${selectedTask.id}`,
                     kind: "task",
@@ -9704,9 +9725,11 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                     taskId: selectedTask.id,
                     pageId: "tasks",
                   })}
-                  style={{padding:"8px 10px",fontSize:12,color:isFavorite?.(`task:${selectedTask.id}`) ? C.gold : C.text}}
+                  aria-label={isFavorite?.(`task:${selectedTask.id}`) ? "Unpin task" : "Pin task"}
+                  title={isFavorite?.(`task:${selectedTask.id}`) ? "Unpin task" : "Pin task"}
+                  style={pinToggleButtonStyle(isFavorite?.(`task:${selectedTask.id}`))}
                 >
-                  <Icons.pin /> {isFavorite?.(`task:${selectedTask.id}`) ? "Pinned" : "Pin"}
+                  <Icons.pin />
                 </button>
                 {canEditTask(profile, church, selectedTask) ? (
                   <select className="input-field" value={selectedTask.status} onChange={(e)=>setTaskStatus(selectedTask, e.target.value)} style={{width:150,maxWidth:"100%",background:C.card,padding:"8px 10px",fontSize:12}}>

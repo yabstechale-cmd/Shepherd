@@ -535,6 +535,9 @@ const normalizeEventWorkflow = (workflow) => ({
   ...workflow,
   event_name: workflow?.event_name || workflow?.title || "",
   visibility: "shared",
+  archived_at: workflow?.archived_at || null,
+  archived_by: workflow?.archived_by || "",
+  is_archived: !!workflow?.archived_at,
   location: workflow?.location || "",
   main_contact: workflow?.main_contact || "",
   timeline_items: Array.isArray(workflow?.timeline_items) ? workflow.timeline_items : [],
@@ -4908,6 +4911,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   const [timelineDraft, setTimelineDraft] = useState({ id: null, title: "", date: "", details: "", includeInTasks: false, reviewRequired: false, reviewers: [] });
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [planningFilter, setPlanningFilter] = useState("mine");
+  const [planningStatusFilter, setPlanningStatusFilter] = useState("active");
   const [checklistDraft, setChecklistDraft] = useState("");
   const [planningNoteDraft, setPlanningNoteDraft] = useState("");
   const eventRequestDraftKey = getFormDraftStorageKey(profile?.id, "event-request");
@@ -4920,6 +4924,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   ];
   const requests = eventRequests || [];
   const visibleWorkflows = eventWorkflows
+    .filter((workflow) => planningStatusFilter === "archived" ? workflow.is_archived : !workflow.is_archived)
     .filter((workflow) => planningFilter === "mine"
       ? samePerson(workflow.owner_name, profile?.full_name)
       : !samePerson(workflow.owner_name, profile?.full_name))
@@ -5705,6 +5710,39 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
       summary: `${profile?.full_name || "A staff member"} deleted event plan "${workflow.event_name || workflow.title}".`,
     });
   };
+  const setWorkflowArchivedState = async (workflow, shouldArchive) => {
+    if (!workflow?.id) return;
+    const changes = shouldArchive
+      ? {
+          archived_at: new Date().toISOString(),
+          archived_by: profile?.full_name || profile?.email || "Staff",
+        }
+      : {
+          archived_at: null,
+          archived_by: null,
+        };
+    const { data, error } = await supabase
+      .from("event_workflows")
+      .update(changes)
+      .eq("id", workflow.id)
+      .select()
+      .maybeSingle();
+    if (error || !data) {
+      setWorkflowError(error?.message || `We couldn't ${shouldArchive ? "archive" : "restore"} that event plan.`);
+      return;
+    }
+    const normalized = normalizeEventWorkflow(data);
+    setWorkflowError("");
+    setEventWorkflows((current) => (current || []).map((entry) => entry.id === normalized.id ? normalized : entry));
+    setSelectedWorkflow((current) => current?.id === normalized.id ? normalized : current);
+    await recordActivity?.({
+      action: shouldArchive ? "archived" : "restored",
+      entityType: "event_plan",
+      entityId: normalized.id,
+      entityTitle: normalized.event_name || normalized.title,
+      summary: `${profile?.full_name || "A staff member"} ${shouldArchive ? "archived" : "restored"} event plan "${normalized.event_name || normalized.title}".`,
+    });
+  };
 	  const deleteRequest = async (request) => {
     if (!request?.id) return;
     if (!confirmDestructiveAction(`Delete ${request.event_name || "this event request"}? You can restore supported items from Trash.`)) return;
@@ -5974,6 +6012,20 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                         </button>
                       ))}
                     </div>
+                    <div className="task-filter-group" style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`,gap:2}}>
+                      {[
+                        { id: "active", label: "Active" },
+                        { id: "archived", label: "Archived" },
+                      ].map((option) => (
+                        <button
+                          key={option.id}
+                          onClick={() => setPlanningStatusFilter(option.id)}
+                          style={{padding:"6px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:planningStatusFilter===option.id?C.card:"transparent",color:planningStatusFilter===option.id?C.text:C.muted}}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                     <button className="btn-outline" onClick={() => openWorkflowModal()}>New Event Plan</button>
                   </div>
                 </div>
@@ -5985,9 +6037,13 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                   )}
                   {!workflowLoading && visibleWorkflows.length === 0 && (
                     <div style={{padding:"26px 14px",border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center",fontSize:12,color:C.muted,gridColumn:"1 / -1"}}>
-                      {planningFilter === "mine"
-                        ? "You have not created any event plans yet."
-                        : "No event plans from other team members yet."}
+                      {planningStatusFilter === "archived"
+                        ? planningFilter === "mine"
+                          ? "You have no archived event plans yet."
+                          : "No archived event plans from other team members yet."
+                        : planningFilter === "mine"
+                          ? "You have not created any event plans yet."
+                          : "No event plans from other team members yet."}
                     </div>
                   )}
                   {!workflowLoading && visibleWorkflows.map((workflow) => {
@@ -6001,6 +6057,17 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                         <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}>
                           <div style={{fontSize:20,fontWeight:600,color:C.text,lineHeight:1.2}}>{workflow.event_name || workflow.title}</div>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            {canEditWorkflow(workflow) && (
+                              <button
+                                type="button"
+                                onClick={() => setWorkflowArchivedState(workflow, !workflow.is_archived)}
+                                style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:`1px solid ${C.border}`,borderRadius:10,cursor:"pointer",color:workflow.is_archived ? C.gold : C.muted,padding:8}}
+                                aria-label={workflow.is_archived ? `Restore ${workflow.event_name || workflow.title}` : `Archive ${workflow.event_name || workflow.title}`}
+                                title={workflow.is_archived ? "Restore event plan" : "Archive event plan"}
+                              >
+                                <Icons.trash />
+                              </button>
+                            )}
                             {canEditWorkflow(workflow) && (
                               <button
                                 type="button"
@@ -6020,6 +6087,9 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                           style={{display:"grid",gap:10,textAlign:"left",background:"none",border:"none",padding:0,cursor:"pointer"}}
                         >
                           <div style={{fontSize:12,color:C.muted}}>Countdown: {getEventCountdownLabel(workflow)}</div>
+                          {workflow.is_archived && (
+                            <div style={{fontSize:12,color:C.gold}}>Archived{workflow.archived_by ? ` by ${workflow.archived_by}` : ""}</div>
+                          )}
                           <div style={{fontSize:12,color:C.muted}}>Main contact: {workflow.main_contact || "—"}</div>
                           <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>{getEventTimelineSummary(workflow)}</div>
                           <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",fontSize:12,color:C.muted}}>
@@ -6063,6 +6133,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                       <Icons.pin />
                     </button>
                     {canEditWorkflow(selectedWorkflow) && (
+                      <button className="btn-outline" onClick={() => setWorkflowArchivedState(selectedWorkflow, !selectedWorkflow.is_archived)}>
+                        {selectedWorkflow.is_archived ? "Restore Plan" : "Archive Plan"}
+                      </button>
+                    )}
+                    {canEditWorkflow(selectedWorkflow) && (
                       <button className="btn-outline" onClick={() => openWorkflowModal(selectedWorkflow)}>Edit Event Details</button>
                     )}
                     {canEditWorkflow(selectedWorkflow) && (
@@ -6079,6 +6154,11 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
                   </div>
                 </div>
                 <div className="card" style={{padding:16,textAlign:"left",display:"grid",gap:12}}>
+                  {selectedWorkflow.is_archived && (
+                    <div style={{padding:"12px 14px",border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.goldGlow,fontSize:12,color:C.text,lineHeight:1.6}}>
+                      This plan is archived, so it stays out of the active planning list but can still be reopened and restored for future use.
+                    </div>
+                  )}
                   <div className="request-details-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
                     <div>
                       <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:0.4}}>Event Date</div>

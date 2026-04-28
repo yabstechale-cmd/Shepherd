@@ -588,6 +588,8 @@ create table if not exists public.event_workflows (
   summary text,
   target_date date,
   steps jsonb not null default '[]'::jsonb,
+  archived_at timestamptz,
+  archived_by text,
   created_at timestamptz not null default now()
 );
 
@@ -607,6 +609,8 @@ alter table public.event_workflows add column if not exists notes_entries jsonb 
 alter table public.event_workflows add column if not exists summary text;
 alter table public.event_workflows add column if not exists target_date date;
 alter table public.event_workflows add column if not exists steps jsonb not null default '[]'::jsonb;
+alter table public.event_workflows add column if not exists archived_at timestamptz;
+alter table public.event_workflows add column if not exists archived_by text;
 alter table public.event_workflows add column if not exists created_at timestamptz not null default now();
 
 alter table public.event_workflows

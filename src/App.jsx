@@ -243,7 +243,19 @@ const Icon = ({ d, size = 20 }) => (
 const Icons = {
   home:     () => <Icon d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" />,
   tasks:    () => <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />,
-  pin:      () => <Icon d="M14 3l7 7-2 2-3-1-2 2 4 8-1 1-8-4-2 2 1 3-2 2-7-7 2-2 3 1 2-2-4-8 1-1 8 4 2-2-1-3 2-2z" />,
+  pin:      () => (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.5 3.5 20.5 9.5" />
+      <path d="M16.5 1.5 22.5 7.5" />
+      <path d="M12.5 5.5 18.5 11.5" />
+      <path d="M10 8l6 6" />
+      <path d="M8.5 9.5c-1.9-.2-4 .4-5.4 1.8l-.6.6 1.8 1.8" />
+      <path d="M11 12.5 5 18.5" />
+      <path d="M13.5 15 9 19.5" />
+      <path d="M4.5 19.5 11 13" />
+      <path d="M3 21 8.5 15.5" />
+    </svg>
+  ),
   heart:    () => <Icon d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />,
   budget:   () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
   ministry: () => <Icon d="M3 21V7l9-4 9 4v14M9 21V12h6v9" />,

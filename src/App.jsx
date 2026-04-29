@@ -2348,17 +2348,17 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
     {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
-      <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
-      <div style={{padding:collapsed?"12px 10px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",justifyContent:"space-between",gap:collapsed?10:12}}>
+      <div className="app-sidebar" style={{width:collapsed?152:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
+      <div style={{padding:collapsed?"14px 12px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12}}>
         <button
           onClick={() => setActive("dashboard")}
           title="Go to dashboard"
-          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"center"}}
+          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"flex-start",flex:1}}
         >
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:44,height:44}}>
             <BrandMark size={42} color={C.gold}/>
           </div>
-          {!collapsed && <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em"}}>Shepherd</span>}
+          <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:collapsed?18:20,fontWeight:500,color:C.text,letterSpacing:"0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Shepherd</span>
         </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>
       </div>
@@ -2387,33 +2387,6 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
         ))}
       </nav>
       <div className="app-sidebar-footer" style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`,marginTop:"auto",background:C.surface,position:"relative",zIndex:1}}>
-        <button
-          onClick={onStartTutorial}
-          title="Open Shepherd walkthrough"
-          style={{
-            width:"100%",
-            display:"flex",
-            alignItems:"center",
-            justifyContent:collapsed ? "center" : "flex-start",
-            gap:10,
-            marginBottom:10,
-            padding:collapsed ? 8 : "10px 12px",
-            borderRadius:12,
-            border:`1px solid ${C.goldDim}`,
-            background:C.goldGlow,
-            color:C.text,
-            cursor:"pointer",
-            textAlign:"left",
-          }}
-        >
-          <span style={{width:26,height:26,borderRadius:"50%",background:C.gold,color:"#0f1117",display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:800,flexShrink:0}}>?</span>
-          {!collapsed && (
-            <span style={{display:"grid",gap:2,minWidth:0}}>
-              <span style={{fontSize:12,fontWeight:700,color:C.text,lineHeight:1.2}}>Need a walkthrough?</span>
-              <span style={{fontSize:11,color:C.muted,lineHeight:1.3}}>Start the quick guide</span>
-            </span>
-          )}
-        </button>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10}}>
           <button
             onClick={()=>setActive("account")}
@@ -2426,36 +2399,23 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
               profile?.full_name?.[0]||"U"
             )}
           </div>
-          {!collapsed && <>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:500,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile?.full_name||"User"}</div>
-              <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{roleLabel(profile)} • {church?.name||""}</div>
-            </div>
-          </>}
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:500,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile?.full_name||"User"}</div>
+            {!collapsed && <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{roleLabel(profile)} • {church?.name||""}</div>}
+          </div>
           </button>
-          {!collapsed && <>
-            <button
-              className="mobile-only"
-              onClick={() => setActive("notifications")}
-              title="Open notifications"
-              style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",alignItems:"center",justifyContent:"center",padding:0}}
-            >
-              <Icons.bell />
-              {unreadCount > 0 && (
-                <span style={{position:"absolute",top:-6,right:-8,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </button>
-            <button
-              className="desktop-only"
-              onClick={() => setActive("account")}
-              title="Open account settings"
-              style={{background:"none",border:"none",cursor:"pointer",color:active === "account" ? C.gold : C.muted,alignItems:"center",justifyContent:"center",padding:0}}
-            >
-              <Icons.settings />
-            </button>
-          </>}
+          <button
+            onClick={() => setActive("notifications")}
+            title="Open notifications"
+            style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0}}
+          >
+            <Icons.bell />
+            {unreadCount > 0 && (
+              <span style={{position:"absolute",top:-6,right:-8,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </div>

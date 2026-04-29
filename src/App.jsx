@@ -3,7 +3,6 @@ import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
 import shepherdBrandMarkPrimary from "./assets/icons/shepherd-1.svg";
-import shepherdBrandMarkFootprint from "./assets/icons/shepherd-1.svg";
 
 const C = {
   bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
@@ -320,27 +319,6 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
   />
 );
 
-const FootprintMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
-  <span
-    aria-hidden="true"
-    style={{
-      display: "block",
-      width: size,
-      height: size,
-      opacity,
-      backgroundColor: color,
-      WebkitMaskImage: `url(${shepherdBrandMarkFootprint})`,
-      maskImage: `url(${shepherdBrandMarkFootprint})`,
-      WebkitMaskRepeat: "no-repeat",
-      maskRepeat: "no-repeat",
-      WebkitMaskPosition: "center",
-      maskPosition: "center",
-      WebkitMaskSize: "contain",
-      maskSize: "contain",
-    }}
-  />
-);
-
 const GS = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -470,29 +448,6 @@ const GS = () => (
     }
   `}</style>
 );
-
-const AUTH_WATERMARK_POSITIONS = [
-  { left: -42, top: 10 },
-  { left: 196, top: 88 },
-  { left: 474, top: -18 },
-  { left: 734, top: 78 },
-  { left: 1088, top: 36 },
-  { left: 34, top: 258 },
-  { left: 332, top: 206 },
-  { left: 624, top: 310 },
-  { left: 918, top: 214 },
-  { left: 1212, top: 280 },
-  { left: -28, top: 530 },
-  { left: 228, top: 474 },
-  { left: 516, top: 566 },
-  { left: 804, top: 458 },
-  { left: 1116, top: 544 },
-  { left: 82, top: 788 },
-  { left: 392, top: 714 },
-  { left: 712, top: 812 },
-  { left: 1036, top: 736 },
-  { left: 1264, top: 832 },
-];
 
 const normalizeAccessUser = (record) => ({
   ...record,
@@ -1959,22 +1914,6 @@ function AuthScreen() {
 
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,position:"relative",overflow:"hidden"}}>
-      <div style={{position:"absolute",left:"50%",top:"50%",width:1360,height:1040,transform:"translate(-50%, -50%)",opacity:.0275,pointerEvents:"none"}}>
-        {AUTH_WATERMARK_POSITIONS.map((entry, i)=>(
-          <div
-            key={i}
-            style={{
-              position:"absolute",
-              left: entry.left,
-              top: entry.top,
-              width: 60,
-              height: 60,
-            }}
-          >
-            <FootprintMark size={60} color={C.gold} opacity={1}/>
-          </div>
-        ))}
-      </div>
       <div className="mobile-auth-glow" style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:600,height:600,background:`radial-gradient(circle,${C.goldGlow} 0%,transparent 70%)`,pointerEvents:"none"}}/>
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
@@ -2349,9 +2288,6 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
   ];
   return (
       <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
-      <div style={{position:"absolute",bottom:10,right:collapsed?-22:-6,width:148,opacity:.14,transform:"rotate(-8deg)"}}>
-        <FootprintMark size={148} color={C.gold}/>
-      </div>
       <div style={{padding:collapsed?"12px 10px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",justifyContent:"space-between",gap:collapsed?10:12}}>
         <button
           onClick={() => setActive("dashboard")}

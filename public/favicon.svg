@@ -1,13 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Shepherd">
   <defs>
-    <filter id="goldify" color-interpolation-filters="sRGB">
-      <feFlood flood-color="#c9a84c" result="gold"/>
-      <feComposite in="gold" in2="SourceAlpha" operator="in" result="goldShape"/>
-      <feMerge>
-        <feMergeNode in="goldShape"/>
-      </feMerge>
-    </filter>
+    <linearGradient id="gold" x1="150" x2="360" y1="104" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f4dc86"/>
+      <stop offset=".58" stop-color="#c9a84c"/>
+      <stop offset="1" stop-color="#8a6f2e"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientTransform="translate(256 252) rotate(90) scale(214)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c9a84c" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#c9a84c" stop-opacity="0"/>
+    </radialGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="#0f1117"/>
-  <image href="/favicon-source.svg" x="52" y="52" width="408" height="408" preserveAspectRatio="xMidYMid meet" filter="url(#goldify)"/>
+  <circle cx="256" cy="256" r="214" fill="url(#halo)"/>
+  <text
+    x="256"
+    y="359"
+    fill="url(#gold)"
+    font-family="'Young Serif', Georgia, 'Times New Roman', serif"
+    font-size="310"
+    font-weight="500"
+    text-anchor="middle"
+    letter-spacing="-14"
+  >S</text>
 </svg>

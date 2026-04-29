@@ -2,54 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon-source.svg" />
-    <link rel="apple-touch-icon" href="/favicon-source.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#0f1117" />
     <meta name="apple-mobile-web-app-title" content="Shepherd" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shepherd</title>
-    <script>
-      (() => {
-        const applyGoldFavicon = () => {
-          const image = new Image();
-          image.onload = () => {
-            const canvas = document.createElement("canvas");
-            canvas.width = 512;
-            canvas.height = 512;
-            const context = canvas.getContext("2d");
-            if (!context) return;
-            context.clearRect(0, 0, canvas.width, canvas.height);
-            context.drawImage(image, 0, 0, canvas.width, canvas.height);
-            context.globalCompositeOperation = "source-in";
-            context.fillStyle = "#c9a84c";
-            context.fillRect(0, 0, canvas.width, canvas.height);
-            const href = canvas.toDataURL("image/png");
-            [
-              { rel: "icon", type: "image/png" },
-              { rel: "apple-touch-icon" },
-            ].forEach(({ rel, type }) => {
-              let link = document.querySelector(`link[rel="${rel}"]`);
-              if (!link) {
-                link = document.createElement("link");
-                link.rel = rel;
-                document.head.appendChild(link);
-              }
-              if (type) link.type = type;
-              link.href = href;
-            });
-          };
-          image.src = "/favicon-source.svg";
-        };
-
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", applyGoldFavicon, { once: true });
-        } else {
-          applyGoldFavicon();
-        }
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

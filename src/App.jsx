@@ -4,11 +4,43 @@ import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
 import shepherdBrandMarkPrimary from "./assets/icons/shepherd-1.svg";
 
-const C = {
-  bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
-  gold: "#c9a84c", goldDim: "#8a6f2e", goldGlow: "rgba(201,168,76,0.15)",
-  text: "#e8e2d4", muted: "#7a8299", danger: "#e05252", success: "#52c87a",
-  blue: "#5b8fe8", purple: "#9b72e8",
+const DEFAULT_THEME_MODE = "dark";
+const GLOBAL_THEME_STORAGE_KEY = "shepherd-theme-mode";
+const getThemeStorageKey = (userId) => userId ? `shepherd-theme-mode:${userId}` : GLOBAL_THEME_STORAGE_KEY;
+const THEME_PALETTES = {
+  dark: {
+    bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
+    gold: "#c9a84c", goldDim: "#8a6f2e", goldGlow: "rgba(201,168,76,0.15)",
+    text: "#e8e2d4", muted: "#7a8299", danger: "#e05252", success: "#52c87a",
+    blue: "#5b8fe8", purple: "#9b72e8",
+    heading: "#e8e2d4",
+    subheading: "#7a8299",
+    buttonText: "#0f1117",
+    overlayCard: "rgba(15,17,23,.42)",
+    subtleSurface: "rgba(255,255,255,.02)",
+  },
+  light: {
+    bg: "#eeeff6", surface: "#ffffff", card: "#f7f8fc", border: "#bcc0cf",
+    gold: "#ab8a09", goldDim: "#8e7411", goldGlow: "rgba(171,138,9,0.14)",
+    text: "#1c2433", muted: "#596277", danger: "#c34747", success: "#3f9a61",
+    blue: "#4d76bf", purple: "#8364c9",
+    heading: "#101828",
+    subheading: "#101828",
+    buttonText: "#f7f8fc",
+    overlayCard: "rgba(255,255,255,.72)",
+    subtleSurface: "rgba(255,255,255,.78)",
+  },
+};
+const C = { ...THEME_PALETTES[DEFAULT_THEME_MODE] };
+const applyThemePalette = (mode = DEFAULT_THEME_MODE) => {
+  Object.assign(C, THEME_PALETTES[mode] || THEME_PALETTES[DEFAULT_THEME_MODE]);
+};
+const getStoredThemeMode = (userId = "") => {
+  if (typeof window === "undefined") return DEFAULT_THEME_MODE;
+  const specific = window.localStorage.getItem(getThemeStorageKey(userId));
+  if (specific === "dark" || specific === "light") return specific;
+  const global = window.localStorage.getItem(GLOBAL_THEME_STORAGE_KEY);
+  return global === "light" || global === "dark" ? global : DEFAULT_THEME_MODE;
 };
 
 const TASK_CATEGORIES = ["Admin", "Content/Art", "Events", "Services", "Worship", "Missions", "Men's", "Women's", "Young Adults", "Youth", "Kids", "Finances", "Operations"];
@@ -338,15 +370,15 @@ const GS = () => (
     .nav-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;cursor:pointer;color:${C.muted};font-size:14px;font-weight:500;border:1px solid transparent;margin-bottom:2px}
     .nav-item:hover{background:${C.card};color:${C.text}}
     .nav-item.active{background:${C.goldGlow};color:${C.gold};border-color:${C.goldDim}}
-    .btn-gold,.btn-outline{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:#0f1117;font-weight:600;border:none;border-radius:10px;padding:10px 20px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 24px rgba(201,168,76,.18)}
+    .btn-gold,.btn-outline{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:${C.buttonText};font-weight:600;border:none;border-radius:10px;padding:10px 20px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 24px rgba(201,168,76,.18)}
     .btn-gold:hover,.btn-outline:hover{filter:brightness(1.08)}
-    .btn-gold-compact{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:#0f1117;font-weight:600;border:none;border-radius:10px;padding:6px 12px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 20px rgba(201,168,76,.18)}
+    .btn-gold-compact{background:linear-gradient(135deg,${C.gold},${C.goldDim});color:${C.buttonText};font-weight:600;border:none;border-radius:10px;padding:6px 12px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 20px rgba(201,168,76,.18)}
     .btn-gold-compact:hover{filter:brightness(1.08)}
     .card{background:${C.card};border:1px solid ${C.border};border-radius:14px}
     .tutorial-backdrop{position:fixed;inset:0;background:rgba(4,6,12,.74);backdrop-filter:blur(10px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;overflow:auto}
-    .tutorial-card{width:min(960px,100%);max-height:calc(100dvh - 48px);overflow:hidden;display:flex;flex-direction:column;background:radial-gradient(circle at top left,rgba(201,168,76,.18),transparent 32%),${C.card};border:1px solid ${C.goldDim};border-radius:24px;box-shadow:0 28px 80px rgba(0,0,0,.42)}
+    .tutorial-card{width:min(960px,100%);max-height:calc(100dvh - 48px);overflow:hidden;display:flex;flex-direction:column;background:radial-gradient(circle at top left,rgba(201,168,76,.18),transparent 32%),${C.card};border:1px solid ${C.goldDim};border-radius:24px;box-shadow:0 28px 80px rgba(0,0,0,.22)}
     .tutorial-body{min-height:0;overflow:auto}
-    .tutorial-step-card{border:1px solid ${C.border};border-radius:16px;background:rgba(15,17,23,.42);padding:14px;text-align:left;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease}
+    .tutorial-step-card{border:1px solid ${C.border};border-radius:16px;background:${C.overlayCard};padding:14px;text-align:left;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease}
     .tutorial-step-card:hover{transform:translateY(-2px);border-color:${C.goldDim};background:${C.goldGlow}}
     .tutorial-step-card.active{border-color:${C.gold};background:${C.goldGlow}}
     .input-field{background:${C.surface};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;width:100%;max-width:100%;min-width:0;outline:none}
@@ -792,12 +824,17 @@ const displayHeadingStyle = {
 const pageTitleStyle = {
   ...displayHeadingStyle,
   fontSize: 46,
-  color: C.text,
+  color: C.heading,
 };
 const sectionTitleStyle = {
   ...displayHeadingStyle,
   fontSize: 30,
-  color: C.text,
+  color: C.heading,
+};
+const headerSubheadingStyle = {
+  color: C.subheading,
+  fontSize: 13,
+  marginTop: 4,
 };
 const widePageStyle = { padding: "32px 36px", width: "100%", maxWidth: "none", margin: 0 };
 const STATUS_STYLES = {
@@ -806,6 +843,16 @@ const STATUS_STYLES = {
   "in-review": { label: "In Review", accent: C.purple, surface: "rgba(155,114,232,0.08)" },
   done: { label: "Done", accent: C.success, surface: "rgba(82,200,122,0.08)" },
 };
+const syncThemeStyles = () => {
+  pageTitleStyle.color = C.heading;
+  sectionTitleStyle.color = C.heading;
+  headerSubheadingStyle.color = C.subheading;
+  STATUS_STYLES.todo.accent = C.gold;
+  STATUS_STYLES["in-progress"].accent = C.blue;
+  STATUS_STYLES["in-review"].accent = C.purple;
+  STATUS_STYLES.done.accent = C.success;
+};
+syncThemeStyles();
 const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
 const getArchivedNotificationStorageKey = (profileId) => `${ARCHIVED_NOTIFICATION_STORAGE_PREFIX}:${profileId}`;
 const getTrashStorageKey = (churchId) => `${TRASH_STORAGE_PREFIX}:${churchId || "global"}`;
@@ -3022,7 +3069,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   );
 }
 
-function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial, activityLogs, refreshActivityLogs, recordActivity, onLogout }) {
+function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial, activityLogs, refreshActivityLogs, recordActivity, onLogout, themeMode, setThemeMode }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
   const canManageAccountManagers = canManageChurchTeam(profile, church);
   const canSeeActivityLog = canViewActivityLog(profile);
@@ -3103,6 +3150,20 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     && currentAccountManagerIds.every((id) => selectedAccountManagerIds.includes(id));
   const [activityLogOpen, setActivityLogOpen] = useState(true);
   const [activityMonthOpen, setActivityMonthOpen] = useState({});
+  const themeOptions = [
+    {
+      id: "dark",
+      label: "Dark Mode",
+      description: "Keep Shepherd in its current darker look.",
+      preview: { bg: "#0f1117", surface: "#161b27", accent: "#c9a84c", text: "#e8e2d4" },
+    },
+    {
+      id: "light",
+      label: "Light Mode",
+      description: "Use the brighter palette for daytime viewing.",
+      preview: { bg: "#eeeff6", surface: "#bcc0cf", accent: "#ab8a09", text: "#1c2433" },
+    },
+  ];
   const activityMonthGroups = useMemo(() => {
     const groups = new Map();
     (activityLogs || []).forEach((entry) => {
@@ -3635,7 +3696,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
     <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:24,textAlign:"left"}}>
         <h2 style={pageTitleStyle}>Account</h2>
-        <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+        <p style={headerSubheadingStyle}>
           {activeSettingsBranch === "calendar"
             ? "Manage the shared church calendar connection and imported Google calendars."
             : activeSettingsBranch === "church-account"
@@ -3947,6 +4008,55 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
             </>
           ) : (
             <>
+              <div className="card" style={{padding:22,textAlign:"left"}}>
+                <h3 style={sectionTitleStyle}>Appearance</h3>
+                <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                  Choose how Shepherd looks on this account. Dark Mode keeps the current look, while Light Mode uses the brighter palette for daytime viewing.
+                </p>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:12,marginTop:16}}>
+                  {themeOptions.map((option) => {
+                    const selected = themeMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setThemeMode(option.id)}
+                        style={{
+                          border:`1px solid ${selected ? C.gold : C.border}`,
+                          borderRadius:16,
+                          background:selected ? C.goldGlow : C.surface,
+                          padding:14,
+                          cursor:"pointer",
+                          textAlign:"left",
+                          display:"grid",
+                          gap:12,
+                          boxShadow:selected ? `0 0 0 1px ${C.goldDim} inset` : "none",
+                        }}
+                      >
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+                          <div>
+                            <div style={{fontSize:14,fontWeight:700,color:C.text}}>{option.label}</div>
+                            <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.5}}>{option.description}</div>
+                          </div>
+                          <div style={{fontSize:11,fontWeight:700,color:selected ? C.gold : C.muted,letterSpacing:".08em",textTransform:"uppercase"}}>
+                            {selected ? "Active" : "Select"}
+                          </div>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:8,alignItems:"stretch"}}>
+                          <div style={{borderRadius:12,background:option.preview.bg,border:`1px solid ${option.preview.surface}`,padding:10,display:"grid",gap:8,minHeight:82}}>
+                            <div style={{height:8,width:"48%",borderRadius:999,background:option.preview.text,opacity:.9}} />
+                            <div style={{flex:1,borderRadius:10,background:option.preview.surface,border:`1px solid ${option.preview.accent}`,minHeight:42}} />
+                          </div>
+                          <div style={{display:"grid",gap:8}}>
+                            <div style={{height:28,borderRadius:10,background:`linear-gradient(135deg, ${option.preview.accent}, ${option.preview.accent})`}} />
+                            <div style={{height:46,borderRadius:12,background:option.preview.surface,border:`1px solid ${option.preview.accent}`}} />
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="card" style={{padding:22,textAlign:"left"}}>
                 <h3 style={sectionTitleStyle}>Email</h3>
                 <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Change the email attached to your Shepherd account. We verify this with your current password first, and the new inbox should still confirm the change.</p>
@@ -6707,7 +6817,7 @@ function Workspaces({ setActive, isFavorite, toggleFavorite }) {
     <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:28}}>
         <h2 style={pageTitleStyle}>Frameworks</h2>
-        <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+        <p style={headerSubheadingStyle}>
       Open a board to work inside a dedicated ministry framework.
         </p>
       </div>
@@ -8473,7 +8583,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
     <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:28,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",position:"relative"}}>
         <div style={{flex:"1 1 420px",minWidth:0}}>
-          <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:34,fontWeight:500,color:C.text,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
+          <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:34,fontWeight:500,color:C.heading,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
           <p style={{color:C.muted,marginTop:6,fontSize:13,lineHeight:1.6,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
             {profile?.canSeeTeamOverview
               ? profile?.readOnlyOversight
@@ -9653,7 +9763,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
         <div style={{justifySelf:"start",textAlign:"left"}}>
           <h2 style={{...pageTitleStyle,fontSize:52}}>Tasks</h2>
-          <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+          <p style={headerSubheadingStyle}>
             {boardTasks.filter(t=>t.status!=="done").length} open tasks across the church team
           </p>
           <p style={{color:C.gold,fontSize:12,marginTop:6}}>
@@ -11661,7 +11771,7 @@ function Ministries({ ministries }) {
     <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:24}}>
         <h2 style={pageTitleStyle}>Ministries</h2>
-        <p style={{color:C.muted,fontSize:13,marginTop:4}}>Overview of all ministry departments</p>
+          <p style={headerSubheadingStyle}>Overview of all ministry departments</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:18}}>
         {ministries.map(m=>(
@@ -12255,6 +12365,7 @@ export default function App() {
   const [eventOpenRequest, setEventOpenRequest] = useState(null);
   const [operationsOpenRequest, setOperationsOpenRequest] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [themeMode, setThemeMode] = useState(() => getStoredThemeMode());
   const [loading, setLoading] = useState(true);
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [archivedNotificationIds, setArchivedNotificationIds] = useState([]);
@@ -12272,6 +12383,9 @@ export default function App() {
   const lastSyncedFavoritesRef = useRef("[]");
   const profileRef = useRef(null);
   const churchRef = useRef(null);
+
+  applyThemePalette(themeMode);
+  syncThemeStyles();
 
   const allowedPages = new Set([
     "dashboard",
@@ -13060,6 +13174,20 @@ export default function App() {
     churchRef.current = church;
   }, [church]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedMode = getStoredThemeMode(profile?.id || "");
+    if (storedMode !== themeMode) setThemeMode(storedMode);
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(GLOBAL_THEME_STORAGE_KEY, themeMode);
+    if (profile?.id) {
+      window.localStorage.setItem(getThemeStorageKey(profile.id), themeMode);
+    }
+  }, [profile?.id, themeMode]);
+
   if (loading) return (
     <>
       <GS/>
@@ -13099,7 +13227,7 @@ export default function App() {
   const pages = {
     dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
     notifications: <NotificationsPage notifications={activeNotifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications} openNotificationTarget={openNotificationTarget} />,
-    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} onLogout={logout} />,
+    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} onLogout={logout} themeMode={themeMode} setThemeMode={setThemeMode} />,
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
     workspaces: <Workspaces setActive={setActive} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity} eventOpenRequest={eventOpenRequest} clearEventOpenRequest={clearEventOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,

@@ -8492,8 +8492,8 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
     <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:28,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",position:"relative"}}>
         <div style={{flex:"1 1 420px",minWidth:0}}>
-          <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:42,fontWeight:500,color:C.text,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
-          <p style={{color:C.muted,marginTop:4,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
+          <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:34,fontWeight:500,color:C.text,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
+          <p style={{color:C.muted,marginTop:6,fontSize:13,lineHeight:1.6,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
             {profile?.canSeeTeamOverview
               ? profile?.readOnlyOversight
                 ? "You can see the whole church team's workload this week in read-only mode."

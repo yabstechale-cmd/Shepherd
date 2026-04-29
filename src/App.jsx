@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
+import shepherdBrandMarkPrimary from "./assets/icons/shepherd-1.svg";
+import shepherdBrandMarkFootprint from "./assets/icons/shepherd-1.svg";
 
 const C = {
   bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
@@ -298,48 +300,45 @@ const pinToggleButtonStyle = (active) => ({
   flexShrink: 0,
 });
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 120 120"
-    fill="none"
+  <span
     aria-hidden="true"
-    style={{ display: "block", opacity }}
-  >
-    {[
-      [60, 6, 60, 24],
-      [78, 10, 74, 26],
-      [96, 18, 86, 32],
-      [108, 32, 92, 44],
-      [114, 50, 96, 54],
-      [114, 70, 96, 66],
-      [108, 88, 92, 76],
-      [96, 102, 86, 88],
-      [78, 110, 74, 94],
-      [60, 114, 60, 96],
-      [42, 110, 46, 94],
-      [24, 102, 34, 88],
-      [12, 88, 28, 76],
-      [6, 70, 24, 66],
-      [6, 50, 24, 54],
-      [12, 32, 28, 44],
-      [24, 18, 34, 32],
-      [42, 10, 46, 26],
-    ].map(([x1, y1, x2, y2], index) => (
-      <line
-        key={index}
-        x1={x1}
-        y1={y1}
-        x2={x2}
-        y2={y2}
-        stroke={color}
-        strokeWidth="2.4"
-        strokeLinecap="round"
-      />
-    ))}
-    <rect x="47" y="14" width="26" height="96" rx="3" fill={color} />
-    <rect x="18" y="40" width="84" height="22" rx="3" fill={color} />
-  </svg>
+    style={{
+      display: "block",
+      width: size,
+      height: size,
+      opacity,
+      backgroundColor: color,
+      WebkitMaskImage: `url(${shepherdBrandMarkPrimary})`,
+      maskImage: `url(${shepherdBrandMarkPrimary})`,
+      WebkitMaskRepeat: "no-repeat",
+      maskRepeat: "no-repeat",
+      WebkitMaskPosition: "center",
+      maskPosition: "center",
+      WebkitMaskSize: "contain",
+      maskSize: "contain",
+    }}
+  />
+);
+
+const FootprintMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
+  <span
+    aria-hidden="true"
+    style={{
+      display: "block",
+      width: size,
+      height: size,
+      opacity,
+      backgroundColor: color,
+      WebkitMaskImage: `url(${shepherdBrandMarkFootprint})`,
+      maskImage: `url(${shepherdBrandMarkFootprint})`,
+      WebkitMaskRepeat: "no-repeat",
+      maskRepeat: "no-repeat",
+      WebkitMaskPosition: "center",
+      maskPosition: "center",
+      WebkitMaskSize: "contain",
+      maskSize: "contain",
+    }}
+  />
 );
 
 const GS = () => (
@@ -471,6 +470,29 @@ const GS = () => (
     }
   `}</style>
 );
+
+const AUTH_WATERMARK_POSITIONS = [
+  { left: -42, top: 10 },
+  { left: 196, top: 88 },
+  { left: 474, top: -18 },
+  { left: 734, top: 78 },
+  { left: 1088, top: 36 },
+  { left: 34, top: 258 },
+  { left: 332, top: 206 },
+  { left: 624, top: 310 },
+  { left: 918, top: 214 },
+  { left: 1212, top: 280 },
+  { left: -28, top: 530 },
+  { left: 228, top: 474 },
+  { left: 516, top: 566 },
+  { left: 804, top: 458 },
+  { left: 1116, top: 544 },
+  { left: 82, top: 788 },
+  { left: 392, top: 714 },
+  { left: 712, top: 812 },
+  { left: 1036, top: 736 },
+  { left: 1264, top: 832 },
+];
 
 const normalizeAccessUser = (record) => ({
   ...record,
@@ -1937,10 +1959,19 @@ function AuthScreen() {
 
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,position:"relative",overflow:"hidden"}}>
-      <div style={{position:"absolute",inset:0,opacity:.03}}>
-        {[...Array(20)].map((_,i)=>(
-          <div key={i} style={{position:"absolute",left:`${(i%5)*25}%`,top:`${Math.floor(i/5)*25}%`,width:60,height:60}}>
-            <BrandMark size={60} color={C.gold} opacity={1}/>
+      <div style={{position:"absolute",left:"50%",top:"50%",width:1360,height:1040,transform:"translate(-50%, -50%)",opacity:.0275,pointerEvents:"none"}}>
+        {AUTH_WATERMARK_POSITIONS.map((entry, i)=>(
+          <div
+            key={i}
+            style={{
+              position:"absolute",
+              left: entry.left,
+              top: entry.top,
+              width: 60,
+              height: 60,
+            }}
+          >
+            <FootprintMark size={60} color={C.gold} opacity={1}/>
           </div>
         ))}
       </div>
@@ -2318,8 +2349,8 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
   ];
   return (
       <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
-      <div style={{position:"absolute",bottom:40,right:collapsed?-10:20,width:80,opacity:.05}}>
-        <BrandMark size={80} color={C.gold}/>
+      <div style={{position:"absolute",bottom:10,right:collapsed?-22:-6,width:148,opacity:.14,transform:"rotate(-8deg)"}}>
+        <FootprintMark size={148} color={C.gold}/>
       </div>
       <div style={{padding:collapsed?"12px 10px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",justifyContent:"space-between",gap:collapsed?10:12}}>
         <button
@@ -2327,8 +2358,8 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           title="Go to dashboard"
           style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"center"}}
         >
-          <div style={{width:32,height:32,borderRadius:8,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            <BrandMark size={14} color={C.gold}/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:44,height:44}}>
+            <BrandMark size={42} color={C.gold}/>
           </div>
           {!collapsed && <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em"}}>Shepherd</span>}
         </button>
@@ -13085,7 +13116,7 @@ export default function App() {
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
           <div style={{marginBottom:16,display:"flex",justifyContent:"center"}}>
-            <BrandMark size={48} color={C.gold}/>
+            <BrandMark size={83} color={C.gold}/>
           </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>

@@ -310,7 +310,7 @@ const Icons = {
   menu:     () => <Icon d="M3 12h18M3 6h18M3 18h18" />,
   x:        () => <Icon d="M18 6L6 18M6 6l12 12" />,
   pen:      () => <Icon d="M12 20h9M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />,
-  bell:     () => <Icon d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />,
+  bell:     ({ size = 20 } = {}) => <Icon size={size} d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />,
   trash:    () => <Icon d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v6M14 11v6" />,
   settings: () => <Icon d="M12 3l1.8 2.3 2.8-.3.9 2.7 2.6 1.1-1 2.6 1 2.6-2.6 1.1-.9 2.7-2.8-.3L12 21l-1.8-2.3-2.8.3-.9-2.7-2.6-1.1 1-2.6-1-2.6 2.6-1.1.9-2.7 2.8.3L12 3zM12 9a3 3 0 100 6 3 3 0 000-6z" />,
   refresh:  () => <Icon d="M21 12a9 9 0 11-2.64-6.36M21 4v6h-6" />,
@@ -2349,14 +2349,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
   ];
   return (
       <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
-      <div className="mobile-only" style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"52px 1fr 52px",alignItems:"center",gap:10,minHeight:68}}>
+      <div className="mobile-only" style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"40px 1fr 40px",alignItems:"center",gap:12,height:56}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start"}}>
           <button
             onClick={()=>setActive("account")}
             title="Open account settings"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:44,height:44,flexShrink:0}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:40,height:40,flexShrink:0}}
           >
-            <div style={{width:34,height:34,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:600,color:"#0f1117",overflow:"hidden"}}>
+            <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:600,color:"#0f1117",overflow:"hidden"}}>
               {profile?.photo_url ? (
                 <img src={profile.photo_url} alt={profile.full_name || "User"} style={{width:"100%",height:"100%",objectFit:"cover"}} />
               ) : (
@@ -2369,10 +2369,10 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           <button
             onClick={() => setActive("dashboard")}
             title="Go to dashboard"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:44,height:44}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:40,height:40}}
           >
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:44,height:44}}>
-              <BrandMark size={36} color={C.gold}/>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:40,height:40}}>
+              <BrandMark size={30} color={C.gold}/>
             </div>
           </button>
         </div>
@@ -2380,13 +2380,13 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           <button
             onClick={() => setActive("notifications")}
             title="Open notifications"
-            style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",padding:0,width:44,height:44,flexShrink:0}}
+            style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",padding:0,width:40,height:40,flexShrink:0}}
           >
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:34,height:34}}>
-              <Icons.bell />
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:30,height:30}}>
+              <Icons.bell size={18} />
             </div>
             {unreadCount > 0 && (
-              <span style={{position:"absolute",top:4,right:2,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
+              <span style={{position:"absolute",top:1,right:-2,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}

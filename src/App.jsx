@@ -2407,7 +2407,7 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
         </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>
       </div>
-      <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1,overflowY:"auto",overflowX:"hidden"}}>
+      <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1,overflowY:"auto"}}>
         {nav.map(({id,label,I: iconComponent})=>(
           <div
             key={id}

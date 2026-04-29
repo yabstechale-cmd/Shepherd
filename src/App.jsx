@@ -2349,14 +2349,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
   ];
   return (
       <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
-      <div className="mobile-only" style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"44px 1fr 44px",alignItems:"center",gap:12}}>
+      <div className="mobile-only" style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"52px 1fr 52px",alignItems:"center",gap:10,minHeight:68}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start"}}>
           <button
             onClick={()=>setActive("account")}
             title="Open account settings"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:34,height:34,flexShrink:0}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:44,height:44,flexShrink:0}}
           >
-            <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:600,color:"#0f1117",overflow:"hidden"}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:600,color:"#0f1117",overflow:"hidden"}}>
               {profile?.photo_url ? (
                 <img src={profile.photo_url} alt={profile.full_name || "User"} style={{width:"100%",height:"100%",objectFit:"cover"}} />
               ) : (
@@ -2369,10 +2369,10 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           <button
             onClick={() => setActive("dashboard")}
             title="Go to dashboard"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer"}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:44,height:44}}
           >
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:44,height:44}}>
-              <BrandMark size={42} color={C.gold}/>
+              <BrandMark size={36} color={C.gold}/>
             </div>
           </button>
         </div>
@@ -2380,11 +2380,13 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           <button
             onClick={() => setActive("notifications")}
             title="Open notifications"
-            style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",padding:0,width:34,height:34,flexShrink:0}}
+            style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",padding:0,width:44,height:44,flexShrink:0}}
           >
-            <Icons.bell />
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:34,height:34}}>
+              <Icons.bell />
+            </div>
             {unreadCount > 0 && (
-              <span style={{position:"absolute",top:-4,right:-4,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
+              <span style={{position:"absolute",top:4,right:2,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}

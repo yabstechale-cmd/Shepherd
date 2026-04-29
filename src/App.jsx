@@ -4162,6 +4162,10 @@ function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, 
             <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:6}} />
             <div style={{textAlign:"left"}}>
               <div style={{fontSize:14,fontWeight:600,color:C.text}}>{item.title}</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:4,lineHeight:1.5}}>
+                Received {fmtActivityDate(item.createdAt)}
+                {item.readAt ? ` • Opened ${fmtActivityDate(item.readAt)}` : ""}
+              </div>
               <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>{item.detail}</div>
             </div>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>

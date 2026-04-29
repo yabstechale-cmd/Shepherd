@@ -400,7 +400,11 @@ const GS = () => (
     .table-row{display:grid;padding:14px 18px;border-bottom:1px solid ${C.border};align-items:center;gap:12px}
     .table-row:hover{background:rgba(255,255,255,.02)}
     .table-row:last-child{border-bottom:none}
+    .mobile-only{display:none !important}
+    .desktop-only{display:initial}
     @media (max-width: 760px){
+      .mobile-only{display:initial !important}
+      .desktop-only{display:none !important}
       .app-shell{flex-direction:column}
       .app-sidebar{width:100% !important;height:auto !important;min-height:auto !important;position:relative !important;top:auto !important;border-right:none !important;border-bottom:1px solid ${C.border};overflow:visible !important}
       .app-sidebar-footer{order:2;padding:10px 12px !important;border-top:none !important;border-bottom:1px solid ${C.border};margin-top:0 !important}
@@ -2402,9 +2406,10 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           </button>
           {!collapsed && <>
             <button
+              className="mobile-only"
               onClick={() => setActive("notifications")}
               title="Open notifications"
-              style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}
+              style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",alignItems:"center",justifyContent:"center",padding:0}}
             >
               <Icons.bell />
               {unreadCount > 0 && (
@@ -2412,6 +2417,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
+            </button>
+            <button
+              className="desktop-only"
+              onClick={() => setActive("account")}
+              title="Open account settings"
+              style={{background:"none",border:"none",cursor:"pointer",color:active === "account" ? C.gold : C.muted,alignItems:"center",justifyContent:"center",padding:0}}
+            >
+              <Icons.settings />
             </button>
           </>}
         </div>
@@ -8489,7 +8502,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
                 : `Here is your ministry workload and the shared church picture for ${roleLabel(profile)}.`}
           </p>
         </div>
-        <div style={{position:"relative",display:"flex",justifyContent:"flex-end",marginLeft:"auto"}}>
+        <div className="desktop-only" style={{position:"relative",display:"flex",justifyContent:"flex-end",marginLeft:"auto"}}>
           <button
             type="button"
             onClick={() => setNotificationBellOpen((current) => !current)}

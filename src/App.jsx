@@ -3729,10 +3729,10 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               {photoError && <div style={{marginTop:10,fontSize:12,color:C.danger,textAlign:"center"}}>{photoError}</div>}
               {photoMessage && <div style={{marginTop:10,fontSize:12,color:C.success,textAlign:"center"}}>{photoMessage}</div>}
               <div style={{display:"grid",gap:10,width:"100%",marginTop:16}}>
-                <button className="btn-gold-compact" onClick={onStartTutorial} style={{justifyContent:"center",width:"100%"}}>
+                <button className="btn-gold" onClick={onStartTutorial} style={{justifyContent:"center",width:"100%",minHeight:44,fontSize:15}}>
                   Open Walkthrough
                 </button>
-                <button className="btn-outline" onClick={onLogout} style={{justifyContent:"center",width:"100%"}}>
+                <button className="btn-outline" onClick={onLogout} style={{justifyContent:"center",width:"100%",minHeight:44}}>
                   Log Out
                 </button>
               </div>

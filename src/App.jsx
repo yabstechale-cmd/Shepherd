@@ -2348,17 +2348,18 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
     {id:"trash",label:"Trash",I:Icons.trash},
   ];
   return (
-      <div className="app-sidebar" style={{width:collapsed?152:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
+      <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
       <div style={{padding:collapsed?"14px 12px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12}}>
         <button
           onClick={() => setActive("dashboard")}
           title="Go to dashboard"
-          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"flex-start",flex:1}}
+          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:collapsed?"center":"flex-start",flex:1}}
         >
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:44,height:44}}>
             <BrandMark size={42} color={C.gold}/>
           </div>
-          <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:collapsed?18:20,fontWeight:500,color:C.text,letterSpacing:"0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Shepherd</span>
+          {!collapsed && <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Shepherd</span>}
+          {collapsed && <span className="mobile-only" style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:18,fontWeight:500,color:C.text,letterSpacing:"0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Shepherd</span>}
         </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>
       </div>
@@ -2390,7 +2391,7 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10}}>
           <button
             onClick={()=>setActive("account")}
-            style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left"}}
+            style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",justifyContent:collapsed?"center":"flex-start"}}
           >
           <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:13,fontWeight:600,color:"#0f1117",overflow:"hidden"}}>
             {profile?.photo_url ? (
@@ -2399,9 +2400,9 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
               profile?.full_name?.[0]||"U"
             )}
           </div>
-          <div style={{flex:1,minWidth:0}}>
+          <div style={{flex:1,minWidth:0}} className={!collapsed ? "" : "mobile-only"}>
             <div style={{fontSize:12,fontWeight:500,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile?.full_name||"User"}</div>
-            {!collapsed && <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{roleLabel(profile)} • {church?.name||""}</div>}
+            <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{roleLabel(profile)} • {church?.name||""}</div>
           </div>
           </button>
           <button

@@ -476,6 +476,7 @@ const normalizeAccessUser = (record) => ({
   ...record,
   ministries: Array.isArray(record?.ministries) ? record.ministries : [],
   staff_roles: Array.isArray(record?.staff_roles) ? record.staff_roles : (record?.role ? [record.role] : []),
+  favorite_items: Array.isArray(record?.favorite_items) ? record.favorite_items.map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [],
   photo_url: record?.photo_url || "",
   canSeeTeamOverview: record?.can_see_team_overview ?? record?.canSeeTeamOverview ?? false,
   canSeeAdminOverview: record?.can_see_admin_overview ?? record?.canSeeAdminOverview ?? false,
@@ -12287,6 +12288,7 @@ export default function App() {
   const loadedUserIdRef = useRef(null);
   const tutorialAutoPromptedUserRef = useRef(null);
   const loggedAuthEventKeysRef = useRef(new Set());
+  const lastSyncedFavoritesRef = useRef("[]");
   const profileRef = useRef(null);
   const churchRef = useRef(null);
 
@@ -12684,12 +12686,17 @@ export default function App() {
       const archivedRaw = window.localStorage.getItem(getArchivedNotificationStorageKey(prof.id));
       setArchivedNotificationIds(archivedRaw ? JSON.parse(archivedRaw) : []);
       const favoritesRaw = window.localStorage.getItem(getFavoritesStorageKey(prof.id));
-      setFavorites(favoritesRaw ? JSON.parse(favoritesRaw).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : []);
+      const localFavorites = favoritesRaw ? JSON.parse(favoritesRaw).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
+      const serverFavorites = Array.isArray(prof.favorite_items) ? prof.favorite_items.map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
+      const resolvedFavorites = serverFavorites.length ? serverFavorites : localFavorites;
+      setFavorites(resolvedFavorites);
+      lastSyncedFavoritesRef.current = JSON.stringify(serverFavorites);
     } else {
       setReadNotificationIds([]);
       setArchivedNotificationIds([]);
       setPersistentNotifications([]);
       setFavorites([]);
+      lastSyncedFavoritesRef.current = "[]";
       setTrashItems([]);
     }
     if (prof?.church_id) {
@@ -12785,6 +12792,24 @@ export default function App() {
     if (!profile?.id) return;
     window.localStorage.setItem(getFavoritesStorageKey(profile.id), JSON.stringify(favorites));
   }, [profile?.id, favorites]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const normalizedFavorites = (favorites || []).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem).slice(0, 24);
+    const nextSerialized = JSON.stringify(normalizedFavorites);
+    if (lastSyncedFavoritesRef.current === nextSerialized) return;
+    lastSyncedFavoritesRef.current = nextSerialized;
+    setProfile((current) => current?.id === profile.id ? normalizeAccessUser({ ...current, favorite_items: normalizedFavorites }) : current);
+    supabase
+      .from("profiles")
+      .update({ favorite_items: normalizedFavorites })
+      .eq("id", profile.id)
+      .then(({ error }) => {
+        if (error) {
+          console.error("Could not sync favorites across devices.", error);
+        }
+      });
+  }, [profile?.id, favorites, setProfile]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

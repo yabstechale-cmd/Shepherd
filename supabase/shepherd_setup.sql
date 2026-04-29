@@ -142,6 +142,7 @@ alter table public.profiles add column if not exists can_see_admin_overview bool
 alter table public.profiles add column if not exists read_only_oversight boolean not null default false;
 alter table public.profiles add column if not exists current_focus_task_id uuid references public.tasks(id) on delete set null;
 alter table public.profiles add column if not exists current_focus_updated_at timestamptz;
+alter table public.profiles add column if not exists favorite_items jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists walkthrough_prompt_count integer not null default 0;
 alter table public.profiles add column if not exists walkthrough_completed_at timestamptz;
 alter table public.profiles add column if not exists created_at timestamptz not null default now();

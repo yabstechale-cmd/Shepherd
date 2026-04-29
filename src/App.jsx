@@ -13244,7 +13244,7 @@ export default function App() {
   return (
     <>
       <GS/>
-      <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
+      <div key={themeMode} className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
         <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
         <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
       </div>

@@ -879,6 +879,7 @@ const hasMeaningfulFormDraft = (value, ignoredKeys = []) => Object.entries(value
   .some(([, entry]) => hasMeaningfulDraftValue(entry));
 const PAGE_PATHS = {
   dashboard: "/dashboard",
+  notifications: "/notifications",
   workspaces: "/frameworks",
   tasks: "/tasks",
   calendar: "/calendar",
@@ -2299,7 +2300,7 @@ function ShepherdTutorial({ profile, church, onClose, onComplete }) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
-function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setCollapsed, unreadCount, onStartTutorial }) {
+function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, unreadCount, onStartTutorial }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
     {id:"workspaces",label:"Frameworks",I:Icons.workspace},
@@ -2400,7 +2401,18 @@ function Sidebar({ active, setActive, profile, church, onLogout, collapsed, setC
           </>}
           </button>
           {!collapsed && <>
-            <button onClick={onLogout} style={{background:"none",border:"none",cursor:"pointer",color:C.muted}}><Icons.logout/></button>
+            <button
+              onClick={() => setActive("notifications")}
+              title="Open notifications"
+              style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}
+            >
+              <Icons.bell />
+              {unreadCount > 0 && (
+                <span style={{position:"absolute",top:-6,right:-8,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
           </>}
         </div>
       </div>
@@ -3015,7 +3027,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   );
 }
 
-function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial, activityLogs, refreshActivityLogs, recordActivity }) {
+function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial, activityLogs, refreshActivityLogs, recordActivity, onLogout }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
   const canManageAccountManagers = canManageChurchTeam(profile, church);
   const canSeeActivityLog = canViewActivityLog(profile);
@@ -3658,9 +3670,14 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               </div>
               {photoError && <div style={{marginTop:10,fontSize:12,color:C.danger,textAlign:"center"}}>{photoError}</div>}
               {photoMessage && <div style={{marginTop:10,fontSize:12,color:C.success,textAlign:"center"}}>{photoMessage}</div>}
-              <button className="btn-gold-compact" onClick={onStartTutorial} style={{marginTop:16,justifyContent:"center"}}>
-                Open Walkthrough
-              </button>
+              <div style={{display:"grid",gap:10,width:"100%",marginTop:16}}>
+                <button className="btn-gold-compact" onClick={onStartTutorial} style={{justifyContent:"center",width:"100%"}}>
+                  Open Walkthrough
+                </button>
+                <button className="btn-outline" onClick={onLogout} style={{justifyContent:"center",width:"100%"}}>
+                  Log Out
+                </button>
+              </div>
             </div>
           </div>
           <div className="card" style={{padding:18,textAlign:"left",display:"grid",gap:10,alignContent:"start"}}>
@@ -4007,7 +4024,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   );
 }
 
-function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, setActive, browserPermission, enableBrowserNotifications }) {
+function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, setActive, browserPermission, enableBrowserNotifications, openNotificationTarget }) {
   return (
     <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div className="page-header" style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",gap:16,marginBottom:24}}>
@@ -4034,7 +4051,7 @@ function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, 
               <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>{item.detail}</div>
             </div>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <button className="btn-outline" onClick={()=>{markRead(item.id); setActive(item.target || "tasks");}} style={{padding:"6px 10px",fontSize:12}}>
+              <button className="btn-outline" onClick={()=>{markRead(item.id); openNotificationTarget ? openNotificationTarget(item) : setActive(item.target || "tasks");}} style={{padding:"6px 10px",fontSize:12}}>
                 Open
               </button>
             </div>
@@ -8671,16 +8688,20 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
           </div>
         </div>
         {favoriteItems.length > 0 ? (
-          <div style={{display:"grid",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:12}}>
             {favoriteItems.map((item) => (
-              <div key={item.key} className="card" style={{padding:"14px 16px",display:"grid",gridTemplateColumns:"auto 1fr auto auto",gap:12,alignItems:"center",textAlign:"left",background:"rgba(255,255,255,.03)"}}>
-                <div style={{color:C.gold,display:"flex",alignItems:"center",justifyContent:"center"}}><Icons.pin /></div>
-                <div style={{minWidth:0}}>
-                  <div style={{fontSize:14,fontWeight:600,color:C.text,lineHeight:1.4}}>{item.title}</div>
-                  <div style={{fontSize:12,color:C.muted,marginTop:2,lineHeight:1.5}}>{item.subtitle || (item.kind === "task" ? "Pinned task" : item.kind === "event" ? "Pinned event" : "Pinned shortcut")}</div>
+              <div key={item.key} className="card" style={{padding:"16px 16px 14px",display:"grid",gap:16,textAlign:"left",background:"rgba(255,255,255,.03)",alignContent:"start",minHeight:164}}>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:600,color:C.text,lineHeight:1.45}}>{item.title}</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.55}}>{item.subtitle || (item.kind === "task" ? "Pinned task" : item.kind === "event" ? "Pinned event" : "Pinned shortcut")}</div>
+                  </div>
+                  <div style={{color:C.gold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icons.pin /></div>
                 </div>
-                <button type="button" className="btn-gold-compact" onClick={() => openFavorite?.(item)}>Open</button>
-                <button type="button" className="btn-outline" onClick={() => toggleFavorite?.(item)} style={{padding:"6px 10px",fontSize:12}}>Remove</button>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:"auto"}}>
+                  <button type="button" className="btn-gold-compact" onClick={() => openFavorite?.(item)}>Open</button>
+                  <button type="button" className="btn-outline" onClick={() => toggleFavorite?.(item)} style={{padding:"6px 10px",fontSize:12}}>Remove</button>
+                </div>
               </div>
             ))}
           </div>
@@ -12245,7 +12266,9 @@ export default function App() {
   const [persistentNotifications, setPersistentNotifications] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [showTutorial, setShowTutorial] = useState(false);
-  const browserPermission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
+  const [browserPermission, setBrowserPermission] = useState(() => (
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission
+  ));
   const shownNotificationIdsRef = useRef(new Set());
   const deadlineNotificationKeysRef = useRef(new Set());
   const loadedUserIdRef = useRef(null);
@@ -12256,6 +12279,7 @@ export default function App() {
 
   const allowedPages = new Set([
     "dashboard",
+    "notifications",
     "account",
     "workspaces",
     "events-board",
@@ -12412,6 +12436,21 @@ export default function App() {
     if (persistent?.rowId) {
       setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, archived_at: null } : item));
       supabase.from("notifications").update({ archived_at: null }).eq("id", persistent.rowId).then(() => {});
+    }
+  };
+  const markAllNotificationsRead = () => {
+    (activeNotifications || []).forEach((item) => markNotificationRead(item.id));
+  };
+  const enableBrowserNotifications = async () => {
+    if (typeof Notification === "undefined") {
+      setBrowserPermission("unsupported");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setBrowserPermission(permission);
+    } catch {
+      setBrowserPermission(Notification.permission);
     }
   };
 
@@ -13040,7 +13079,8 @@ export default function App() {
 
   const pages = {
     dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
-    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} />,
+    notifications: <NotificationsPage notifications={activeNotifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications} openNotificationTarget={openNotificationTarget} />,
+    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} onLogout={logout} />,
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
     workspaces: <Workspaces setActive={setActive} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity} eventOpenRequest={eventOpenRequest} clearEventOpenRequest={clearEventOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
@@ -13058,7 +13098,7 @@ export default function App() {
     <>
       <GS/>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} onLogout={logout} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
+        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
         <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
       </div>
       {showTutorial && (

@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Shepherd">
   <defs>
-    <mask id="shepherd-mark" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512" mask-type="alpha">
-      <image href="/favicon-source.svg" x="52" y="52" width="408" height="408" preserveAspectRatio="xMidYMid meet" />
-    </mask>
+    <filter id="goldify" color-interpolation-filters="sRGB">
+      <feFlood flood-color="#c9a84c" result="gold"/>
+      <feComposite in="gold" in2="SourceAlpha" operator="in" result="goldShape"/>
+      <feMerge>
+        <feMergeNode in="goldShape"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#0f1117" />
-  <rect width="512" height="512" rx="112" fill="#c9a84c" mask="url(#shepherd-mark)" />
+  <rect width="512" height="512" rx="112" fill="#0f1117"/>
+  <image href="/favicon-source.svg" x="52" y="52" width="408" height="408" preserveAspectRatio="xMidYMid meet" filter="url(#goldify)"/>
 </svg>

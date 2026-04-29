@@ -1918,7 +1918,21 @@ function AuthScreen() {
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:64,height:64,borderRadius:18,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-            <BrandMark size={32} color={C.gold}/>
+            <span
+              aria-hidden="true"
+              style={{
+                color:C.gold,
+                fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",
+                fontSize:38,
+                fontWeight:500,
+                lineHeight:1,
+                letterSpacing:"-0.06em",
+                transform:"translateY(1px)",
+                userSelect:"none",
+              }}
+            >
+              S
+            </span>
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>

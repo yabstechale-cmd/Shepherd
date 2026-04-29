@@ -9827,7 +9827,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                       ? `Example: 6 with "Every month on the same date" means every 6 months on the same calendar date.`
                       : TASK_MONTHLY_ORDINALS.includes(form.recurring_pattern || "")
                         ? `Example: 2 with "${getRecurringTaskLabel(form.recurring_pattern, 1, form.due_date)}" means every 2 months on that same weekday pattern.`
-                        : "Monthly options follow the weekday of the due date, so setting a due date first gives the most accurate repeat schedule."}
+                        : "Set the due date first so Shepherd can repeat this on the right day each month."}
                   </div>
                 </>
               )}

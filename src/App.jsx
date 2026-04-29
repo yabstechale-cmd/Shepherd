@@ -4159,12 +4159,11 @@ function NotificationsPage({ notifications, unreadCount, markAllRead, markRead, 
         {notifications.length === 0 && <p style={{color:C.muted,fontSize:13}}>No notifications right now.</p>}
         {notifications.map((item) => (
           <div key={item.id} style={{display:"grid",gridTemplateColumns:"12px 1fr auto",gap:14,alignItems:"start",padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
-            <div style={{width:10,height:10,borderRadius:"50%",background:item.tone,marginTop:6}} />
+            <div style={{width:10,height:10,borderRadius:"50%",background:C.gold,marginTop:6,opacity:item.readAt ? 0 : 1}} />
             <div style={{textAlign:"left"}}>
               <div style={{fontSize:14,fontWeight:600,color:C.text}}>{item.title}</div>
               <div style={{fontSize:11,color:C.muted,marginTop:4,lineHeight:1.5}}>
                 Received {fmtActivityDate(item.createdAt)}
-                {item.readAt ? ` • Opened ${fmtActivityDate(item.readAt)}` : ""}
               </div>
               <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.6}}>{item.detail}</div>
             </div>

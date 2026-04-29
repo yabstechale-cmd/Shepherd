@@ -2349,11 +2349,11 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
   ];
   return (
       <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
-      <div style={{padding:collapsed?"14px 12px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12}}>
+      <div style={{padding:collapsed?"10px 8px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",justifyContent:"space-between",gap:collapsed?8:12}}>
         <button
           onClick={() => setActive("dashboard")}
           title="Go to dashboard"
-          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:collapsed?"center":"flex-start",flex:1}}
+          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"center",flex:collapsed?"0 0 auto":1,width:collapsed?"100%":"auto"}}
         >
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:44,height:44}}>
             <BrandMark size={42} color={C.gold}/>
@@ -2388,7 +2388,7 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
         ))}
       </nav>
       <div className="app-sidebar-footer" style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`,marginTop:"auto",background:C.surface,position:"relative",zIndex:1}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10,justifyContent:collapsed?"center":"flex-start"}}>
           <button
             onClick={()=>setActive("account")}
             style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",justifyContent:collapsed?"center":"flex-start"}}
@@ -2406,16 +2406,11 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           </div>
           </button>
           <button
-            onClick={() => setActive("notifications")}
-            title="Open notifications"
-            style={{background:"none",border:"none",cursor:"pointer",color:active === "notifications" ? C.gold : C.muted,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0}}
+            onClick={() => setActive("account")}
+            title="Open account settings"
+            style={{background:"none",border:"none",cursor:"pointer",color:active === "account" ? C.gold : C.muted,display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0}}
           >
-            <Icons.bell />
-            {unreadCount > 0 && (
-              <span style={{position:"absolute",top:-6,right:-8,minWidth:16,height:16,borderRadius:999,background:C.gold,color:"#0f1117",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
-                {unreadCount > 9 ? "9+" : unreadCount}
-              </span>
-            )}
+            <Icons.settings />
           </button>
         </div>
       </div>

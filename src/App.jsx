@@ -12490,11 +12490,8 @@ export default function App() {
   }, []);
 
   const notifications = useMemo(
-    () => dedupeNotifications([
-      ...persistentNotifications.map(normalizePersistentNotification),
-      ...buildNotifications(tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile),
-    ]),
-    [persistentNotifications, tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile]
+    () => dedupeNotifications(persistentNotifications.map(normalizePersistentNotification)),
+    [persistentNotifications]
   );
   const validNotificationIds = useMemo(
     () => new Set(notifications.map((item) => item.id)),
@@ -13024,6 +13021,62 @@ export default function App() {
       }
     });
   }, [tasks, profile, church]);
+
+  useEffect(() => {
+    if (!profile?.id || !church?.id || !purchaseOrders.length) return;
+    const now = new Date();
+
+    purchaseOrders.forEach((order) => {
+      const neededBy = order.needed_by ? parseAppDate(order.needed_by) : null;
+      if (!neededBy) return;
+      const reminderThreshold = new Date(neededBy.getTime() - (48 * 60 * 60 * 1000));
+      const isAwaitingDecision = ["pending", "in-review"].includes(order.status || "pending");
+      if (!isFinanceDirector(profile) || !isAwaitingDecision || now.getTime() < reminderThreshold.getTime()) return;
+      const sourceKey = `${order.id}:purchase-order-reminder:${order.needed_by}:${order.status || "pending"}`;
+      if (deadlineNotificationKeysRef.current.has(sourceKey)) return;
+      deadlineNotificationKeysRef.current.add(sourceKey);
+      createPersistentNotification({
+        churchId: church.id,
+        actorProfile: profile,
+        recipientProfileId: profile.id,
+        type: "purchase_order_reminder",
+        title: "Purchase Order Needs A Decision",
+        detail: `${order.title} is still awaiting review and is requested for ${fmtDate(order.needed_by)}.`,
+        target: "budget",
+        sourceKey,
+        data: { purchaseOrderId: order.id, neededBy: order.needed_by, title: order.title },
+        sendEmail: false,
+      });
+    });
+  }, [purchaseOrders, profile, church]);
+
+  useEffect(() => {
+    if (!profile?.id || !church?.id || !eventRequests?.length) return;
+    const now = Date.now();
+
+    eventRequests.forEach((request) => {
+      if (!isEventApplicant(profile, request)) return;
+      if (!["approved", "declined"].includes(request.status)) return;
+      const decisionAt = request.decided_at ? new Date(request.decided_at) : null;
+      if (!decisionAt || Number.isNaN(decisionAt.getTime())) return;
+      if (now - decisionAt.getTime() > 14 * 86400000) return;
+      const sourceKey = `${request.id}:event-decision:${request.status}:${request.decided_at}`;
+      if (deadlineNotificationKeysRef.current.has(sourceKey)) return;
+      deadlineNotificationKeysRef.current.add(sourceKey);
+      createPersistentNotification({
+        churchId: church.id,
+        actorProfile: profile,
+        recipientProfileId: profile.id,
+        type: request.status === "approved" ? "event_request_approved" : "event_request_denied",
+        title: request.status === "approved" ? "Event Request Approved" : "Event Request Denied",
+        detail: `${request.event_name} has been ${request.status === "approved" ? "approved" : "denied"}.`,
+        target: "events-board",
+        sourceKey,
+        data: { eventRequestId: request.id, status: request.status, eventName: request.event_name },
+        sendEmail: false,
+      });
+    });
+  }, [eventRequests, profile, church]);
 
   useEffect(() => {
     if (typeof window === "undefined" || loading || !session || !profile?.id || isPublicEventRequestRoute) return;

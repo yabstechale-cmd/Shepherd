@@ -2349,8 +2349,8 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
   ];
   return (
       <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
-      <div className="mobile-only" style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"40px 1fr 40px",alignItems:"center",gap:12,height:56}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start"}}>
+      <div className="mobile-only" style={{padding:"0 14px",borderBottom:`1px solid ${C.border}`,position:"relative",height:64}}>
+        <div style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",display:"flex",alignItems:"center",justifyContent:"flex-start",width:40,height:40,zIndex:1}}>
           <button
             onClick={()=>setActive("account")}
             title="Open account settings"
@@ -2365,7 +2365,7 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
             </div>
           </button>
         </div>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:40,height:40}}>
           <button
             onClick={() => setActive("dashboard")}
             title="Go to dashboard"
@@ -2376,7 +2376,7 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
             </div>
           </button>
         </div>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
+        <div style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",display:"flex",alignItems:"center",justifyContent:"flex-end",width:40,height:40,zIndex:1}}>
           <button
             onClick={() => setActive("notifications")}
             title="Open notifications"

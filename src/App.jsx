@@ -3080,7 +3080,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
   const [settingsBranch, setSettingsBranch] = useState(() => {
     if (typeof window === "undefined") return "my-account";
     const stored = window.localStorage.getItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY);
-    return ["my-account", "church-account", "calendar"].includes(stored) ? stored : "my-account";
+    return ["my-account", "display", "church-account", "calendar"].includes(stored) ? stored : "my-account";
   });
   const [photoMessage, setPhotoMessage] = useState("");
   const [photoError, setPhotoError] = useState("");
@@ -3699,6 +3699,8 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
         <p style={headerSubheadingStyle}>
           {activeSettingsBranch === "calendar"
             ? "Manage the shared church calendar connection and imported Google calendars."
+            : activeSettingsBranch === "display"
+              ? "Choose how Shepherd looks on this account, including light and dark mode."
             : activeSettingsBranch === "church-account"
               ? "Manage church-level account leadership and protected church controls."
               : "Manage your profile photo, email, password, and account recovery."}
@@ -3742,14 +3744,21 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               onClick={() => setSettingsBranch("my-account")}
               style={{justifyContent:"flex-start",textAlign:"left",width:"100%",minHeight:44}}
             >
-              My Account
+              My Account Settings
+            </button>
+            <button
+              className={activeSettingsBranch === "display" ? "btn-gold" : "btn-outline"}
+              onClick={() => setSettingsBranch("display")}
+              style={{justifyContent:"flex-start",textAlign:"left",width:"100%",minHeight:44}}
+            >
+              Display Settings
             </button>
             <button
               className={activeSettingsBranch === "church-account" ? "btn-gold" : "btn-outline"}
               onClick={() => canSeeChurchAccount && setSettingsBranch("church-account")}
               style={{justifyContent:"space-between",textAlign:"left",width:"100%",minHeight:44}}
             >
-              <span>Church Account</span>
+              <span>Church Account Settings</span>
               {!canSeeChurchAccount && <Icons.lock />}
             </button>
             <button
@@ -3772,6 +3781,56 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               setCalendarEvents={setCalendarEvents}
               session={session}
             />
+          ) : activeSettingsBranch === "display" ? (
+            <div className="card" style={{padding:22,textAlign:"left"}}>
+              <h3 style={sectionTitleStyle}>Display Settings</h3>
+              <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                Choose how Shepherd looks on this account. Dark Mode keeps the current look, while Light Mode uses the brighter palette for daytime viewing.
+              </p>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:12,marginTop:16}}>
+                {themeOptions.map((option) => {
+                  const selected = themeMode === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setThemeMode(option.id)}
+                      style={{
+                        border:`1px solid ${selected ? C.gold : C.border}`,
+                        borderRadius:16,
+                        background:selected ? C.goldGlow : C.surface,
+                        padding:14,
+                        cursor:"pointer",
+                        textAlign:"left",
+                        display:"grid",
+                        gap:12,
+                        boxShadow:selected ? `0 0 0 1px ${C.goldDim} inset` : "none",
+                      }}
+                    >
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+                        <div>
+                          <div style={{fontSize:14,fontWeight:700,color:C.text}}>{option.label}</div>
+                          <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.5}}>{option.description}</div>
+                        </div>
+                        <div style={{fontSize:11,fontWeight:700,color:selected ? C.gold : C.muted,letterSpacing:".08em",textTransform:"uppercase"}}>
+                          {selected ? "Active" : "Select"}
+                        </div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:8,alignItems:"stretch"}}>
+                        <div style={{borderRadius:12,background:option.preview.bg,border:`1px solid ${option.preview.surface}`,padding:10,display:"grid",gap:8,minHeight:82}}>
+                          <div style={{height:8,width:"48%",borderRadius:999,background:option.preview.text,opacity:.9}} />
+                          <div style={{flex:1,borderRadius:10,background:option.preview.surface,border:`1px solid ${option.preview.accent}`,minHeight:42}} />
+                        </div>
+                        <div style={{display:"grid",gap:8}}>
+                          <div style={{height:28,borderRadius:10,background:`linear-gradient(135deg, ${option.preview.accent}, ${option.preview.accent})`}} />
+                          <div style={{height:46,borderRadius:12,background:option.preview.surface,border:`1px solid ${option.preview.accent}`}} />
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ) : activeSettingsBranch === "church-account" ? (
             <>
               <div className="card" style={{padding:22,textAlign:"left"}}>
@@ -4008,55 +4067,6 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
             </>
           ) : (
             <>
-              <div className="card" style={{padding:22,textAlign:"left"}}>
-                <h3 style={sectionTitleStyle}>Appearance</h3>
-                <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
-                  Choose how Shepherd looks on this account. Dark Mode keeps the current look, while Light Mode uses the brighter palette for daytime viewing.
-                </p>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:12,marginTop:16}}>
-                  {themeOptions.map((option) => {
-                    const selected = themeMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setThemeMode(option.id)}
-                        style={{
-                          border:`1px solid ${selected ? C.gold : C.border}`,
-                          borderRadius:16,
-                          background:selected ? C.goldGlow : C.surface,
-                          padding:14,
-                          cursor:"pointer",
-                          textAlign:"left",
-                          display:"grid",
-                          gap:12,
-                          boxShadow:selected ? `0 0 0 1px ${C.goldDim} inset` : "none",
-                        }}
-                      >
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
-                          <div>
-                            <div style={{fontSize:14,fontWeight:700,color:C.text}}>{option.label}</div>
-                            <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.5}}>{option.description}</div>
-                          </div>
-                          <div style={{fontSize:11,fontWeight:700,color:selected ? C.gold : C.muted,letterSpacing:".08em",textTransform:"uppercase"}}>
-                            {selected ? "Active" : "Select"}
-                          </div>
-                        </div>
-                        <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:8,alignItems:"stretch"}}>
-                          <div style={{borderRadius:12,background:option.preview.bg,border:`1px solid ${option.preview.surface}`,padding:10,display:"grid",gap:8,minHeight:82}}>
-                            <div style={{height:8,width:"48%",borderRadius:999,background:option.preview.text,opacity:.9}} />
-                            <div style={{flex:1,borderRadius:10,background:option.preview.surface,border:`1px solid ${option.preview.accent}`,minHeight:42}} />
-                          </div>
-                          <div style={{display:"grid",gap:8}}>
-                            <div style={{height:28,borderRadius:10,background:`linear-gradient(135deg, ${option.preview.accent}, ${option.preview.accent})`}} />
-                            <div style={{height:46,borderRadius:12,background:option.preview.surface,border:`1px solid ${option.preview.accent}`}} />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
               <div className="card" style={{padding:22,textAlign:"left"}}>
                 <h3 style={sectionTitleStyle}>Email</h3>
                 <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Change the email attached to your Shepherd account. We verify this with your current password first, and the new inbox should still confirm the change.</p>

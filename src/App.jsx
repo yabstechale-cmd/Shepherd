@@ -3715,19 +3715,6 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               </div>
               <div style={{marginTop:14,fontSize:18,fontWeight:600,color:C.text}}>{profile?.full_name || "User"}</div>
               <div style={{marginTop:4,fontSize:12,color:C.muted}}>{roleLabel(profile)}</div>
-              <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center",marginTop:18}}>
-              <label className="btn-outline" style={{cursor:"pointer"}}>
-                {photoSaving ? "Saving..." : (profile?.photo_url ? "Upload New Photo" : "Upload Photo")}
-                <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{display:"none"}} />
-              </label>
-              {profile?.photo_url && (
-                <button className="btn-outline" onClick={removeProfilePhoto} disabled={photoSaving}>
-                  Remove Photo
-                </button>
-              )}
-              </div>
-              {photoError && <div style={{marginTop:10,fontSize:12,color:C.danger,textAlign:"center"}}>{photoError}</div>}
-              {photoMessage && <div style={{marginTop:10,fontSize:12,color:C.success,textAlign:"center"}}>{photoMessage}</div>}
               <div style={{display:"grid",gap:10,width:"100%",marginTop:16}}>
                 <button className="btn-gold" onClick={onStartTutorial} style={{justifyContent:"center",width:"100%",minHeight:44,fontSize:15}}>
                   Open Walkthrough
@@ -4067,6 +4054,25 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
             </>
           ) : (
             <>
+              <div className="card" style={{padding:22,textAlign:"left"}}>
+                <h3 style={sectionTitleStyle}>Profile Photo</h3>
+                <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                  Update the photo tied to your Shepherd account so staff can recognize you more easily across the app.
+                </p>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
+                  <label className="btn-outline" style={{cursor:"pointer"}}>
+                    {photoSaving ? "Saving..." : (profile?.photo_url ? "Upload New Photo" : "Upload Photo")}
+                    <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{display:"none"}} />
+                  </label>
+                  {profile?.photo_url && (
+                    <button className="btn-outline" onClick={removeProfilePhoto} disabled={photoSaving}>
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+                {photoError && <div style={{marginTop:12,fontSize:12,color:C.danger}}>{photoError}</div>}
+                {photoMessage && <div style={{marginTop:12,fontSize:12,color:C.success}}>{photoMessage}</div>}
+              </div>
               <div className="card" style={{padding:22,textAlign:"left"}}>
                 <h3 style={sectionTitleStyle}>Email</h3>
                 <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Change the email attached to your Shepherd account. We verify this with your current password first, and the new inbox should still confirm the change.</p>

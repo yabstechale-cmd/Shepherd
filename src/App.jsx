@@ -4,6 +4,8 @@ import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
 import fullLogoPrimary from "./assets/icons/full-logo.svg";
 import sideLogoSecondary from "./assets/icons/side-logo.svg";
+import authLogoGold from "./assets/icons/auth-logo-gold.svg";
+import authLogoBlue from "./assets/icons/auth-logo-blue.svg";
 
 const DEFAULT_THEME_MODE = "dark";
 let ACTIVE_THEME_MODE = DEFAULT_THEME_MODE;
@@ -473,9 +475,9 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1, filterOv
     }}
   />
 );
-const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1, filterOverride = null }) => (
+const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1, filterOverride = null, srcOverride = null }) => (
   <img
-    src={sideLogoSecondary}
+    src={srcOverride || (ACTIVE_THEME_MODE === "dark" ? authLogoGold : authLogoBlue)}
     alt=""
     aria-hidden="true"
     style={{
@@ -1939,7 +1941,6 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
 // ── Auth ───────────────────────────────────────────────────────────────────
 function AuthScreen() {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
-  const authBrandFilter = ACTIVE_THEME_MODE === "dark" ? getGoldBrandImageFilter() : getLightBannerBrandImageFilter();
   const [mode, setMode] = useState("login");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -2136,9 +2137,9 @@ function AuthScreen() {
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 2px"}}>
-            <AuthBrandMark size={200} filterOverride={authBrandFilter} />
+            <AuthBrandMark size={200} />
           </div>
-          <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:36,fontWeight:500,color:authBrandColor,margin:0}}>Shepherd</h1>
+          <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:60,fontWeight:500,color:authBrandColor,margin:0}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:18}}>
             {isChurchRegistration
               ? "Register your church, create the first administrator account, and start with Shepherd's framework for your own team."
@@ -2632,7 +2633,7 @@ function DesktopTopBanner({ setActive }) {
           Shepherd
         </div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",minWidth:0}}>
-          <AuthBrandMark size={132} filterOverride={bannerBrandFilter} />
+          <AuthBrandMark size={132} filterOverride={bannerBrandFilter} srcOverride={sideLogoSecondary} />
         </div>
       </button>
     </div>
@@ -12581,7 +12582,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 // ── Main App ───────────────────────────────────────────────────────────────
 function AppShell() {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
-  const authBrandFilter = ACTIVE_THEME_MODE === "dark" ? getGoldBrandImageFilter() : getLightBannerBrandImageFilter();
   const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
   const pathSegments = currentPath.split("/").filter(Boolean);
   const isNewPublicEventRequestRoute = pathSegments[0] === "event-request" && pathSegments[1] === "new";
@@ -13517,10 +13517,7 @@ function AppShell() {
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
           <div style={{margin:"0 auto 10px",display:"flex",justifyContent:"center",alignItems:"center"}}>
-            <AuthBrandMark size={365} filterOverride={authBrandFilter} />
-          </div>
-          <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:36,fontWeight:500,color:authBrandColor,margin:"0 0 12px"}}>
-            Shepherd
+            <AuthBrandMark size={365} />
           </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>

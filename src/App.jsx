@@ -2404,17 +2404,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           </button>
         </div>
       </div>
-      <div className="desktop-only" style={{padding:collapsed?"10px 8px":"16px 0",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",justifyContent:"space-between",gap:collapsed?8:12}}>
+      <div className="desktop-only" style={{padding:collapsed?"12px 8px":"14px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"flex-end"}}>
         <button
-          onClick={() => setActive("dashboard")}
-          title="Go to dashboard"
-          style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"center",flex:collapsed?"0 0 auto":1,width:collapsed?"100%":"auto"}}
+          onClick={()=>setCollapsed(!collapsed)}
+          title={collapsed ? "Expand side panel" : "Collapse side panel"}
+          style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:6,lineHeight:0,display:"flex",alignItems:"center",justifyContent:"center"}}
         >
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:collapsed?60:150,height:collapsed?60:150}}>
-            <BrandMark size={collapsed?52:150} color={C.gold}/>
-          </div>
+          <Icons.menu/>
         </button>
-        <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>
       </div>
       <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1,overflowY:"auto"}}>
         {nav.map(({id,label,I: iconComponent})=>(
@@ -2460,6 +2457,34 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function DesktopTopBanner({ setActive }) {
+  return (
+    <div
+      className="desktop-only"
+      style={{
+        position:"sticky",
+        top:0,
+        zIndex:5,
+        height:88,
+        background:C.surface,
+        borderBottom:`1px solid ${C.border}`,
+        display:"flex",
+        alignItems:"center",
+        justifyContent:"center",
+        padding:"0 28px",
+      }}
+    >
+      <button
+        onClick={() => setActive("dashboard")}
+        title="Go to dashboard"
+        style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:220,height:72}}
+      >
+        <BrandMark size={170} color={C.gold}/>
+      </button>
     </div>
   );
 }
@@ -13320,7 +13345,10 @@ export default function App() {
       <GS/>
       <div key={themeMode} className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
         <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
-        <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
+        <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",background:C.bg}}>
+          <DesktopTopBanner setActive={setActive} />
+          <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
+        </div>
       </div>
       {showTutorial && (
         <ShepherdTutorial

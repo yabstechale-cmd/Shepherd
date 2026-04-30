@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
-import newshepPrimary from "./assets/icons/newshep.svg";
+import fullLogoPrimary from "./assets/icons/full-logo.svg";
 import newshepSecondary from "./assets/icons/newshep2.svg";
 
 const DEFAULT_THEME_MODE = "dark";
@@ -340,7 +340,7 @@ const getBrandImageFilter = () => (
 );
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1 }) => (
   <img
-    src={newshepPrimary}
+    src={fullLogoPrimary}
     alt=""
     aria-hidden="true"
     style={{

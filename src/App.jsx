@@ -477,7 +477,7 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1, filterOv
 );
 const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1, filterOverride = null, srcOverride = null }) => (
   <img
-    src={srcOverride || (ACTIVE_THEME_MODE === "dark" ? authLogoGold : authLogoBlue)}
+    src={srcOverride || authLogoBlue}
     alt=""
     aria-hidden="true"
     style={{

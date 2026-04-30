@@ -2,8 +2,11 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
+import newshepPrimary from "./assets/icons/newshep.svg";
+import newshepSecondary from "./assets/icons/newshep2.svg";
 
 const DEFAULT_THEME_MODE = "dark";
+let ACTIVE_THEME_MODE = DEFAULT_THEME_MODE;
 const GLOBAL_THEME_STORAGE_KEY = "shepherd-theme-mode";
 const getThemeStorageKey = (userId) => userId ? `shepherd-theme-mode:${userId}` : GLOBAL_THEME_STORAGE_KEY;
 const THEME_PALETTES = {
@@ -32,6 +35,7 @@ const THEME_PALETTES = {
 };
 const C = { ...THEME_PALETTES[DEFAULT_THEME_MODE] };
 const applyThemePalette = (mode = DEFAULT_THEME_MODE) => {
+  ACTIVE_THEME_MODE = mode;
   Object.assign(C, THEME_PALETTES[mode] || THEME_PALETTES[DEFAULT_THEME_MODE]);
 };
 const getStoredThemeMode = (userId = "") => {
@@ -329,27 +333,44 @@ const pinToggleButtonStyle = (active) => ({
   lineHeight: 0,
   flexShrink: 0,
 });
+const getBrandImageFilter = () => (
+  ACTIVE_THEME_MODE === "dark"
+    ? "brightness(0) saturate(100%) invert(77%) sepia(46%) saturate(598%) hue-rotate(7deg) brightness(92%) contrast(87%)"
+    : "none"
+);
 const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
-  <span
+  <img
+    src={newshepPrimary}
+    alt=""
     aria-hidden="true"
     style={{
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
+      display: "block",
       width: size,
       height: size,
+      objectFit: "contain",
       opacity,
-      color,
-      fontFamily: "'Young Serif Medium', 'Young Serif', Georgia, serif",
-      fontWeight: 500,
-      fontSize: Math.round(size * 1.12),
-      lineHeight: 1,
-      transform: "translateY(-2%)",
+      filter: getBrandImageFilter(),
       userSelect: "none",
+      pointerEvents: "none",
     }}
-  >
-    S
-  </span>
+  />
+);
+const AuthBrandMark = ({ size = 32, opacity = 1 }) => (
+  <img
+    src={newshepSecondary}
+    alt=""
+    aria-hidden="true"
+    style={{
+      display: "block",
+      width: size,
+      height: size,
+      objectFit: "contain",
+      opacity,
+      filter: getBrandImageFilter(),
+      userSelect: "none",
+      pointerEvents: "none",
+    }}
+  />
 );
 
 const GS = () => (
@@ -1966,21 +1987,7 @@ function AuthScreen() {
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:64,height:64,borderRadius:18,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-            <span
-              aria-hidden="true"
-              style={{
-                color:C.gold,
-                fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",
-                fontSize:38,
-                fontWeight:500,
-                lineHeight:1,
-                letterSpacing:"-0.06em",
-                transform:"translateY(1px)",
-                userSelect:"none",
-              }}
-            >
-              S
-            </span>
+            <AuthBrandMark size={42} />
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
@@ -13260,7 +13267,7 @@ export default function App() {
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
           <div style={{marginBottom:16,display:"flex",justifyContent:"center"}}>
-            <BrandMark size={83} color={C.gold}/>
+            <AuthBrandMark size={83} />
           </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>

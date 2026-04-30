@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
-import shepherdBrandMarkPrimary from "./assets/icons/shepherd-1.svg";
 
 const DEFAULT_THEME_MODE = "dark";
 const GLOBAL_THEME_STORAGE_KEY = "shepherd-theme-mode";
@@ -334,21 +333,23 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
   <span
     aria-hidden="true"
     style={{
-      display: "block",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
       width: size,
       height: size,
       opacity,
-      backgroundColor: color,
-      WebkitMaskImage: `url(${shepherdBrandMarkPrimary})`,
-      maskImage: `url(${shepherdBrandMarkPrimary})`,
-      WebkitMaskRepeat: "no-repeat",
-      maskRepeat: "no-repeat",
-      WebkitMaskPosition: "center",
-      maskPosition: "center",
-      WebkitMaskSize: "contain",
-      maskSize: "contain",
+      color,
+      fontFamily: "'Young Serif Medium', 'Young Serif', Georgia, serif",
+      fontWeight: 500,
+      fontSize: Math.round(size * 1.12),
+      lineHeight: 1,
+      transform: "translateY(-2%)",
+      userSelect: "none",
     }}
-  />
+  >
+    S
+  </span>
 );
 
 const GS = () => (

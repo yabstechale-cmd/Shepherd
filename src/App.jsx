@@ -1989,8 +1989,8 @@ function AuthScreen() {
       <div className="mobile-auth-glow" style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:600,height:600,background:`radial-gradient(circle,${C.goldGlow} 0%,transparent 70%)`,pointerEvents:"none"}}/>
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{width:220,height:220,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",overflow:"hidden"}}>
-            <AuthBrandMark size={200} scale={1.42} />
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px"}}>
+            <AuthBrandMark size={200} />
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
@@ -13267,8 +13267,8 @@ export default function App() {
       <GS/>
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
-          <div style={{width:250,height:250,margin:"0 auto 10px",display:"flex",justifyContent:"center",alignItems:"center",overflow:"hidden"}}>
-            <AuthBrandMark size={365} scale={1.62} />
+          <div style={{margin:"0 auto 10px",display:"flex",justifyContent:"center",alignItems:"center"}}>
+            <AuthBrandMark size={365} />
           </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>

@@ -2456,26 +2456,6 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           </div>
         ))}
       </nav>
-      <div className="app-sidebar-footer desktop-only" style={{padding:"12px 10px",borderTop:`1px solid ${C.border}`,marginTop:"auto",background:C.surface,position:"relative",zIndex:1}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10,justifyContent:collapsed?"center":"flex-start"}}>
-          <button
-            onClick={()=>setActive("account")}
-            style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",justifyContent:collapsed?"center":"flex-start"}}
-          >
-          <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:13,fontWeight:600,color:"#0f1117",overflow:"hidden"}}>
-            {profile?.photo_url ? (
-              <img src={profile.photo_url} alt={profile.full_name || "User"} style={{width:"100%",height:"100%",objectFit:"cover"}} />
-            ) : (
-              profile?.full_name?.[0]||"U"
-            )}
-          </div>
-          <div style={{flex:1,minWidth:0}} className="mobile-only">
-            <div style={{fontSize:12,fontWeight:500,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile?.full_name||"User"}</div>
-            <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{roleLabel(profile)} • {church?.name||""}</div>
-          </div>
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -2499,7 +2479,7 @@ function DesktopTopBanner({ setActive }) {
         title="Go to dashboard"
         style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:220,height:72}}
       >
-        <BrandMark size={170} color={C.gold}/>
+        <BrandMark size={201} color={C.gold}/>
       </button>
     </div>
   );

@@ -2534,14 +2534,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
             </div>
           </button>
         </div>
-        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:320,height:76}}>
+        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:244,height:76}}>
           <button
             onClick={() => setActive("dashboard")}
             title="Go to dashboard"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:320,height:76}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:244,height:76}}
           >
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:320,height:76}}>
-              <MobileBannerMark width={306} />
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:244,height:76}}>
+              <MobileBannerMark width={230} />
             </div>
           </button>
         </div>

@@ -2140,14 +2140,14 @@ function AuthScreen() {
             <AuthBrandMark size={200} />
           </div>
           <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:60,fontWeight:500,color:authBrandColor,margin:"0 0 2px"}}>Shepherd</h1>
-          <p style={{color:C.muted,fontSize:11,marginTop:18}}>
+          <p style={{color:C.muted,fontSize:11,marginTop:18,whiteSpace:"nowrap"}}>
             {isChurchRegistration
-              ? "Register your church, create the first administrator account, and start with Shepherd's framework for your own team."
+              ? "Set up your church and first admin below."
               : isForgotPassword
-              ? "Select your church, choose who you are, and we'll email you a password reset link."
+              ? "Choose your church and account for password reset."
               : isLogin
-              ? "Select your church, choose who you are, then enter your password."
-              : "Select your church, choose who you are, then create your account."}
+              ? "Choose your church and account to sign in."
+              : "Choose your church and account to get started."}
           </p>
         </div>
         <div style={{display:"flex",background:C.surface,borderRadius:12,padding:4,marginBottom:24,border:`1px solid ${C.border}`}}>

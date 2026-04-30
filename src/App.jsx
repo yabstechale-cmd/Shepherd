@@ -15,7 +15,7 @@ const getThemeStorageKey = (userId) => userId ? `shepherd-theme-mode:${userId}` 
 const THEME_PALETTES = {
   dark: {
     bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
-    gold: "#c9a84c", goldDim: "#8a6f2e", goldGlow: "rgba(201,168,76,0.15)",
+    gold: "#a27e19", goldDim: "#7a5f13", goldGlow: "rgba(162,126,25,0.15)",
     text: "#e8e2d4", muted: "#7a8299", danger: "#e05252", success: "#52c87a",
     blue: "#5b8fe8", purple: "#9b72e8",
     heading: "#e8e2d4",
@@ -26,7 +26,7 @@ const THEME_PALETTES = {
   },
   light: {
     bg: "#eeeff6", surface: "#ffffff", card: "#f7f8fc", border: "#bcc0cf",
-    gold: "#ab8a09", goldDim: "#8e7411", goldGlow: "rgba(171,138,9,0.14)",
+    gold: "#a27e19", goldDim: "#7a5f13", goldGlow: "rgba(162,126,25,0.14)",
     text: "#1c2433", muted: "#596277", danger: "#c34747", success: "#3f9a61",
     blue: "#4d76bf", purple: "#8364c9",
     heading: "#101828",
@@ -13526,7 +13526,7 @@ function AppShell() {
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
           <div style={{margin:"0 auto 10px",display:"flex",justifyContent:"center",alignItems:"center"}}>
-            <AuthBrandMark size={365} />
+            <AuthBrandMark size={300} />
           </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>

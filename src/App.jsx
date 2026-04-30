@@ -1993,7 +1993,7 @@ function AuthScreen() {
             <AuthBrandMark size={200} />
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text,margin:0}}>Shepherd</h1>
-          <p style={{color:C.muted,fontSize:13,marginTop:4}}>
+          <p style={{color:C.muted,fontSize:13,marginTop:12}}>
             {isChurchRegistration
               ? "Register your church, create the first administrator account, and start with Shepherd's framework for your own team."
               : isForgotPassword
@@ -2376,14 +2376,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
             </div>
           </button>
         </div>
-        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:60,height:60}}>
+        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:76,height:76}}>
           <button
             onClick={() => setActive("dashboard")}
             title="Go to dashboard"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:60,height:60}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:76,height:76}}
           >
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:60,height:60,overflow:"hidden"}}>
-              <BrandMark size={60} color={C.gold} scale={1.18}/>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:76,height:76}}>
+              <BrandMark size={72} color={C.gold}/>
             </div>
           </button>
         </div>
@@ -2410,8 +2410,8 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           title="Go to dashboard"
           style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"center",flex:collapsed?"0 0 auto":1,width:collapsed?"100%":"auto"}}
         >
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:collapsed?48:96,height:collapsed?48:96,overflow:"hidden"}}>
-            <BrandMark size={collapsed?48:90} color={C.gold} scale={collapsed?1.08:1.28}/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:collapsed?56:110,height:collapsed?56:110}}>
+            <BrandMark size={collapsed?52:104} color={C.gold}/>
           </div>
         </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>

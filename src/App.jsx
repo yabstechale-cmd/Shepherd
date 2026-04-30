@@ -2410,8 +2410,8 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           title="Go to dashboard"
           style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"center",flex:collapsed?"0 0 auto":1,width:collapsed?"100%":"auto"}}
         >
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:collapsed?56:110,height:collapsed?56:110}}>
-            <BrandMark size={collapsed?52:104} color={C.gold}/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:collapsed?108:304,height:collapsed?108:304}}>
+            <BrandMark size={collapsed?100:290} color={C.gold}/>
           </div>
         </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>

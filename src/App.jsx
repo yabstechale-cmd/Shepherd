@@ -2,10 +2,10 @@ import { Component, useState, useEffect, useMemo, useRef, useCallback } from "re
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
-import fullLogoPrimary from "./assets/icons/full-logo.svg";
-import sideLogoSecondary from "./assets/icons/side-logo.svg";
-import authLogoGold from "./assets/icons/auth-logo-gold.png";
-import authLogoBlue from "./assets/icons/auth-logo-blue.png";
+import mobileBannerGold from "./assets/icons/mobile-banner-gold.png";
+import mobileBannerBlue from "./assets/icons/mobile-banner-blue.png";
+import brandIconGold from "./assets/icons/brand-icon-gold.png";
+import brandIconBlue from "./assets/icons/brand-icon-blue.png";
 
 const DEFAULT_THEME_MODE = "dark";
 let ACTIVE_THEME_MODE = DEFAULT_THEME_MODE;
@@ -449,16 +449,11 @@ const pinToggleButtonStyle = (active) => ({
   lineHeight: 0,
   flexShrink: 0,
 });
-const getGoldBrandImageFilter = () => "brightness(0) saturate(100%) invert(77%) sepia(46%) saturate(598%) hue-rotate(7deg) brightness(92%) contrast(87%)";
-const getLightBannerBrandImageFilter = () => "brightness(0) saturate(100%) invert(12%) sepia(13%) saturate(1095%) hue-rotate(184deg) brightness(95%) contrast(89%)";
-const getBrandImageFilter = () => (
-  ACTIVE_THEME_MODE === "dark"
-    ? getGoldBrandImageFilter()
-    : "none"
-);
-const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1, filterOverride = null }) => (
+const getThemeBrandIcon = () => (ACTIVE_THEME_MODE === "dark" ? brandIconGold : brandIconBlue);
+const getThemeMobileBanner = () => (ACTIVE_THEME_MODE === "dark" ? mobileBannerGold : mobileBannerBlue);
+const BrandMark = ({ size = 32, opacity = 1, scale = 1, srcOverride = null }) => (
   <img
-    src={fullLogoPrimary}
+    src={srcOverride || getThemeBrandIcon()}
     alt=""
     aria-hidden="true"
     style={{
@@ -467,7 +462,6 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1, filterOv
       height: size,
       objectFit: "contain",
       opacity,
-      filter: filterOverride,
       transform: `scale(${scale})`,
       transformOrigin: "center",
       userSelect: "none",
@@ -475,9 +469,9 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1, filterOv
     }}
   />
 );
-const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1, filterOverride = null, srcOverride = null }) => (
+const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1, srcOverride = null }) => (
   <img
-    src={srcOverride || authLogoBlue}
+    src={srcOverride || getThemeBrandIcon()}
     alt=""
     aria-hidden="true"
     style={{
@@ -486,7 +480,24 @@ const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1, filterOverride = nul
       height: size,
       objectFit: "contain",
       opacity,
-      filter: filterOverride ?? getBrandImageFilter(),
+      transform: `scale(${scale})`,
+      transformOrigin: "center",
+      userSelect: "none",
+      pointerEvents: "none",
+    }}
+  />
+);
+const MobileBannerMark = ({ width = 280, opacity = 1, scale = 1 }) => (
+  <img
+    src={getThemeMobileBanner()}
+    alt=""
+    aria-hidden="true"
+    style={{
+      display: "block",
+      width,
+      height: "auto",
+      maxWidth: "100%",
+      opacity,
       transform: `scale(${scale})`,
       transformOrigin: "center",
       userSelect: "none",
@@ -2495,7 +2506,6 @@ function ShepherdTutorial({ profile, church, onClose, onComplete }) {
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
 function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, unreadCount, onStartTutorial }) {
-  const mobileBrandFilter = ACTIVE_THEME_MODE === "dark" ? getGoldBrandImageFilter() : getLightBannerBrandImageFilter();
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
     {id:"workspaces",label:"Frameworks",I:Icons.workspace},
@@ -2524,14 +2534,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
             </div>
           </button>
         </div>
-        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:202,height:202}}>
+        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:320,height:76}}>
           <button
             onClick={() => setActive("dashboard")}
             title="Go to dashboard"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:202,height:202}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:320,height:76}}
           >
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:202,height:202}}>
-              <BrandMark size={194} color={C.gold} filterOverride={mobileBrandFilter}/>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:320,height:76}}>
+              <MobileBannerMark width={306} />
             </div>
           </button>
         </div>
@@ -2610,7 +2620,6 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
 
 function DesktopTopBanner({ setActive }) {
   const bannerBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
-  const bannerBrandFilter = ACTIVE_THEME_MODE === "dark" ? getGoldBrandImageFilter() : getLightBannerBrandImageFilter();
   return (
     <div
       className="desktop-only"
@@ -2633,7 +2642,7 @@ function DesktopTopBanner({ setActive }) {
           Shepherd
         </div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",minWidth:0}}>
-          <AuthBrandMark size={132} filterOverride={bannerBrandFilter} srcOverride={sideLogoSecondary} />
+          <BrandMark size={132} />
         </div>
       </button>
     </div>

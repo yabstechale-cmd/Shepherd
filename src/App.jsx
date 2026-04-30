@@ -1985,8 +1985,8 @@ function AuthScreen() {
       <div className="mobile-auth-glow" style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:600,height:600,background:`radial-gradient(circle,${C.goldGlow} 0%,transparent 70%)`,pointerEvents:"none"}}/>
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{width:64,height:64,borderRadius:18,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-            <AuthBrandMark size={42} />
+          <div style={{width:240,height:240,borderRadius:28,background:C.goldGlow,border:`1px solid ${C.goldDim}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
+            <AuthBrandMark size={200} />
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
@@ -2356,7 +2356,7 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
   ];
   return (
       <div className="app-sidebar" style={{width:collapsed?64:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
-      <div className="mobile-only" style={{padding:"0 14px",borderBottom:`1px solid ${C.border}`,position:"relative",height:64}}>
+      <div className="mobile-only" style={{padding:"0 14px",borderBottom:`1px solid ${C.border}`,position:"relative",height:86}}>
         <div style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",display:"flex",alignItems:"center",justifyContent:"flex-start",width:40,height:40,zIndex:1}}>
           <button
             onClick={()=>setActive("account")}
@@ -2372,14 +2372,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
             </div>
           </button>
         </div>
-        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:40,height:40}}>
+        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:60,height:60}}>
           <button
             onClick={() => setActive("dashboard")}
             title="Go to dashboard"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:40,height:40}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:60,height:60}}
           >
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:40,height:40}}>
-              <BrandMark size={30} color={C.gold}/>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:60,height:60}}>
+              <BrandMark size={60} color={C.gold}/>
             </div>
           </button>
         </div>
@@ -2400,14 +2400,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           </button>
         </div>
       </div>
-      <div className="desktop-only" style={{padding:collapsed?"10px 8px":"20px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",justifyContent:"space-between",gap:collapsed?8:12}}>
+      <div className="desktop-only" style={{padding:collapsed?"10px 8px":"16px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",justifyContent:"space-between",gap:collapsed?8:12}}>
         <button
           onClick={() => setActive("dashboard")}
           title="Go to dashboard"
           style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",minWidth:0,textAlign:"left",justifyContent:"center",flex:collapsed?"0 0 auto":1,width:collapsed?"100%":"auto"}}
         >
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:44,height:44}}>
-            <BrandMark size={42} color={C.gold}/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:collapsed?48:96,height:collapsed?48:96}}>
+            <BrandMark size={collapsed?48:90} color={C.gold}/>
           </div>
         </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>
@@ -13264,7 +13264,7 @@ export default function App() {
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
           <div style={{marginBottom:16,display:"flex",justifyContent:"center"}}>
-            <AuthBrandMark size={83} />
+            <AuthBrandMark size={365} />
           </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>

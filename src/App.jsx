@@ -447,12 +447,14 @@ const pinToggleButtonStyle = (active) => ({
   lineHeight: 0,
   flexShrink: 0,
 });
+const getGoldBrandImageFilter = () => "brightness(0) saturate(100%) invert(77%) sepia(46%) saturate(598%) hue-rotate(7deg) brightness(92%) contrast(87%)";
+const getLightBannerBrandImageFilter = () => "brightness(0) saturate(100%) invert(12%) sepia(13%) saturate(1095%) hue-rotate(184deg) brightness(95%) contrast(89%)";
 const getBrandImageFilter = () => (
   ACTIVE_THEME_MODE === "dark"
-    ? "brightness(0) saturate(100%) invert(77%) sepia(46%) saturate(598%) hue-rotate(7deg) brightness(92%) contrast(87%)"
+    ? getGoldBrandImageFilter()
     : "none"
 );
-const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1 }) => (
+const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1, filterOverride = null }) => (
   <img
     src={fullLogoPrimary}
     alt=""
@@ -463,6 +465,7 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1 }) => (
       height: size,
       objectFit: "contain",
       opacity,
+      filter: filterOverride,
       transform: `scale(${scale})`,
       transformOrigin: "center",
       userSelect: "none",
@@ -470,7 +473,7 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1 }) => (
     }}
   />
 );
-const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1 }) => (
+const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1, filterOverride = null }) => (
   <img
     src={sideLogoSecondary}
     alt=""
@@ -481,7 +484,7 @@ const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1 }) => (
       height: size,
       objectFit: "contain",
       opacity,
-      filter: getBrandImageFilter(),
+      filter: filterOverride ?? getBrandImageFilter(),
       transform: `scale(${scale})`,
       transformOrigin: "center",
       userSelect: "none",
@@ -2489,6 +2492,7 @@ function ShepherdTutorial({ profile, church, onClose, onComplete }) {
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
 function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, unreadCount, onStartTutorial }) {
+  const mobileBrandFilter = ACTIVE_THEME_MODE === "dark" ? getGoldBrandImageFilter() : getLightBannerBrandImageFilter();
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
     {id:"workspaces",label:"Frameworks",I:Icons.workspace},
@@ -2524,7 +2528,7 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
             style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:202,height:202}}
           >
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:202,height:202}}>
-              <BrandMark size={194} color={C.gold}/>
+              <BrandMark size={194} color={C.gold} filterOverride={mobileBrandFilter}/>
             </div>
           </button>
         </div>
@@ -2602,6 +2606,8 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
 }
 
 function DesktopTopBanner({ setActive }) {
+  const bannerBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
+  const bannerBrandFilter = ACTIVE_THEME_MODE === "dark" ? getGoldBrandImageFilter() : getLightBannerBrandImageFilter();
   return (
     <div
       className="desktop-only"
@@ -2611,16 +2617,21 @@ function DesktopTopBanner({ setActive }) {
         borderBottom:`1px solid ${C.border}`,
         display:"flex",
         alignItems:"center",
-        justifyContent:"flex-end",
+        justifyContent:"space-between",
         padding:"0 28px",
       }}
     >
       <button
         onClick={() => setActive("dashboard")}
         title="Go to dashboard"
-        style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:220,height:72}}
+        style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"none",border:"none",padding:0,cursor:"pointer",width:"100%",height:72}}
       >
-        <BrandMark size={201} color={C.gold}/>
+        <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:46,fontWeight:500,color:bannerBrandColor,letterSpacing:"0.01em",lineHeight:1,textAlign:"left",paddingRight:20}}>
+          Shepherd
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",minWidth:0}}>
+          <AuthBrandMark size={132} filterOverride={bannerBrandFilter} />
+        </div>
       </button>
     </div>
   );

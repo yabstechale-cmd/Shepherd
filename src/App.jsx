@@ -2404,7 +2404,26 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           </button>
         </div>
       </div>
-      <div className="desktop-only" style={{padding:collapsed?"12px 8px":"14px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"flex-end"}}>
+      <div className="desktop-only" style={{padding:collapsed?"12px 8px":"14px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"space-between",gap:10}}>
+        {!collapsed ? (
+          <button
+            onClick={()=>setActive("account")}
+            title="Open account settings"
+            style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",minWidth:0}}
+          >
+            <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${C.goldDim},${C.gold})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:13,fontWeight:600,color:"#0f1117",overflow:"hidden"}}>
+              {profile?.photo_url ? (
+                <img src={profile.photo_url} alt={profile.full_name || "User"} style={{width:"100%",height:"100%",objectFit:"cover"}} />
+              ) : (
+                profile?.full_name?.[0]||"U"
+              )}
+            </div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:500,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile?.full_name||"User"}</div>
+              <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{roleLabel(profile)}</div>
+            </div>
+          </button>
+        ) : <div />}
         <button
           onClick={()=>setCollapsed(!collapsed)}
           title={collapsed ? "Expand side panel" : "Collapse side panel"}
@@ -2450,7 +2469,7 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
               profile?.full_name?.[0]||"U"
             )}
           </div>
-          <div style={{flex:1,minWidth:0}} className={!collapsed ? "" : "mobile-only"}>
+          <div style={{flex:1,minWidth:0}} className="mobile-only">
             <div style={{fontSize:12,fontWeight:500,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile?.full_name||"User"}</div>
             <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{roleLabel(profile)} • {church?.name||""}</div>
           </div>

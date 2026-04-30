@@ -1989,10 +1989,10 @@ function AuthScreen() {
       <div className="mobile-auth-glow" style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:600,height:600,background:`radial-gradient(circle,${C.goldGlow} 0%,transparent 70%)`,pointerEvents:"none"}}/>
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 2px"}}>
             <AuthBrandMark size={200} />
           </div>
-          <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text}}>Shepherd</h1>
+          <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text,margin:0}}>Shepherd</h1>
           <p style={{color:C.muted,fontSize:13,marginTop:4}}>
             {isChurchRegistration
               ? "Register your church, create the first administrator account, and start with Shepherd's framework for your own team."

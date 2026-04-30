@@ -349,7 +349,6 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1 }) => (
       height: size,
       objectFit: "contain",
       opacity,
-      filter: getBrandImageFilter(),
       userSelect: "none",
       pointerEvents: "none",
     }}
@@ -2410,8 +2409,6 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:44,height:44}}>
             <BrandMark size={42} color={C.gold}/>
           </div>
-          {!collapsed && <span style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:20,fontWeight:500,color:C.text,letterSpacing:"0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Shepherd</span>}
-          {collapsed && <span className="mobile-only" style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:18,fontWeight:500,color:C.text,letterSpacing:"0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Shepherd</span>}
         </button>
         <button onClick={()=>setCollapsed(!collapsed)} style={{background:"none",border:"none",cursor:"pointer",color:C.muted,padding:4,lineHeight:0}}><Icons.menu/></button>
       </div>

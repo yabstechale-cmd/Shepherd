@@ -8,6 +8,7 @@ import sideLogoSecondary from "./assets/icons/side-logo.svg";
 const DEFAULT_THEME_MODE = "dark";
 let ACTIVE_THEME_MODE = DEFAULT_THEME_MODE;
 const GLOBAL_THEME_STORAGE_KEY = "shepherd-theme-mode";
+const REMOVED_CHURCH_ACCESS_MESSAGE_KEY = "shepherd-removed-church-access-message";
 const getThemeStorageKey = (userId) => userId ? `shepherd-theme-mode:${userId}` : GLOBAL_THEME_STORAGE_KEY;
 const THEME_PALETTES = {
   dark: {
@@ -1875,6 +1876,15 @@ function AuthScreen() {
       active = false;
     };
   }, [selectedChurchId, isChurchRegistration]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const removedAccessMessage = window.localStorage.getItem(REMOVED_CHURCH_ACCESS_MESSAGE_KEY);
+    if (!removedAccessMessage) return;
+    setError(removedAccessMessage);
+    setMessage("");
+    window.localStorage.removeItem(REMOVED_CHURCH_ACCESS_MESSAGE_KEY);
+  }, []);
 
   const submit = async () => {
     setError("");
@@ -4632,9 +4642,23 @@ function ChurchTeamPage({ church, profile, setProfile, previewUsers, setPreviewU
       setError("Only the Church Administrator or Senior Pastor can remove staff members.");
       return;
     }
-    if (!window.confirm(`Remove ${user.full_name} from ${church?.name || "this church"}?`)) return;
+    const linkedAuthUserId = user.auth_user_id || null;
+    const managerIds = Array.isArray(church?.account_manager_user_ids) ? church.account_manager_user_ids : [];
+    const isChurchManager = !!(linkedAuthUserId && (
+      church?.account_admin_user_id === linkedAuthUserId
+      || managerIds.includes(linkedAuthUserId)
+    ));
+    if (isChurchManager) {
+      setError("Remove this person from Shepherd Account Managers in Church Account Settings before removing them from the church team.");
+      return;
+    }
+    if (!window.confirm(`Remove ${user.full_name} from ${church?.name || "this church"} completely? They will lose access to this church in Shepherd, but past history will remain readable.`)) return;
     setError("");
-    await supabase.from("profiles").delete().eq("staff_id", user.id);
+    if (linkedAuthUserId) {
+      await supabase.from("profiles").delete().eq("id", linkedAuthUserId);
+    } else {
+      await supabase.from("profiles").delete().eq("staff_id", user.id);
+    }
     const { error: deleteError } = await supabase.from("church_staff").delete().eq("id", user.id);
     if (deleteError) {
       setError(deleteError.message || "We couldn't remove that staff member.");
@@ -12825,6 +12849,34 @@ export default function App() {
         prof = createProfilePayload(uid, staffRow.church_id, staffRow, authEmail || staffRow.email || "");
         await supabase.from("profiles").upsert(prof);
       }
+    }
+
+    if (!prof) {
+      setProfile(null);
+      setChurch(null);
+      setTasks([]);
+      setEventRequests(null);
+      setTransactions([]);
+      setPurchaseOrders([]);
+      setStaffAvailabilityRequests([]);
+      setChurchLockupAssignments([]);
+      setCalendarEvents([]);
+      setMinistries([]);
+      setPreviewUsers([]);
+      setPersistentNotifications([]);
+      setActivityLogs([]);
+      setReadNotificationIds([]);
+      setArchivedNotificationIds([]);
+      setFavorites([]);
+      setTrashItems([]);
+      lastSyncedFavoritesRef.current = "[]";
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(REMOVED_CHURCH_ACCESS_MESSAGE_KEY, "Your access to this church has been removed.");
+      }
+      await supabase.auth.signOut();
+      setSession(null);
+      setLoading(false);
+      return;
     }
 
     if (prof && authEmail && prof.email !== authEmail) {

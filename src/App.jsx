@@ -713,7 +713,7 @@ const getStoredCategoryOrder = () => {
   if (typeof window === "undefined") return TASK_CATEGORIES;
   const raw = window.localStorage.getItem(CATEGORY_STORAGE_KEY);
   if (!raw) return TASK_CATEGORIES;
-  const recent = JSON.parse(raw).filter((name) => TASK_CATEGORIES.includes(name));
+  const recent = readStoredJson(raw, []).filter((name) => TASK_CATEGORIES.includes(name));
   return [...recent, ...TASK_CATEGORIES.filter((name) => !recent.includes(name))];
 };
 const rememberCategory = (category) => {
@@ -908,12 +908,8 @@ const normalizeFavoriteItem = (item) => ({
 const isSupportedFavoriteItem = (item) => ["board", "board-section", "task", "event"].includes(String(item?.kind || ""));
 const readStoredFormDraft = (storageKey, fallback) => {
   if (typeof window === "undefined" || !storageKey) return fallback;
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-  } catch {
-    return fallback;
-  }
+  const raw = window.localStorage.getItem(storageKey);
+  return raw ? { ...fallback, ...readStoredJson(raw, {}) } : fallback;
 };
 const writeStoredFormDraft = (storageKey, value) => {
   if (typeof window === "undefined" || !storageKey) return;
@@ -922,6 +918,14 @@ const writeStoredFormDraft = (storageKey, value) => {
 const clearStoredFormDraft = (storageKey) => {
   if (typeof window === "undefined" || !storageKey) return;
   window.localStorage.removeItem(storageKey);
+};
+const readStoredJson = (rawValue, fallback) => {
+  if (!rawValue) return fallback;
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return fallback;
+  }
 };
 const hasMeaningfulDraftValue = (value) => {
   if (Array.isArray(value)) return value.some(hasMeaningfulDraftValue);
@@ -8425,7 +8429,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
   const [teamSnapshotOpen, setTeamSnapshotOpen] = useState(() => {
     if (typeof window === "undefined" || !profile?.id) return true;
     try {
-      const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
+      const stored = readStoredJson(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)), {});
       return stored.teamSnapshotOpen ?? true;
     } catch {
       return true;
@@ -8434,7 +8438,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
   const [notificationsOpen, setNotificationsOpen] = useState(() => {
     if (typeof window === "undefined" || !profile?.id) return true;
     try {
-      const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
+      const stored = readStoredJson(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)), {});
       return stored.notificationsOpen ?? true;
     } catch {
       return true;
@@ -8443,7 +8447,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
   const [lockupOpen, setLockupOpen] = useState(() => {
     if (typeof window === "undefined" || !profile?.id) return true;
     try {
-      const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
+      const stored = readStoredJson(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)), {});
       return stored.lockupOpen ?? true;
     } catch {
       return true;
@@ -8452,7 +8456,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
   const [archivedNotificationsOpen, setArchivedNotificationsOpen] = useState(() => {
     if (typeof window === "undefined" || !profile?.id) return false;
     try {
-      const stored = JSON.parse(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)) || "{}");
+      const stored = readStoredJson(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)), {});
       return stored.archivedNotificationsOpen ?? false;
     } catch {
       return false;
@@ -8464,7 +8468,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
     try {
       const raw = window.localStorage.getItem(getStaffNotepadStorageKey(profile.id));
       if (!raw) return [];
-      const parsed = JSON.parse(raw);
+      const parsed = readStoredJson(raw, []);
       if (Array.isArray(parsed)) return parsed;
       if (typeof parsed === "string" && parsed.trim()) {
         return [{
@@ -9117,7 +9121,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const [taskCommentsOpen, setTaskCommentsOpen] = useState(() => {
     if (typeof window === "undefined") return true;
     try {
-      const stored = JSON.parse(window.localStorage.getItem(getTaskDiscussionStateStorageKey(profile?.id)) || "{}");
+      const stored = readStoredJson(window.localStorage.getItem(getTaskDiscussionStateStorageKey(profile?.id)), {});
       return stored.taskCommentsOpen ?? true;
     } catch {
       return true;
@@ -9151,7 +9155,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const [collapsedColumns, setCollapsedColumns] = useState(() => {
     if (typeof window === "undefined") return {};
     try {
-      return JSON.parse(window.localStorage.getItem(getTaskColumnStateStorageKey(profile?.id)) || "{}");
+      return readStoredJson(window.localStorage.getItem(getTaskColumnStateStorageKey(profile?.id)), {});
     } catch {
       return {};
     }
@@ -10408,7 +10412,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const [purchaseOrderDiscussionOpen, setPurchaseOrderDiscussionOpen] = useState(() => {
     if (typeof window === "undefined") return {};
     try {
-      return JSON.parse(window.localStorage.getItem(getPurchaseOrderDiscussionStateStorageKey(profile?.id)) || "{}");
+      return readStoredJson(window.localStorage.getItem(getPurchaseOrderDiscussionStateStorageKey(profile?.id)), {});
     } catch {
       return {};
     }
@@ -12894,15 +12898,15 @@ export default function App() {
     }
     if (typeof window !== "undefined") {
       const rawTrash = window.localStorage.getItem(getTrashStorageKey(prof?.church_id));
-      setTrashItems(rawTrash ? JSON.parse(rawTrash) : []);
+      setTrashItems(rawTrash ? readStoredJson(rawTrash, []) : []);
     }
     if (prof?.id && typeof window !== "undefined") {
       const raw = window.localStorage.getItem(getNotificationStorageKey(prof.id));
-      setReadNotificationIds(raw ? JSON.parse(raw) : []);
+      setReadNotificationIds(raw ? readStoredJson(raw, []) : []);
       const archivedRaw = window.localStorage.getItem(getArchivedNotificationStorageKey(prof.id));
-      setArchivedNotificationIds(archivedRaw ? JSON.parse(archivedRaw) : []);
+      setArchivedNotificationIds(archivedRaw ? readStoredJson(archivedRaw, []) : []);
       const favoritesRaw = window.localStorage.getItem(getFavoritesStorageKey(prof.id));
-      const localFavorites = favoritesRaw ? JSON.parse(favoritesRaw).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
+      const localFavorites = favoritesRaw ? readStoredJson(favoritesRaw, []).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
       const serverFavorites = Array.isArray(prof.favorite_items) ? prof.favorite_items.map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
       const resolvedFavorites = serverFavorites.length ? serverFavorites : localFavorites;
       setFavorites(resolvedFavorites);

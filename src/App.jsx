@@ -4,8 +4,8 @@ import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
 import fullLogoPrimary from "./assets/icons/full-logo.svg";
 import sideLogoSecondary from "./assets/icons/side-logo.svg";
-import authLogoGold from "./assets/icons/auth-logo-gold.svg";
-import authLogoBlue from "./assets/icons/auth-logo-blue.svg";
+import authLogoGold from "./assets/icons/auth-logo-gold.png";
+import authLogoBlue from "./assets/icons/auth-logo-blue.png";
 
 const DEFAULT_THEME_MODE = "dark";
 let ACTIVE_THEME_MODE = DEFAULT_THEME_MODE;

@@ -13526,7 +13526,7 @@ function AppShell() {
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}>
         <div style={{textAlign:"center"}}>
           <div style={{margin:"0 auto 10px",display:"flex",justifyContent:"center",alignItems:"center"}}>
-            <AuthBrandMark size={300} />
+            <AuthBrandMark size={280} />
           </div>
           <div style={{width:32,height:32,border:`2px solid ${C.border}`,borderTopColor:C.gold,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
         </div>

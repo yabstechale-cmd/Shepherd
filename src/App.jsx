@@ -8833,7 +8833,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
     <div className="fadeIn mobile-pad" style={widePageStyle}>
       <div style={{marginBottom:28,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",position:"relative"}}>
         <div style={{flex:"1 1 420px",minWidth:0}}>
-          <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:34,fontWeight:500,color:C.heading,letterSpacing:"0.01em",lineHeight:1.12}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
+          <h2 style={{fontFamily:"'Young Serif Medium', Georgia, serif",fontSize:"clamp(34px, 4vw, 58px)",fontWeight:500,color:C.heading,letterSpacing:"0.01em",lineHeight:1.08}}>{greeting}, {profile?.full_name?.split(" ")[0] || "team"}.</h2>
           <p style={{color:C.muted,marginTop:6,fontSize:13,lineHeight:1.6,fontStyle:profile?.canSeeTeamOverview && !profile?.readOnlyOversight?"italic":"normal"}}>
             {profile?.canSeeTeamOverview
               ? profile?.readOnlyOversight

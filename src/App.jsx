@@ -2466,15 +2466,12 @@ function DesktopTopBanner({ setActive }) {
     <div
       className="desktop-only"
       style={{
-        position:"sticky",
-        top:0,
-        zIndex:5,
         height:88,
         background:C.surface,
         borderBottom:`1px solid ${C.border}`,
         display:"flex",
         alignItems:"center",
-        justifyContent:"center",
+        justifyContent:"flex-end",
         padding:"0 28px",
       }}
     >
@@ -13343,10 +13340,10 @@ export default function App() {
   return (
     <>
       <GS/>
-      <div key={themeMode} className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
-        <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",background:C.bg}}>
-          <DesktopTopBanner setActive={setActive} />
+      <div key={themeMode} style={{display:"flex",flexDirection:"column",minHeight:"100vh",background:C.bg}}>
+        <DesktopTopBanner setActive={setActive} />
+        <div className="app-shell" style={{display:"flex",flex:1,minHeight:0}}>
+          <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
           <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
         </div>
       </div>

@@ -2136,11 +2136,11 @@ function AuthScreen() {
       <div className="mobile-auth-glow" style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:600,height:600,background:`radial-gradient(circle,${C.goldGlow} 0%,transparent 70%)`,pointerEvents:"none"}}/>
       <div className="fadeIn" style={{width:"100%",maxWidth:440,padding:"0 20px",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 2px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 0"}}>
             <AuthBrandMark size={200} />
           </div>
-          <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:60,fontWeight:500,color:authBrandColor,margin:0}}>Shepherd</h1>
-          <p style={{color:C.muted,fontSize:13,marginTop:18}}>
+          <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:60,fontWeight:500,color:authBrandColor,margin:"0 0 2px"}}>Shepherd</h1>
+          <p style={{color:C.muted,fontSize:11,marginTop:18}}>
             {isChurchRegistration
               ? "Register your church, create the first administrator account, and start with Shepherd's framework for your own team."
               : isForgotPassword

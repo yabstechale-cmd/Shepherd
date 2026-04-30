@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Component, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
@@ -272,6 +272,119 @@ const confirmDestructiveAction = (message = "Are you sure you want to delete thi
   if (typeof window === "undefined") return true;
   return window.confirm(message);
 };
+const clearShepherdStoredState = () => {
+  if (typeof window === "undefined") return;
+  const shouldClearKey = (key = "") => key === REMOVED_CHURCH_ACCESS_MESSAGE_KEY
+    || key === GLOBAL_THEME_STORAGE_KEY
+    || key.startsWith("shepherd-");
+  try {
+    const localKeys = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (shouldClearKey(key || "")) localKeys.push(key);
+    }
+    localKeys.forEach((key) => key && window.localStorage.removeItem(key));
+  } catch {}
+  try {
+    const sessionKeys = [];
+    for (let index = 0; index < window.sessionStorage.length; index += 1) {
+      const key = window.sessionStorage.key(index);
+      if (shouldClearKey(key || "")) sessionKeys.push(key);
+    }
+    sessionKeys.forEach((key) => key && window.sessionStorage.removeItem(key));
+  } catch {}
+};
+const AppCrashFallback = ({ error, onReload, onReset }) => {
+  const detail = String(error?.message || error || "").trim() || "Shepherd hit an unexpected problem while loading this page.";
+  return (
+    <>
+      <GS/>
+      <div style={{ minHeight: "100vh", background: C.bg, color: C.text, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ width: "min(560px, 100%)", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 28, boxShadow: `0 20px 60px ${C.goldGlow}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 14, background: C.gold, color: C.buttonText, display: "grid", placeItems: "center", fontFamily: "Young Serif Medium, serif", fontSize: 28, lineHeight: 1 }}>S</div>
+            <div>
+              <div style={{ fontFamily: "Young Serif Medium, serif", fontSize: 30, lineHeight: 1.05, color: C.heading }}>Shepherd hit a loading problem.</div>
+              <div style={{ marginTop: 6, color: C.subheading, fontSize: 15 }}>I saved us a recovery path so the app does not stay blank.</div>
+            </div>
+          </div>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 18, color: C.text, fontSize: 15, lineHeight: 1.6 }}>
+            {detail}
+          </div>
+          <div style={{ marginTop: 20, color: C.subheading, fontSize: 14, lineHeight: 1.6 }}>
+            Start with a reload. If the problem came from saved local browser state, the reset option clears Shepherd's stored app data on this device and reloads cleanly.
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 24 }}>
+            <button onClick={onReload} style={{ background: C.gold, color: C.buttonText, border: `1px solid ${C.gold}`, borderRadius: 12, padding: "12px 18px", fontWeight: 700, cursor: "pointer" }}>
+              Reload Shepherd
+            </button>
+            <button onClick={onReset} style={{ background: "transparent", color: C.text, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 18px", fontWeight: 700, cursor: "pointer" }}>
+              Reset Local App Data
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+class ShepherdErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+    this.handleWindowError = this.handleWindowError.bind(this);
+    this.handleUnhandledRejection = this.handleUnhandledRejection.bind(this);
+    this.handleReload = this.handleReload.bind(this);
+    this.handleReset = this.handleReset.bind(this);
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error) {
+    console.error("Shepherd render crash", error);
+  }
+
+  componentDidMount() {
+    if (typeof window === "undefined") return;
+    window.addEventListener("error", this.handleWindowError);
+    window.addEventListener("unhandledrejection", this.handleUnhandledRejection);
+  }
+
+  componentWillUnmount() {
+    if (typeof window === "undefined") return;
+    window.removeEventListener("error", this.handleWindowError);
+    window.removeEventListener("unhandledrejection", this.handleUnhandledRejection);
+  }
+
+  handleWindowError(event) {
+    if (this.state.error) return;
+    this.setState({ error: event?.error || new Error(event?.message || "Unexpected Shepherd error") });
+  }
+
+  handleUnhandledRejection(event) {
+    if (this.state.error) return;
+    const reason = event?.reason;
+    const error = reason instanceof Error ? reason : new Error(typeof reason === "string" ? reason : "Unhandled Shepherd promise rejection");
+    this.setState({ error });
+  }
+
+  handleReload() {
+    if (typeof window !== "undefined") window.location.reload();
+  }
+
+  handleReset() {
+    clearShepherdStoredState();
+    if (typeof window !== "undefined") window.location.reload();
+  }
+
+  render() {
+    if (this.state.error) {
+      return <AppCrashFallback error={this.state.error} onReload={this.handleReload} onReset={this.handleReset} />;
+    }
+    return this.props.children;
+  }
+}
 
 const Icon = ({ d, size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -12439,7 +12552,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 }
 
 // ── Main App ───────────────────────────────────────────────────────────────
-export default function App() {
+function AppShell() {
   const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
   const pathSegments = currentPath.split("/").filter(Boolean);
   const isNewPublicEventRequestRoute = pathSegments[0] === "event-request" && pathSegments[1] === "new";
@@ -13441,5 +13554,13 @@ export default function App() {
         />
       )}
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <ShepherdErrorBoundary>
+      <AppShell />
+    </ShepherdErrorBoundary>
   );
 }

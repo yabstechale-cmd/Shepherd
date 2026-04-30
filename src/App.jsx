@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 import youngSerifFont from "./assets/fonts/youngserif.medium.ttf";
 import pushPinIcon from "./assets/icons/push-pin-icon-7.png";
 import fullLogoPrimary from "./assets/icons/full-logo.svg";
-import newshepSecondary from "./assets/icons/newshep2.svg";
+import sideLogoSecondary from "./assets/icons/side-logo.svg";
 
 const DEFAULT_THEME_MODE = "dark";
 let ACTIVE_THEME_MODE = DEFAULT_THEME_MODE;
@@ -358,7 +358,7 @@ const BrandMark = ({ size = 32, color = C.gold, opacity = 1, scale = 1 }) => (
 );
 const AuthBrandMark = ({ size = 32, opacity = 1, scale = 1 }) => (
   <img
-    src={newshepSecondary}
+    src={sideLogoSecondary}
     alt=""
     aria-hidden="true"
     style={{

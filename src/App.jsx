@@ -4733,8 +4733,38 @@ function ChurchTeamPage({ church, profile, setProfile, previewUsers, setPreviewU
                 <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
                   {canEditChurchTeam(profile, church) && (
                     <div style={{display:"flex",gap:8}}>
-                      <button className="btn-outline" onClick={()=>startEditingMember(user)} style={{padding:"5px 10px",fontSize:12}}>Edit</button>
-                      <button className="btn-outline" onClick={()=>removeStaffMember(user)} style={{padding:"5px 10px",fontSize:12,borderColor:C.danger,color:C.danger}}>Remove</button>
+                      <button
+                        onClick={()=>startEditingMember(user)}
+                        style={{
+                          background:"none",
+                          border:`1px solid ${C.border}`,
+                          color:C.text,
+                          borderRadius:999,
+                          padding:"6px 12px",
+                          fontSize:12,
+                          fontWeight:500,
+                          cursor:"pointer",
+                          lineHeight:1.2,
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={()=>removeStaffMember(user)}
+                        style={{
+                          background:"none",
+                          border:`1px solid ${C.border}`,
+                          color:C.muted,
+                          borderRadius:999,
+                          padding:"6px 12px",
+                          fontSize:12,
+                          fontWeight:500,
+                          cursor:"pointer",
+                          lineHeight:1.2,
+                        }}
+                      >
+                        Remove
+                      </button>
                     </div>
                   )}
                 </div>

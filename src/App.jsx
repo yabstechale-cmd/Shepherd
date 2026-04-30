@@ -960,36 +960,50 @@ const displayHeadingStyle = {
   letterSpacing: "0.01em",
   lineHeight: 1.12,
 };
-const pageTitleStyle = {
+let pageTitleStyle = {
   ...displayHeadingStyle,
   fontSize: 46,
   color: C.heading,
 };
-const sectionTitleStyle = {
+let sectionTitleStyle = {
   ...displayHeadingStyle,
   fontSize: 30,
   color: C.heading,
 };
-const headerSubheadingStyle = {
+let headerSubheadingStyle = {
   color: C.subheading,
   fontSize: 13,
   marginTop: 4,
 };
 const widePageStyle = { padding: "32px 36px", width: "100%", maxWidth: "none", margin: 0 };
-const STATUS_STYLES = {
+let STATUS_STYLES = {
   todo: { label: "Not Started", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
   "in-progress": { label: "In Progress", accent: C.blue, surface: "rgba(91,143,232,0.08)" },
   "in-review": { label: "In Review", accent: C.purple, surface: "rgba(155,114,232,0.08)" },
   done: { label: "Done", accent: C.success, surface: "rgba(82,200,122,0.08)" },
 };
 const syncThemeStyles = () => {
-  pageTitleStyle.color = C.heading;
-  sectionTitleStyle.color = C.heading;
-  headerSubheadingStyle.color = C.subheading;
-  STATUS_STYLES.todo.accent = C.gold;
-  STATUS_STYLES["in-progress"].accent = C.blue;
-  STATUS_STYLES["in-review"].accent = C.purple;
-  STATUS_STYLES.done.accent = C.success;
+  pageTitleStyle = {
+    ...displayHeadingStyle,
+    fontSize: 46,
+    color: C.heading,
+  };
+  sectionTitleStyle = {
+    ...displayHeadingStyle,
+    fontSize: 30,
+    color: C.heading,
+  };
+  headerSubheadingStyle = {
+    color: C.subheading,
+    fontSize: 13,
+    marginTop: 4,
+  };
+  STATUS_STYLES = {
+    todo: { label: "Not Started", accent: C.gold, surface: "rgba(201,168,76,0.08)" },
+    "in-progress": { label: "In Progress", accent: C.blue, surface: "rgba(91,143,232,0.08)" },
+    "in-review": { label: "In Review", accent: C.purple, surface: "rgba(155,114,232,0.08)" },
+    done: { label: "Done", accent: C.success, surface: "rgba(82,200,122,0.08)" },
+  };
 };
 syncThemeStyles();
 const getNotificationStorageKey = (profileId) => `${NOTIFICATION_STORAGE_PREFIX}:${profileId}`;

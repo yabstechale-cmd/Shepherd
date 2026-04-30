@@ -1993,7 +1993,7 @@ function AuthScreen() {
             <AuthBrandMark size={200} />
           </div>
           <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:C.text,margin:0}}>Shepherd</h1>
-          <p style={{color:C.muted,fontSize:13,marginTop:12}}>
+          <p style={{color:C.muted,fontSize:13,marginTop:18}}>
             {isChurchRegistration
               ? "Register your church, create the first administrator account, and start with Shepherd's framework for your own team."
               : isForgotPassword
@@ -2376,14 +2376,14 @@ function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, 
             </div>
           </button>
         </div>
-        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:76,height:76}}>
+        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:104,height:104}}>
           <button
             onClick={() => setActive("dashboard")}
             title="Go to dashboard"
-            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:76,height:76}}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:104,height:104}}
           >
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:76,height:76}}>
-              <BrandMark size={72} color={C.gold}/>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:104,height:104}}>
+              <BrandMark size={96} color={C.gold}/>
             </div>
           </button>
         </div>

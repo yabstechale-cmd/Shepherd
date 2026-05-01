@@ -10571,6 +10571,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const [financeSection, setFinanceSection] = useState("hub");
   const [transactionSortMode, setTransactionSortMode] = useState("transaction-date");
   const [openBudgetCards, setOpenBudgetCards] = useState({});
+  const [openBudgetLineSections, setOpenBudgetLineSections] = useState({});
+  const [openTransactionSections, setOpenTransactionSections] = useState({});
   const [purchaseOrdersOpen, setPurchaseOrdersOpen] = useState(true);
   const [openPurchaseOrders, setOpenPurchaseOrders] = useState({});
   const [form, setForm] = useState({id:null,description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
@@ -10794,6 +10796,12 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   }), { budget: 0, spent: 0, remaining: 0 });
   const toggleBudgetCard = (ministry) => {
     setOpenBudgetCards((current) => ({ ...current, [ministry]: !current[ministry] }));
+  };
+  const toggleBudgetLinesSection = (ministry) => {
+    setOpenBudgetLineSections((current) => ({ ...current, [ministry]: current[ministry] === undefined ? false : !current[ministry] }));
+  };
+  const toggleTransactionSection = (ministry) => {
+    setOpenTransactionSections((current) => ({ ...current, [ministry]: current[ministry] === undefined ? false : !current[ministry] }));
   };
   const togglePurchaseOrder = (orderId) => {
     setOpenPurchaseOrders((current) => ({ ...current, [orderId]: !current[orderId] }));
@@ -11717,6 +11725,8 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         )}
         {ministrySummaries.map((summary) => {
           const isOpen = !!openBudgetCards[summary.ministry];
+          const budgetLinesOpen = openBudgetLineSections[summary.ministry] !== false;
+          const transactionsOpen = openTransactionSections[summary.ministry] !== false;
           return (
           <div key={summary.ministry} className="card" style={{padding:18,borderTop:`3px solid ${CATEGORY_STYLES[summary.ministry]?.color || C.gold}`,display:"grid",gap:14}}>
             <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",alignItems:"start",gap:14}}>
@@ -11725,7 +11735,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 <div style={{fontSize:12,color:C.muted,marginTop:4}}>{summary.transactions} transactions • {summary.purchaseOrders} purchase orders</div>
               </div>
               <button className="btn-outline" onClick={() => toggleBudgetCard(summary.ministry)} style={{padding:"7px 12px"}}>
-                {isOpen ? "Collapse" : "Open"}
+                {isOpen ? "Collapse" : "Expand"}
               </button>
             </div>
             <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(120px,1fr))",gap:10}}>
@@ -11744,43 +11754,50 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
             </div>
             {isOpen && (
               <div style={{display:"grid",gap:16}}>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              <button className="btn-gold" onClick={() => openTransactionModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
-                <Icons.plus/>Add Transaction
-              </button>
-              <button className="btn-outline" onClick={() => openPurchaseOrderModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
-                <Icons.plus/>Purchase Order
-              </button>
-              {canManageBudgetLinesForMinistry(summary.ministry) && (
-                <button className="btn-outline" onClick={() => openBudgetModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
-                  <Icons.pen/>{financeView ? "Edit Budget" : "Edit Line Items"}
-                </button>
-              )}
-            </div>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  <button className="btn-gold" onClick={() => openTransactionModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
+                    <Icons.plus/>Add Transaction
+                  </button>
+                  <button className="btn-outline" onClick={() => openPurchaseOrderModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
+                    <Icons.plus/>Purchase Order
+                  </button>
+                  {canManageBudgetLinesForMinistry(summary.ministry) && (
+                    <button className="btn-outline" onClick={() => openBudgetModal(summary.ministry)} style={{justifyContent:"center",flex:1}}>
+                      <Icons.pen/>{financeView ? "Edit Budget" : "Edit Line Items"}
+                    </button>
+                  )}
+                </div>
             <div style={{display:"grid",gap:16,alignItems:"start"}}>
               <div className="card" style={{padding:16,background:C.surface,textAlign:"left"}}>
-                <div style={{fontSize:12,color:C.gold,textTransform:"uppercase",letterSpacing:".12em",fontWeight:700}}>Budget Lines</div>
-                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginTop:12}}>
-                  {summary.budgetItems.length > 0 ? summary.budgetItems.map((item) => {
-                    const lineTotals = getBudgetLineTotals(summary, item);
-                    return (
-                    <div key={`${summary.ministry}-${item.label}`} style={{display:"grid",gap:8,fontSize:12,color:C.muted,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",background:C.card}}>
-                      <div style={{display:"flex",justifyContent:"space-between",gap:12}}>
-                        <span style={{color:C.text,fontWeight:700}}>{item.label}</span>
-                      </div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                        <div>
-                          <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".08em"}}>Initial</span>
-                          <div style={{color:C.text,marginTop:2}}>{fmt(lineTotals.initial)}</div>
-                        </div>
-                        <div>
-                          <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".08em"}}>Remaining</span>
-                          <div style={{color:lineTotals.leftover >= 0 ? C.success : C.danger,marginTop:2}}>{fmt(lineTotals.leftover)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>No budget line items have been set yet.</div>}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:12,flexWrap:"wrap"}}>
+                  <div style={{fontSize:12,color:C.gold,textTransform:"uppercase",letterSpacing:".12em",fontWeight:700}}>Budget Lines</div>
+                  <button className="btn-outline" type="button" onClick={() => toggleBudgetLinesSection(summary.ministry)} style={{padding:"7px 12px"}}>
+                    {budgetLinesOpen ? "Collapse" : "Expand"}
+                  </button>
                 </div>
+                {budgetLinesOpen && (
+                  <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginTop:12}}>
+                    {summary.budgetItems.length > 0 ? summary.budgetItems.map((item) => {
+                      const lineTotals = getBudgetLineTotals(summary, item);
+                      return (
+                      <div key={`${summary.ministry}-${item.label}`} style={{display:"grid",gap:8,fontSize:12,color:C.muted,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",background:C.card}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:12}}>
+                          <span style={{color:C.text,fontWeight:700}}>{item.label}</span>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                          <div>
+                            <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".08em"}}>Initial</span>
+                            <div style={{color:C.text,marginTop:2}}>{fmt(lineTotals.initial)}</div>
+                          </div>
+                          <div>
+                            <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:".08em"}}>Remaining</span>
+                            <div style={{color:lineTotals.leftover >= 0 ? C.success : C.danger,marginTop:2}}>{fmt(lineTotals.leftover)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>No budget line items have been set yet.</div>}
+                  </div>
+                )}
               </div>
               <div className="card" style={{padding:16,background:C.surface,textAlign:"left"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:12,flexWrap:"wrap"}}>
@@ -11792,56 +11809,63 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                         : "Currently sorted by the actual transaction date."}
                     </div>
                   </div>
-                  <div style={{display:"flex",background:C.card,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
-                    {[
-                      { value: "transaction-date", label: "Transaction Date" },
-                      { value: "date-added", label: "Date Added" },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setTransactionSortMode(option.value)}
-                        style={{
-                          padding:"7px 10px",
-                          borderRadius:8,
-                          border:"none",
-                          cursor:"pointer",
-                          fontSize:12,
-                          fontWeight:600,
-                          background: transactionSortMode === option.value ? C.surface : "transparent",
-                          color: transactionSortMode === option.value ? C.text : C.muted,
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    <div style={{display:"flex",background:C.card,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
+                      {[
+                        { value: "transaction-date", label: "Transaction Date" },
+                        { value: "date-added", label: "Date Added" },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setTransactionSortMode(option.value)}
+                          style={{
+                            padding:"7px 10px",
+                            borderRadius:8,
+                            border:"none",
+                            cursor:"pointer",
+                            fontSize:12,
+                            fontWeight:600,
+                            background: transactionSortMode === option.value ? C.surface : "transparent",
+                            color: transactionSortMode === option.value ? C.text : C.muted,
+                          }}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button className="btn-outline" type="button" onClick={() => toggleTransactionSection(summary.ministry)} style={{padding:"7px 12px"}}>
+                      {transactionsOpen ? "Collapse" : "Expand"}
+                    </button>
                   </div>
                 </div>
-                <div style={{display:"grid",gap:10,marginTop:12}}>
-                  {summary.transactionRows.length > 0 ? summary.transactionRows.map((transaction) => (
-                    <div key={transaction.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:12,padding:"10px 0",borderTop:`1px solid ${C.border}`}}>
-                      <div>
-                        <div style={{fontSize:13,color:C.text,fontWeight:700}}>{transaction.description}</div>
-                        <div style={{fontSize:11,color:C.muted,marginTop:4}}>{transaction.category || "Uncategorized"} • Transaction date {fmtDate(transaction.date)}</div>
-                        <div style={{fontSize:11,color:C.muted,marginTop:3}}>Added {fmtActivityDate(transaction.created_at || transaction.date)} by {transaction.added_by || "Legacy Entry"}</div>
-                      </div>
-                      <div style={{display:"grid",justifyItems:"end",gap:8}}>
-                        <button
-                          type="button"
-                          onClick={() => openTransactionModal(summary.ministry, transaction.amount < 0 ? "expense" : "income", transaction)}
-                          style={{display:"flex",alignItems:"center",justifyContent:"center",padding:0,color:C.muted,border:"none",background:"transparent",cursor:"pointer"}}
-                          aria-label="Edit transaction"
-                          title="Edit transaction"
-                        >
-                          <Icons.pen />
-                        </button>
-                        <div style={{fontSize:13,color:transaction.amount < 0 ? C.danger : C.success,fontWeight:700,textAlign:"right"}}>
-                          {transaction.amount < 0 ? "-" : "+"}{fmt(transaction.amount)}
+                {transactionsOpen && (
+                  <div style={{display:"grid",gap:10,marginTop:12}}>
+                    {summary.transactionRows.length > 0 ? summary.transactionRows.map((transaction) => (
+                      <div key={transaction.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:12,padding:"10px 0",borderTop:`1px solid ${C.border}`}}>
+                        <div>
+                          <div style={{fontSize:13,color:C.text,fontWeight:700}}>{transaction.description}</div>
+                          <div style={{fontSize:11,color:C.muted,marginTop:4}}>{transaction.category || "Uncategorized"} • Transaction date {fmtDate(transaction.date)}</div>
+                          <div style={{fontSize:11,color:C.muted,marginTop:3}}>Added {fmtActivityDate(transaction.created_at || transaction.date)} by {transaction.added_by || "Legacy Entry"}</div>
+                        </div>
+                        <div style={{display:"grid",justifyItems:"end",gap:8}}>
+                          <button
+                            type="button"
+                            onClick={() => openTransactionModal(summary.ministry, transaction.amount < 0 ? "expense" : "income", transaction)}
+                            style={{display:"flex",alignItems:"center",justifyContent:"center",padding:0,color:C.muted,border:"none",background:"transparent",cursor:"pointer"}}
+                            aria-label="Edit transaction"
+                            title="Edit transaction"
+                          >
+                            <Icons.pen />
+                          </button>
+                          <div style={{fontSize:13,color:transaction.amount < 0 ? C.danger : C.success,fontWeight:700,textAlign:"right"}}>
+                            {transaction.amount < 0 ? "-" : "+"}{fmt(transaction.amount)}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6,padding:"12px 0",borderTop:`1px solid ${C.border}`}}>No transactions have been added to this budget yet.</div>}
-                </div>
+                    )) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6,padding:"12px 0",borderTop:`1px solid ${C.border}`}}>No transactions have been added to this budget yet.</div>}
+                  </div>
+                )}
               </div>
             </div>
               </div>

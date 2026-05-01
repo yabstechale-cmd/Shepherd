@@ -15,7 +15,7 @@ const getThemeStorageKey = (userId) => userId ? `shepherd-theme-mode:${userId}` 
 const THEME_PALETTES = {
   dark: {
     bg: "#0f1117", surface: "#161b27", card: "#1c2333", border: "#2a3347",
-    gold: "#a27e19", goldDim: "#7a5f13", goldGlow: "rgba(162,126,25,0.15)",
+    gold: "#c9a84c", goldDim: "#9f7c1d", goldGlow: "rgba(201,168,76,0.18)",
     text: "#e8e2d4", muted: "#7a8299", danger: "#e05252", success: "#52c87a",
     blue: "#5b8fe8", purple: "#9b72e8",
     heading: "#e8e2d4",
@@ -26,7 +26,7 @@ const THEME_PALETTES = {
   },
   light: {
     bg: "#eeeff6", surface: "#ffffff", card: "#f7f8fc", border: "#bcc0cf",
-    gold: "#a27e19", goldDim: "#7a5f13", goldGlow: "rgba(162,126,25,0.14)",
+    gold: "#c9a84c", goldDim: "#9f7c1d", goldGlow: "rgba(201,168,76,0.16)",
     text: "#1c2433", muted: "#596277", danger: "#c34747", success: "#3f9a61",
     blue: "#4d76bf", purple: "#8364c9",
     heading: "#101828",

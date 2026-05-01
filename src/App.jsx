@@ -10572,7 +10572,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   const [openBudgetCards, setOpenBudgetCards] = useState({});
   const [purchaseOrdersOpen, setPurchaseOrdersOpen] = useState(true);
   const [openPurchaseOrders, setOpenPurchaseOrders] = useState({});
-  const [form, setForm] = useState({description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
+  const [form, setForm] = useState({id:null,description:"",amount:"",ministry:defaultMinistry,category:"",date:new Date().toISOString().split("T")[0],type:"expense"});
   const [budgetForm, setBudgetForm] = useState({ id: null, ministry: defaultMinistry, budget: "", assignedStaffId: "", items: [{ label: "", amount: "" }] });
   const [purchaseOrderForm, setPurchaseOrderForm] = useState({
     title: "",
@@ -10620,6 +10620,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   }, [profile?.id, purchaseOrderDiscussionOpen]);
 
   const resetTransactionForm = (ministry = defaultMinistry, type = "expense") => ({
+    id: null,
     description: "",
     amount: "",
     ministry,
@@ -10627,11 +10628,19 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     date: new Date().toISOString().split("T")[0],
     type,
   });
-  const openTransactionModal = (ministry = defaultMinistry, type = "expense") => {
+  const openTransactionModal = (ministry = defaultMinistry, type = "expense", transaction = null) => {
     setSelectedLedgerMinistry(ministry);
     setTransactionError("");
     setTransactionSubmitting(false);
-    setForm(resetTransactionForm(ministry, type));
+    setForm(transaction ? {
+      id: transaction.id,
+      description: transaction.description || "",
+      amount: String(Math.abs(Number(transaction.amount || 0)) || ""),
+      ministry: transaction.ministry || ministry,
+      category: transaction.category || "",
+      date: transaction.date || new Date().toISOString().split("T")[0],
+      type: Number(transaction.amount || 0) < 0 ? "expense" : "income",
+    } : resetTransactionForm(ministry, type));
     setShowModal(true);
   };
   const openBudgetModal = (ministry = "") => {
@@ -10815,7 +10824,15 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     setTransactionError("");
     setTransactionSubmitting(true);
     if (isPreview) {
-      setTransactions([{ ...form, id: `txn-${Date.now()}`, amount: amt, church_id: churchId, added_by_id: profile?.id || null, added_by: profile?.full_name || "Staff Member", created_at: new Date().toISOString() }, ...transactions]);
+      if (form.id) {
+        setTransactions((current) => (current || []).map((transaction) => (
+          transaction.id === form.id
+            ? { ...transaction, ...form, amount: amt }
+            : transaction
+        )));
+      } else {
+        setTransactions([{ ...form, id: `txn-${Date.now()}`, amount: amt, church_id: churchId, added_by_id: profile?.id || null, added_by: profile?.full_name || "Staff Member", created_at: new Date().toISOString() }, ...transactions]);
+      }
       setTransactionSubmitting(false);
       setShowModal(false);
       setForm(resetTransactionForm(defaultMinistry));
@@ -10831,27 +10848,53 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
       added_by_id: profile?.id || null,
       added_by: profile?.full_name || "Staff Member",
     };
-    let { data, error } = await supabase.from("transactions").insert(transactionPayload).select().single();
-    if (error && /added_by/i.test(String(error.message || ""))) {
-      const fallbackPayload = { ...transactionPayload };
-      delete fallbackPayload.added_by_id;
-      delete fallbackPayload.added_by;
-      const fallback = await supabase.from("transactions").insert(fallbackPayload).select().single();
-      data = fallback.data;
-      error = fallback.error;
+    let data;
+    let error;
+    if (form.id) {
+      const response = await supabase
+        .from("transactions")
+        .update({
+          description: transactionPayload.description,
+          amount: transactionPayload.amount,
+          ministry: transactionPayload.ministry,
+          category: transactionPayload.category,
+          date: transactionPayload.date,
+        })
+        .eq("id", form.id)
+        .select()
+        .single();
+      data = response.data;
+      error = response.error;
+    } else {
+      const response = await supabase.from("transactions").insert(transactionPayload).select().single();
+      data = response.data;
+      error = response.error;
+      if (error && /added_by/i.test(String(error.message || ""))) {
+        const fallbackPayload = { ...transactionPayload };
+        delete fallbackPayload.added_by_id;
+        delete fallbackPayload.added_by;
+        const fallback = await supabase.from("transactions").insert(fallbackPayload).select().single();
+        data = fallback.data;
+        error = fallback.error;
+      }
     }
     setTransactionSubmitting(false);
     if (error) {
       setTransactionError(error.message || "This transaction could not be saved yet.");
       return;
     }
-    setTransactions([data,...transactions]);
+    setTransactions((current) => {
+      const others = (current || []).filter((transaction) => transaction.id !== data.id);
+      return [data, ...others];
+    });
     await recordActivity?.({
-      action: "created",
+      action: form.id ? "updated" : "created",
       entityType: "transaction",
       entityId: data.id,
       entityTitle: data.description,
-      summary: `${profile?.full_name || "A staff member"} logged ${form.type === "expense" ? "an expense" : "income"} for ${form.ministry}: ${data.description}.`,
+      summary: form.id
+        ? `${profile?.full_name || "A staff member"} updated ${form.type === "expense" ? "an expense" : "income"} for ${form.ministry}: ${data.description}.`
+        : `${profile?.full_name || "A staff member"} logged ${form.type === "expense" ? "an expense" : "income"} for ${form.ministry}: ${data.description}.`,
       metadata: { ministry: data.ministry, amount: data.amount },
     });
     setShowModal(false);
@@ -11374,7 +11417,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         <div className="card" style={{padding:20,textAlign:"left",display:"grid",gap:16,marginBottom:22}}>
           <div>
             <button className="btn-outline" onClick={()=>setShowModal(false)} style={{marginBottom:14}}>Back to Finances</button>
-            <h3 style={sectionTitleStyle}>Add Transaction</h3>
+            <h3 style={sectionTitleStyle}>{form.id ? "Edit Transaction" : "Add Transaction"}</h3>
           </div>
           <div style={{display:"flex",background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
             {["expense","income"].map(type=>(
@@ -11428,7 +11471,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
             <button className="btn-outline" onClick={()=>setShowModal(false)}>Cancel</button>
             <button className="btn-gold" onClick={save} disabled={transactionSubmitting} style={{opacity:transactionSubmitting ? 0.8 : 1}}>
-              {transactionSubmitting ? "Saving..." : "Save"}
+              {transactionSubmitting ? "Saving..." : form.id ? "Save Changes" : "Save"}
             </button>
           </div>
         </div>
@@ -11744,8 +11787,19 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                         <div style={{fontSize:11,color:C.muted,marginTop:4}}>{transaction.category || "Uncategorized"} • Transaction date {fmtDate(transaction.date)}</div>
                         <div style={{fontSize:11,color:C.muted,marginTop:3}}>Added {fmtActivityDate(transaction.created_at || transaction.date)} by {transaction.added_by || "Legacy Entry"}</div>
                       </div>
-                      <div style={{fontSize:13,color:transaction.amount < 0 ? C.danger : C.success,fontWeight:700,textAlign:"right"}}>
-                        {transaction.amount < 0 ? "-" : "+"}{fmt(transaction.amount)}
+                      <div style={{display:"grid",justifyItems:"end",gap:8}}>
+                        <button
+                          type="button"
+                          onClick={() => openTransactionModal(summary.ministry, transaction.amount < 0 ? "expense" : "income", transaction)}
+                          style={{display:"flex",alignItems:"center",justifyContent:"center",padding:0,color:C.muted,border:"none",background:"transparent",cursor:"pointer"}}
+                          aria-label="Edit transaction"
+                          title="Edit transaction"
+                        >
+                          <Icons.pen />
+                        </button>
+                        <div style={{fontSize:13,color:transaction.amount < 0 ? C.danger : C.success,fontWeight:700,textAlign:"right"}}>
+                          {transaction.amount < 0 ? "-" : "+"}{fmt(transaction.amount)}
+                        </div>
                       </div>
                     </div>
                   )) : <div style={{fontSize:12,color:C.muted,lineHeight:1.6,padding:"12px 0",borderTop:`1px solid ${C.border}`}}>No transactions have been added to this budget yet.</div>}

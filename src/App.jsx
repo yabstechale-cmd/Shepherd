@@ -10569,6 +10569,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
   });
   const [selectedLedgerMinistry, setSelectedLedgerMinistry] = useState(defaultMinistry);
   const [financeSection, setFinanceSection] = useState("hub");
+  const [transactionSortMode, setTransactionSortMode] = useState("transaction-date");
   const [openBudgetCards, setOpenBudgetCards] = useState({});
   const [purchaseOrdersOpen, setPurchaseOrdersOpen] = useState(true);
   const [openPurchaseOrders, setOpenPurchaseOrders] = useState({});
@@ -10771,7 +10772,12 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
         remaining: budgetAmount - spent,
         transactions: ministryTransactions.length,
         purchaseOrders: (visiblePurchaseOrdersByMinistry[ministry] || []).length,
-        transactionRows: ministryTransactions.slice().sort((left, right) => getDateSortValue(right.date) - getDateSortValue(left.date)),
+        transactionRows: ministryTransactions.slice().sort((left, right) => {
+          if (transactionSortMode === "date-added") {
+            return new Date(right.created_at || right.date || 0) - new Date(left.created_at || left.date || 0);
+          }
+          return getDateSortValue(right.date) - getDateSortValue(left.date);
+        }),
         budgetItems: normalizeBudgetItems(budgetRow?.budget_items),
       };
     })
@@ -11777,8 +11783,40 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                 </div>
               </div>
               <div className="card" style={{padding:16,background:C.surface,textAlign:"left"}}>
-                <div style={{fontSize:12,color:C.gold,textTransform:"uppercase",letterSpacing:".12em",fontWeight:700}}>Transactions</div>
-                <div style={{fontSize:11,color:C.muted,marginTop:4}}>Shows when each transaction was added to Shepherd.</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:12,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:12,color:C.gold,textTransform:"uppercase",letterSpacing:".12em",fontWeight:700}}>Transactions</div>
+                    <div style={{fontSize:11,color:C.muted,marginTop:4}}>
+                      {transactionSortMode === "date-added"
+                        ? "Currently sorted by when each transaction was added to Shepherd."
+                        : "Currently sorted by the actual transaction date."}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",background:C.card,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
+                    {[
+                      { value: "transaction-date", label: "Transaction Date" },
+                      { value: "date-added", label: "Date Added" },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setTransactionSortMode(option.value)}
+                        style={{
+                          padding:"7px 10px",
+                          borderRadius:8,
+                          border:"none",
+                          cursor:"pointer",
+                          fontSize:12,
+                          fontWeight:600,
+                          background: transactionSortMode === option.value ? C.surface : "transparent",
+                          color: transactionSortMode === option.value ? C.text : C.muted,
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div style={{display:"grid",gap:10,marginTop:12}}>
                   {summary.transactionRows.length > 0 ? summary.transactionRows.map((transaction) => (
                     <div key={transaction.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:12,padding:"10px 0",borderTop:`1px solid ${C.border}`}}>

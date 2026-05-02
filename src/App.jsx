@@ -2260,9 +2260,373 @@ function AuthScreen() {
               Back to Log In
             </button>
           )}
+          <button
+            onClick={() => {
+              if (typeof window !== "undefined") window.location.href = "/sample";
+            }}
+            style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:13,marginTop:2}}
+          >
+            View Sample Website
+          </button>
         </div>
       </div>
     </div>
+  );
+}
+
+const SAMPLE_PROFILE = normalizeAccessUser({
+  id: "sample-user",
+  church_id: "preview",
+  full_name: "Jordan Carter",
+  role: "church_administrator",
+  title: "Church Administrator",
+  email: "sample@shepherd-s.com",
+  ministries: ["Admin", "Youth", "Events", "Finances"],
+  can_see_team_overview: true,
+  can_see_admin_overview: true,
+  read_only_oversight: false,
+  walkthrough_completed_at: null,
+});
+
+const SAMPLE_CHURCH = {
+  id: "preview",
+  name: "Reach Church Sample",
+  code: "SAMPLE",
+};
+
+const SAMPLE_PREVIEW_USERS = [
+  {
+    id: "staff-1",
+    auth_user_id: "sample-user",
+    full_name: "Jordan Carter",
+    role: "church_administrator",
+    title: "Church Administrator",
+    email: "sample@shepherd-s.com",
+    ministries: ["Admin", "Youth", "Events", "Finances"],
+    can_see_team_overview: true,
+    can_see_admin_overview: true,
+    read_only_oversight: false,
+    current_focus_task_id: "sample-task-2",
+  },
+  {
+    id: "staff-2",
+    auth_user_id: "staff-2-auth",
+    full_name: "Mia Thompson",
+    role: "youth_pastor",
+    title: "Youth Pastor",
+    email: "mia@sample.church",
+    ministries: ["Youth", "Events"],
+    can_see_team_overview: true,
+    can_see_admin_overview: false,
+    read_only_oversight: false,
+    current_focus_task_id: "sample-task-1",
+  },
+  {
+    id: "staff-3",
+    auth_user_id: "staff-3-auth",
+    full_name: "Ethan Reed",
+    role: "finance_director",
+    title: "Finance Director",
+    email: "ethan@sample.church",
+    ministries: ["Finances", "Admin"],
+    can_see_team_overview: true,
+    can_see_admin_overview: true,
+    read_only_oversight: false,
+    current_focus_task_id: "sample-task-4",
+  },
+];
+
+const SAMPLE_TASKS = [
+  normalizeTask({
+    id: "sample-task-1",
+    church_id: "preview",
+    title: "Confirm youth camp parent meeting details",
+    ministry: "Youth",
+    assignee: "Mia Thompson",
+    due_date: toAppDateValue(new Date(Date.now() + 86400000)),
+    status: "in-progress",
+    review_required: true,
+    reviewers: ["Jordan Carter"],
+    review_approvals: [],
+    comments: [{ id: "c1", author: "Jordan Carter", body: "Please include the updated arrival time before we move this into review.", created_at: new Date().toISOString() }],
+    review_history: [],
+    notes: "Parent communication and meeting flow.",
+    created_at: new Date().toISOString(),
+  }),
+  normalizeTask({
+    id: "sample-task-2",
+    church_id: "preview",
+    title: "Finalize Sunday announcement slides",
+    ministry: "Content/Art",
+    assignee: "Jordan Carter",
+    due_date: toAppDateValue(new Date()),
+    status: "in-review",
+    review_required: true,
+    reviewers: ["Mia Thompson"],
+    review_approvals: [],
+    comments: [{ id: "c2", author: "Mia Thompson", body: "The opening slide is ready for final approval.", created_at: new Date().toISOString() }],
+    review_history: [],
+    notes: "Linked to weekend service content.",
+    created_at: new Date().toISOString(),
+  }),
+  normalizeTask({
+    id: "sample-task-3",
+    church_id: "preview",
+    title: "Book food order for volunteer breakfast",
+    ministry: "Events",
+    assignee: "Jordan Carter",
+    due_date: toAppDateValue(new Date(Date.now() + 3 * 86400000)),
+    status: "todo",
+    review_required: false,
+    reviewers: [],
+    review_approvals: [],
+    comments: [],
+    review_history: [],
+    notes: "Vendor and final count pending.",
+    created_at: new Date().toISOString(),
+  }),
+  normalizeTask({
+    id: "sample-task-4",
+    church_id: "preview",
+    title: "Log retreat deposit and update ledger",
+    ministry: "Finances",
+    assignee: "Ethan Reed",
+    due_date: toAppDateValue(new Date(Date.now() + 2 * 86400000)),
+    status: "todo",
+    review_required: false,
+    reviewers: [],
+    review_approvals: [],
+    comments: [],
+    review_history: [],
+    notes: "Follow the approved ministry budget lines.",
+    created_at: new Date().toISOString(),
+  }),
+];
+
+const SAMPLE_TRANSACTIONS = [
+  { id: "txn-s1", church_id: "preview", description: "Youth retreat deposit", amount: -450, ministry: "Youth", category: "Retreats", date: toAppDateValue(new Date(Date.now() - 4 * 86400000)), created_at: new Date(Date.now() - 3 * 86400000).toISOString(), added_by: "Ethan Reed", added_by_id: "staff-3-auth" },
+  { id: "txn-s2", church_id: "preview", description: "Camp scholarship gift", amount: 800, ministry: "Youth", category: "Scholarships", date: toAppDateValue(new Date(Date.now() - 2 * 86400000)), created_at: new Date(Date.now() - 2 * 86400000).toISOString(), added_by: "Ethan Reed", added_by_id: "staff-3-auth" },
+  { id: "txn-s3", church_id: "preview", description: "Stage design supplies", amount: -220, ministry: "Admin", category: "Weekend Service", date: toAppDateValue(new Date(Date.now() - 6 * 86400000)), created_at: new Date(Date.now() - 5 * 86400000).toISOString(), added_by: "Jordan Carter", added_by_id: "sample-user" },
+];
+
+const SAMPLE_MINISTRIES = [
+  { id: "min-s1", church_id: "preview", name: "Youth", color: CATEGORY_STYLES.Youth.color, budget: 6000, spent: 0, budget_categories: ["Retreats", "Scholarships"], budget_items: [{ label: "Retreats", amount: 4000 }, { label: "Scholarships", amount: 2000 }] },
+  { id: "min-s2", church_id: "preview", name: "Admin", color: CATEGORY_STYLES.Admin.color, budget: 3000, spent: 0, budget_categories: ["Weekend Service", "Office Supplies"], budget_items: [{ label: "Weekend Service", amount: 1800 }, { label: "Office Supplies", amount: 1200 }] },
+];
+
+const SAMPLE_PURCHASE_ORDERS = [
+  normalizePurchaseOrder({
+    id: "po-s1",
+    church_id: "preview",
+    title: "Summer camp welcome shirts",
+    amount: 560,
+    ministry: "Youth",
+    needed_by: toAppDateValue(new Date(Date.now() + 5 * 86400000)),
+    purchase_link: "https://example.com/sample-order",
+    included_in_budget: "yes",
+    notes: "Approved vendor, waiting on final size count.",
+    status: "pending",
+    requested_by: "Mia Thompson",
+    requester_id: "staff-2-auth",
+    required_approvers: ["Ethan Reed"],
+    comments: [],
+    created_at: new Date().toISOString(),
+  }),
+];
+
+const SAMPLE_NOTIFICATIONS = [
+  { id: "sample-notice-1", title: "Review Requested", detail: "Finalize Sunday announcement slides is ready for review.", target: "tasks", taskId: "sample-task-2", createdAt: Date.now() - 45 * 60000, readAt: null, archivedAt: null },
+  { id: "sample-notice-2", title: "Due Tomorrow", detail: "Confirm youth camp parent meeting details needs attention soon.", target: "tasks", taskId: "sample-task-1", createdAt: Date.now() - 2 * 3600000, readAt: null, archivedAt: null },
+];
+
+const SAMPLE_LOCKUP_ASSIGNMENTS = [
+  normalizeChurchLockupAssignment({
+    id: "lockup-s1",
+    church_id: "preview",
+    week_of: toAppDateValue(startOfWeekMonday(new Date())),
+    assigned_to: "Jordan Carter",
+    notes: "Sample weekly assignment",
+  }),
+];
+
+const SAMPLE_CALENDAR_EVENTS = [
+  { id: "cal-s1", church_id: "preview", title: "Youth Parent Meeting", event_date: toAppDateValue(new Date(Date.now() + 86400000)), start_time: "18:30", end_time: "19:30", location: "Youth Room", notes: "Sample calendar event" },
+  { id: "cal-s2", church_id: "preview", title: "Volunteer Breakfast", event_date: toAppDateValue(new Date(Date.now() + 4 * 86400000)), start_time: "08:00", end_time: "09:00", location: "Dining Area", notes: "Sample calendar event" },
+];
+
+function PublicSampleSidebar({ active, setActive }) {
+  const nav = [
+    { id: "dashboard", label: "Dashboard", I: Icons.home },
+    { id: "tasks", label: "Tasks", I: Icons.tasks },
+    { id: "budget", label: "Finances", I: Icons.budget },
+    { id: "calendar", label: "Calendar", I: Icons.calendar },
+    { id: "faq", label: "FAQ", I: Icons.help },
+  ];
+
+  return (
+    <div className="app-sidebar" style={{width:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
+      <div className="mobile-only" style={{padding:"0 14px",borderBottom:`1px solid ${C.border}`,position:"relative",height:86}}>
+        <div style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",display:"flex",alignItems:"center",justifyContent:"flex-start",width:64,height:40,zIndex:1}}>
+          <button onClick={() => { if (typeof window !== "undefined") window.location.href = "/"; }} className="btn-outline" style={{padding:"8px 10px",fontSize:12}}>Log In</button>
+        </div>
+        <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:244,height:76}}>
+          <button onClick={() => setActive("dashboard")} title="Go to sample dashboard" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:244,height:76}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:244,height:76}}>
+              <MobileBannerMark width={230} />
+            </div>
+          </button>
+        </div>
+        <div style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",display:"flex",alignItems:"center",justifyContent:"flex-end",width:40,height:40,zIndex:1}}>
+          <button onClick={() => setActive("faq")} title="Open FAQ" style={{background:"none",border:"none",cursor:"pointer",color:active === "faq" ? C.gold : C.muted,display:"flex",alignItems:"center",justifyContent:"center",padding:0,width:40,height:40}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:30,height:30}}>
+              <Icons.help size={18} />
+            </div>
+          </button>
+        </div>
+      </div>
+      <div className="desktop-only" style={{padding:"14px 12px",borderBottom:`1px solid ${C.border}`,display:"grid",gap:10}}>
+        <div style={{textAlign:"left"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.gold,letterSpacing:".08em",textTransform:"uppercase"}}>Public Sample</div>
+          <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Explore Shepherd’s layout and core workflows without signing in.</div>
+        </div>
+        <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/"; }} style={{justifyContent:"center"}}>
+          Open Login
+        </button>
+      </div>
+      <nav className="app-sidebar-nav" style={{padding:"12px 10px",flex:1,overflowY:"auto"}}>
+        {nav.map(({ id, label, I: iconComponent }) => (
+          <div
+            key={id}
+            className={`nav-item${active===id?" active":""}`}
+            onClick={() => {
+              if (id === "budget") window.dispatchEvent(new CustomEvent("shepherd:return-finance-home"));
+              setActive(id);
+            }}
+          >
+            <div style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
+              {iconComponent()}
+            </div>
+            <span>{label}</span>
+          </div>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function PublicSampleShell() {
+  const [active, setActive] = useState("dashboard");
+  const [profile, setProfile] = useState(SAMPLE_PROFILE);
+  const [church] = useState(SAMPLE_CHURCH);
+  const [tasks, setTasks] = useState(SAMPLE_TASKS);
+  const [transactions, setTransactions] = useState(SAMPLE_TRANSACTIONS);
+  const [purchaseOrders, setPurchaseOrders] = useState(SAMPLE_PURCHASE_ORDERS);
+  const [ministries, setMinistries] = useState(SAMPLE_MINISTRIES);
+  const [previewUsers, setPreviewUsers] = useState(SAMPLE_PREVIEW_USERS);
+  const [calendarEvents, setCalendarEvents] = useState(SAMPLE_CALENDAR_EVENTS);
+  const [trashItems, setTrashItems] = useState([]);
+  const [notifications, setNotifications] = useState(SAMPLE_NOTIFICATIONS);
+  const [archivedNotifications, setArchivedNotifications] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  const unreadNotifications = notifications.filter((item) => !item.readAt);
+  const markNotificationRead = (id) => setNotifications((current) => current.map((item) => item.id === id ? { ...item, readAt: item.readAt || new Date().toISOString() } : item));
+  const archiveNotification = (id) => {
+    const target = notifications.find((item) => item.id === id);
+    if (!target) return;
+    setNotifications((current) => current.filter((item) => item.id !== id));
+    setArchivedNotifications((current) => [{ ...target, archivedAt: new Date().toISOString() }, ...current]);
+  };
+  const restoreNotification = (id) => {
+    const target = archivedNotifications.find((item) => item.id === id);
+    if (!target) return;
+    setArchivedNotifications((current) => current.filter((item) => item.id !== id));
+    setNotifications((current) => [{ ...target, archivedAt: null }, ...current]);
+  };
+  const openNotificationTarget = (item) => {
+    if (!item) return;
+    markNotificationRead(item.id);
+    setActive(item.target || "dashboard");
+  };
+  const openFavorite = (item) => setActive(item?.pageId || "dashboard");
+  const isFavorite = (key) => (favorites || []).some((item) => item.key === key);
+  const toggleFavorite = (item) => {
+    const normalized = normalizeFavoriteItem(item);
+    if (!normalized.key || !normalized.title || !isSupportedFavoriteItem(normalized)) return;
+    setFavorites((current) => current.some((entry) => entry.key === normalized.key)
+      ? current.filter((entry) => entry.key !== normalized.key)
+      : [normalized, ...current].slice(0, 24));
+  };
+  const moveItemToTrash = (item) => setTrashItems((current) => [{ id: `${Date.now()}`, ...item, deleted_at: new Date().toISOString() }, ...current]);
+  const restoreTrashItem = (item) => setTrashItems((current) => current.filter((entry) => entry.id !== item.id));
+  const clearTrash = () => setTrashItems([]);
+  const completeTutorial = () => setProfile((current) => ({ ...current, walkthrough_completed_at: new Date().toISOString() }));
+
+  const sampleIntroCard = (
+    <div className="card" style={{padding:20,marginBottom:20,textAlign:"left",background:C.card,border:`1px solid ${C.border}`}}>
+      <div style={{fontSize:11,color:C.gold,fontWeight:800,textTransform:"uppercase",letterSpacing:".12em"}}>Shepherd Sample</div>
+      <div style={{fontSize:15,color:C.text,fontWeight:700,marginTop:10}}>This is a public preview of Shepherd’s layout and workflow style.</div>
+      <div style={{fontSize:13,color:C.muted,lineHeight:1.7,marginTop:8}}>
+        It uses sample church data only. You can browse the dashboard, tasks, finances, calendar, and FAQ to understand how Shepherd feels before creating or joining an account.
+      </div>
+    </div>
+  );
+
+  const pages = {
+    dashboard: (
+      <>
+        <div className="mobile-pad" style={widePageStyle}>{sampleIntroCard}</div>
+        <Dashboard
+          key="sample-dashboard"
+          tasks={tasks}
+          setActive={setActive}
+          profile={profile}
+          church={church}
+          previewUsers={previewUsers}
+          setProfile={setProfile}
+          setPreviewUsers={setPreviewUsers}
+          churchLockupAssignments={SAMPLE_LOCKUP_ASSIGNMENTS}
+          notifications={notifications.slice(0, 8)}
+          archivedNotifications={archivedNotifications.slice(0, 12)}
+          unreadCount={unreadNotifications.length}
+          readNotificationIds={notifications.filter((item) => item.readAt).map((item) => item.id)}
+          archiveNotification={archiveNotification}
+          restoreNotification={restoreNotification}
+          openNotificationTarget={openNotificationTarget}
+          favorites={favorites}
+          openFavorite={openFavorite}
+          toggleFavorite={toggleFavorite}
+          isFavorite={isFavorite}
+        />
+      </>
+    ),
+    tasks: <Tasks tasks={tasks} setTasks={setTasks} churchId={church.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={null} clearTaskOpenRequest={() => {}} recordActivity={() => null} isFavorite={isFavorite} toggleFavorite={toggleFavorite} />,
+    budget: <Budget transactions={transactions} setTransactions={setTransactions} purchaseOrders={purchaseOrders} setPurchaseOrders={setPurchaseOrders} churchId={church.id} profile={profile} setProfile={setProfile} ministries={ministries} setMinistries={setMinistries} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} recordActivity={() => null} />,
+    calendar: <CalendarView tasks={tasks} setTasks={setTasks} eventRequests={[]} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} previewUsers={previewUsers} profile={profile} church={church} churchId={church.id} setActive={setActive} recordActivity={() => null} />,
+    faq: <FAQPage onStartTutorial={() => setShowTutorial(true)} />,
+    trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,
+  };
+
+  return (
+    <>
+      <GS/>
+      <div key={`sample-${ACTIVE_THEME_MODE}`} style={{display:"flex",flexDirection:"column",minHeight:"100vh",background:C.bg}}>
+        <DesktopTopBanner setActive={setActive} />
+        <div className="app-shell" style={{display:"flex",flex:1,minHeight:0}}>
+          <PublicSampleSidebar active={active} setActive={setActive} />
+          <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[active] || pages.dashboard}</main>
+        </div>
+      </div>
+      {showTutorial && (
+        <ShepherdTutorial
+          profile={profile}
+          church={church}
+          onComplete={completeTutorial}
+          onClose={() => setShowTutorial(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -12782,6 +13146,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 function AppShell() {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
   const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
+  const isPublicSampleRoute = currentPath === "/sample";
   const pathSegments = currentPath.split("/").filter(Boolean);
   const isNewPublicEventRequestRoute = pathSegments[0] === "event-request" && pathSegments[1] === "new";
   const publicEventRequestChurchCode = isNewPublicEventRequestRoute ? pathSegments[2] || "" : "";
@@ -13723,6 +14088,10 @@ function AppShell() {
       </div>
     </>
   );
+
+  if (isPublicSampleRoute) {
+    return <PublicSampleShell />;
+  }
 
   if (isPublicEventRequestRoute) {
     return (

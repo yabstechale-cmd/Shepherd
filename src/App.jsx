@@ -813,7 +813,6 @@ const getTaskReviewerDecision = (task, reviewer) => {
 };
 const canApproveTaskReview = (profile, task) =>
   canReviewTask(profile, task)
-  && !listIncludesPerson(task?.review_approvals, profile?.full_name)
   && ["in-review"].includes(task?.status || "todo");
 const isFinanceUser = (profile) => profileHasMinistry(profile, "Finances") || (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
 const isFinanceDirector = (profile) => (profile?.staff_roles || []).includes("finance_director") || profile?.role === "finance_director";
@@ -9711,18 +9710,25 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const updateTaskReviewStatus = async (task, status) => {
     if (!task?.id || !canApproveTaskReview(profile, task)) return;
     const nowIso = new Date().toISOString();
+    const reviewerName = profile?.full_name || "Reviewer";
     const nextHistory = [
       ...(task.review_history || []),
       {
         id: `${task.id}-${status}-${nowIso}`,
-        reviewer: profile?.full_name || "Reviewer",
+        reviewer: reviewerName,
         action: status,
         created_at: nowIso,
       },
     ];
-    const approvals = status === "approved"
-      ? [...new Set([...(task.review_approvals || []), profile?.full_name].filter(Boolean))]
-      : [];
+    const reviewerDecisions = new Map();
+    nextHistory
+      .slice()
+      .sort((left, right) => new Date(left.created_at || 0) - new Date(right.created_at || 0))
+      .forEach((entry) => {
+        if (!entry?.reviewer) return;
+        reviewerDecisions.set(entry.reviewer, entry.action === "approved" ? "approved" : "denied");
+      });
+    const approvals = (task.reviewers || []).filter((name) => reviewerDecisions.get(name) === "approved");
     const allApproved = status === "approved" && task.reviewers.length > 0 && task.reviewers.every((name) => listIncludesPerson(approvals, name));
     const changes = status === "approved"
       ? {
@@ -10298,8 +10304,10 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                                 {new Date(decision.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
                               </div>
                             )}
-                            {isCurrentReviewer && !decision && (
-                              <div style={{fontSize:11,color:C.gold,marginTop:3}}>Awaiting your review</div>
+                            {isCurrentReviewer && (
+                              <div style={{fontSize:11,color:decision ? C.muted : C.gold,marginTop:3}}>
+                                {decision ? "You can update your review while this task is still in review." : "Awaiting your review"}
+                              </div>
                             )}
                           </div>
                           <div style={{fontSize:12,color:decisionTone,fontWeight:600}}>{decisionLabel}</div>

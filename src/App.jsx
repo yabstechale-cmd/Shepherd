@@ -10306,10 +10306,36 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                         </div>
                         {reviewerCanRespond && (
                           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                            <button className="btn-outline" onClick={()=>updateTaskReviewStatus(selectedTask, "approved")} style={{padding:"7px 10px",color:C.success,borderColor:"rgba(82,200,122,.35)"}}>
+                            <button
+                              type="button"
+                              onClick={()=>updateTaskReviewStatus(selectedTask, "approved")}
+                              style={{
+                                padding:"8px 12px",
+                                borderRadius:10,
+                                border:`1px solid ${C.border}`,
+                                background:C.card,
+                                color:C.text,
+                                cursor:"pointer",
+                                fontSize:12,
+                                fontWeight:600,
+                              }}
+                            >
                               Approve
                             </button>
-                            <button className="btn-outline" onClick={()=>updateTaskReviewStatus(selectedTask, "denied")} style={{padding:"7px 10px",color:C.danger,borderColor:"rgba(224,82,82,.35)"}}>
+                            <button
+                              type="button"
+                              onClick={()=>updateTaskReviewStatus(selectedTask, "denied")}
+                              style={{
+                                padding:"8px 12px",
+                                borderRadius:10,
+                                border:`1px solid ${C.border}`,
+                                background:C.surface,
+                                color:C.text,
+                                cursor:"pointer",
+                                fontSize:12,
+                                fontWeight:600,
+                              }}
+                            >
                               Deny
                             </button>
                           </div>

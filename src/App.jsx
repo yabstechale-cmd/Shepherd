@@ -13739,13 +13739,13 @@ function AppShell() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (isPublicEventRequestRoute) return;
+    if (isPublicEventRequestRoute || isPublicSampleRoute) return;
     window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, safeActive);
     const nextPath = PAGE_PATHS[safeActive] || "/dashboard";
     if (window.location.pathname !== nextPath) {
       window.history.pushState({ shepherdPage: safeActive }, "", nextPath);
     }
-  }, [safeActive, isPublicEventRequestRoute]);
+  }, [safeActive, isPublicEventRequestRoute, isPublicSampleRoute]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

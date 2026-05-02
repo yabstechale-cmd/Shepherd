@@ -4498,10 +4498,18 @@ const FAQ_ITEMS = [
 ];
 
 function FAQPage({ onStartTutorial }) {
+  const [faqQuery, setFaqQuery] = useState("");
+  const normalizedFaqQuery = faqQuery.trim().toLowerCase();
   const groupedFaqItems = FAQ_CATEGORY_ORDER
     .map((category) => ({
       category,
-      items: FAQ_ITEMS.filter((item) => item.tag === category),
+      items: FAQ_ITEMS.filter((item) => {
+        if (item.tag !== category) return false;
+        if (!normalizedFaqQuery) return true;
+        return [item.question, item.answer, item.tag]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalizedFaqQuery));
+      }),
     }))
     .filter((group) => group.items.length > 0);
 
@@ -4522,6 +4530,20 @@ function FAQPage({ onStartTutorial }) {
       </div>
 
       <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:20}}>
+        <div style={{display:"grid",gap:8}}>
+          <label style={{fontSize:12,color:C.muted,textAlign:"left"}}>Search by topic</label>
+          <input
+            className="input-field"
+            placeholder="Type a question, topic, or keyword"
+            value={faqQuery}
+            onChange={(e) => setFaqQuery(e.target.value)}
+          />
+        </div>
+        {groupedFaqItems.length === 0 && (
+          <div style={{padding:"8px 2px",fontSize:13,color:C.muted,lineHeight:1.7}}>
+            No FAQ topics match that search yet. Try a broader word like tasks, calendar, review, finance, or account.
+          </div>
+        )}
         {groupedFaqItems.map((group) => (
           <section key={group.category} style={{display:"grid",gap:10}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>

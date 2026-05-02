@@ -1,0 +1,39 @@
+name: Send Shepherd Update May 2 2026
+
+on:
+  schedule:
+    - cron: "0 12 2 5 *"
+  workflow_dispatch:
+
+jobs:
+  send-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard exact send date
+        run: |
+          if [ "$(date -u +%F)" != "2026-05-02" ]; then
+            echo "Not the scheduled date. Skipping."
+            exit 0
+          fi
+
+      - name: Trigger Shepherd update blast
+        run: |
+          curl --fail-with-body -X POST "https://nplrfjmxstaxsgribirs.functions.supabase.co/send-shepherd-update-bulk" \
+            -H "Content-Type: application/json" \
+            --data @- <<'JSON'
+          {
+            "campaignKey": "shepherd-updates-2026-05-02-0800-edt",
+            "scheduledFor": "2026-05-02T12:00:00Z",
+            "subject": "Shepherd Updates Are Live",
+            "title": "Shepherd Updates Are Live",
+            "intro": "I wanted to send a quick update and let you know that several new Shepherd improvements are now live.",
+            "closing": "Thank you again for the feedback, testing, and patience as Shepherd continues to improve. More updates are still to come.",
+            "footerText": "You received this because you are an active Shepherd user.",
+            "updateItems": [
+              "UI and branding updates, including new brand art, refreshed mobile and desktop banner treatments, light and dark mode support, and a range of interface refinements across the app.",
+              "Task page stability and functionality upgrades, including recurring tasks, stronger task editing behavior, and overall reliability improvements.",
+              "Finance ledger workflow upgrades, including transaction editing, better transaction organization, sortable transaction history, and cleaner expandable budget and transaction sections.",
+              "Task review and comment system upgrades, including cleaner review actions, the ability for reviewers to update a review decision when needed, and stronger task comment behavior and comment stability."
+            ]
+          }
+          JSON

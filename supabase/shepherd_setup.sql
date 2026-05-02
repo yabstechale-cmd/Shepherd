@@ -153,6 +153,25 @@ create unique index if not exists profiles_staff_id_key on public.profiles (staf
 alter table public.profiles
   enable row level security;
 
+create table if not exists public.shepherd_update_campaigns (
+  campaign_key text primary key,
+  scheduled_for timestamptz not null,
+  sent_at timestamptz,
+  sent_count integer not null default 0,
+  failed_count integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table public.shepherd_update_campaigns add column if not exists campaign_key text;
+alter table public.shepherd_update_campaigns add column if not exists scheduled_for timestamptz;
+alter table public.shepherd_update_campaigns add column if not exists sent_at timestamptz;
+alter table public.shepherd_update_campaigns add column if not exists sent_count integer not null default 0;
+alter table public.shepherd_update_campaigns add column if not exists failed_count integer not null default 0;
+alter table public.shepherd_update_campaigns add column if not exists created_at timestamptz not null default now();
+
+alter table public.shepherd_update_campaigns
+  enable row level security;
+
 create or replace function public.enforce_profile_staff_name()
 returns trigger
 language plpgsql

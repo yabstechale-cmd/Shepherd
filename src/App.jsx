@@ -9267,6 +9267,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   const [commentDraft, setCommentDraft] = useState("");
   const [commentCursor, setCommentCursor] = useState(0);
   const [taskCommentError, setTaskCommentError] = useState("");
+  const [editingTaskReviewFor, setEditingTaskReviewFor] = useState("");
   const [taskCommentsOpen, setTaskCommentsOpen] = useState(() => {
     if (typeof window === "undefined") return true;
     try {
@@ -9358,6 +9359,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
   };
   const openTask = (task) => {
     setSelectedTask(normalizeTask(task));
+    setEditingTaskReviewFor("");
     setCommentDraft("");
     setTaskCommentError("");
     setEditingCommentId(null);
@@ -9745,6 +9747,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       const updated = normalizeTask({ ...task, ...changes });
       setTasks(tasks.map((entry) => entry.id === task.id ? updated : entry));
       syncTaskInView(updated);
+      setEditingTaskReviewFor("");
       return;
     }
     let result = await supabase.from("tasks").update(changes).eq("id", task.id).select().single();
@@ -9755,6 +9758,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
     const updated = normalizeTask(data);
     setTasks(tasks.map((entry) => entry.id === task.id ? updated : entry));
     syncTaskInView(updated);
+    setEditingTaskReviewFor("");
     if (updated.status === "done" && task.status !== "done") await createNextRecurringTask(updated);
     await notifyTaskReviewDecision(updated, status, nowIso);
     await recordActivity?.({
@@ -10284,6 +10288,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                     const decision = getTaskReviewerDecision(selectedTask, reviewer);
                     const isCurrentReviewer = samePerson(reviewer, profile?.full_name);
                     const reviewerCanRespond = isCurrentReviewer && canApproveTaskReview(profile, selectedTask);
+                    const reviewerIsEditingDecision = reviewerCanRespond && (!decision || samePerson(editingTaskReviewFor, reviewer));
                     const decisionLabel = decision?.action === "approved"
                       ? "Approved"
                       : decision?.action === "denied"
@@ -10306,13 +10311,26 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                             )}
                             {isCurrentReviewer && (
                               <div style={{fontSize:11,color:decision ? C.muted : C.gold,marginTop:3}}>
-                                {decision ? "You can update your review while this task is still in review." : "Awaiting your review"}
+                                {decision ? "Use the pen to update your review while this task is still in review." : "Awaiting your review"}
                               </div>
                             )}
                           </div>
-                          <div style={{fontSize:12,color:decisionTone,fontWeight:600}}>{decisionLabel}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <div style={{fontSize:12,color:decisionTone,fontWeight:600}}>{decisionLabel}</div>
+                            {reviewerCanRespond && decision && !reviewerIsEditingDecision && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingTaskReviewFor(reviewer)}
+                                style={{display:"flex",alignItems:"center",justifyContent:"center",padding:0,border:"none",background:"transparent",color:C.muted,cursor:"pointer"}}
+                                aria-label="Edit review decision"
+                                title="Edit review decision"
+                              >
+                                <Icons.pen />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        {reviewerCanRespond && (
+                        {reviewerIsEditingDecision && (
                           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                             <button
                               type="button"

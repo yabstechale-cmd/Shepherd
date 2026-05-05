@@ -13880,13 +13880,13 @@ function AppShell() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (isPublicEventRequestRoute || isPublicSampleRoute) return;
+    if (isPublicEventRequestRoute || isPublicSampleRoute || isLandingRoute) return;
     window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, safeActive);
     const nextPath = PAGE_PATHS[safeActive] || "/dashboard";
     if (window.location.pathname !== nextPath) {
       window.history.pushState({ shepherdPage: safeActive }, "", nextPath);
     }
-  }, [safeActive, isPublicEventRequestRoute, isPublicSampleRoute]);
+  }, [safeActive, isPublicEventRequestRoute, isPublicSampleRoute, isLandingRoute]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -14234,6 +14234,10 @@ function AppShell() {
     return <PublicSampleShell />;
   }
 
+  if (isLandingRoute) {
+    return <LandingPage />;
+  }
+
   if (isPublicEventRequestRoute) {
     return (
       <>
@@ -14248,9 +14252,6 @@ function AppShell() {
   }
 
   if (!session) {
-    if (isLandingRoute) {
-      return <LandingPage />;
-    }
     return (
       <>
         <GS/>

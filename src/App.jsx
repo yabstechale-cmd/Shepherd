@@ -2321,7 +2321,7 @@ function LandingPage() {
           <div style={{maxWidth:1180,margin:"0 auto",padding:"28px 22px 70px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20,flexWrap:"wrap",marginBottom:46}}>
               <button
-                onClick={() => { if (typeof window !== "undefined") window.location.href = "/"; }}
+                onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
                 style={{display:"flex",alignItems:"center",gap:14,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text}}
               >
                 <BrandMark size={82} />
@@ -2599,7 +2599,7 @@ function PublicSampleSidebar({ active, setActive }) {
     <div className="app-sidebar" style={{width:220,height:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,overflow:"hidden"}}>
       <div className="mobile-only" style={{padding:"0 14px",borderBottom:`1px solid ${C.border}`,position:"relative",height:86}}>
         <div style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",display:"flex",alignItems:"center",justifyContent:"flex-start",width:64,height:40,zIndex:1}}>
-          <button onClick={() => { if (typeof window !== "undefined") window.location.href = "/"; }} className="btn-outline" style={{padding:"8px 10px",fontSize:12}}>Log In</button>
+          <button onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }} className="btn-outline" style={{padding:"8px 10px",fontSize:12}}>Log In</button>
         </div>
         <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%, -50%)",display:"flex",alignItems:"center",justifyContent:"center",width:244,height:76}}>
           <button onClick={() => setActive("dashboard")} title="Go to sample dashboard" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",padding:0,cursor:"pointer",width:244,height:76}}>
@@ -2621,7 +2621,7 @@ function PublicSampleSidebar({ active, setActive }) {
           <div style={{fontSize:12,fontWeight:700,color:C.gold,letterSpacing:".08em",textTransform:"uppercase"}}>Public Sample</div>
           <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>Explore Shepherd’s layout and core workflows without signing in.</div>
         </div>
-        <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/"; }} style={{justifyContent:"center"}}>
+        <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }} style={{justifyContent:"center"}}>
           Open Login
         </button>
       </div>
@@ -13277,11 +13277,17 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 // ── Main App ───────────────────────────────────────────────────────────────
 function AppShell() {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
-  const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
+  let currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
+  const rootPath = currentPath === "" || currentPath === "/";
+  if (typeof window !== "undefined" && rootPath) {
+    const fallbackPath = "/home";
+    window.history.replaceState({}, "", fallbackPath);
+    currentPath = fallbackPath;
+  }
   const isPublicSampleRoute = currentPath === "/sample";
   const isLoginRoute = currentPath === "/login";
   const isCreateAccountRoute = currentPath === "/create-account";
-  const isLandingRoute = currentPath === "" || currentPath === "/";
+  const isLandingRoute = currentPath === "/home";
   const pathSegments = currentPath.split("/").filter(Boolean);
   const isNewPublicEventRequestRoute = pathSegments[0] === "event-request" && pathSegments[1] === "new";
   const publicEventRequestChurchCode = isNewPublicEventRequestRoute ? pathSegments[2] || "" : "";

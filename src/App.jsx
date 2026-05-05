@@ -2385,6 +2385,11 @@ function LandingPage() {
               <p style={{fontSize:15,color:C.muted,lineHeight:1.85,margin:0,maxWidth:820}}>
                 It was built around the real pace of church leadership: ministry planning, shared responsibility, reviews, communication, and financial visibility. The goal is simple: more clarity, more follow-through, and more care for the people doing the work.
               </p>
+              <div style={{marginTop:22}}>
+                <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
+                  See What Shepherd Looks Like
+                </button>
+              </div>
             </div>
 
               <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
@@ -2428,9 +2433,6 @@ function LandingPage() {
                     Explore the sample first, or go straight into setting up your church and team.
                   </div>
                 </div>
-                <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{width:"100%",justifyContent:"center"}}>
-                  See What Shepherd Looks Like
-                </button>
               </div>
           </div>
 

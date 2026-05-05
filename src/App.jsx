@@ -2300,6 +2300,7 @@ function LandingPage() {
   const heroTone = ACTIVE_THEME_MODE === "dark"
     ? `linear-gradient(180deg, ${C.surface} 0%, ${C.bg} 100%)`
     : `linear-gradient(180deg, ${C.card} 0%, ${C.bg} 100%)`;
+  const heroWatermark = getThemeBrandIcon();
 
   const featureCards = [
     {
@@ -2328,40 +2329,18 @@ function LandingPage() {
       <GS/>
       <div style={{minHeight:"100vh",background:C.bg,color:C.text}}>
         <div style={{position:"relative",overflow:"hidden",background:heroTone,borderBottom:`1px solid ${C.border}`}}>
-          <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at top center, ${C.goldGlow} 0%, transparent 55%)`}} />
-          <div style={{maxWidth:1180,margin:"0 auto",padding:"28px 22px 70px",position:"relative"}}>
-            <div className="desktop-only" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20,flexWrap:"wrap",marginBottom:46}}>
-              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
-                  Create Account
-                </button>
-                <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
-                  Log In
-                </button>
+          <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at top center, ${C.goldGlow} 0%, transparent 58%)`}} />
+          <div style={{position:"absolute",right:"-6%",top:"10%",width:"min(58vw, 860px)",height:"min(58vw, 860px)",opacity:ACTIVE_THEME_MODE === "dark" ? 0.08 : 0.055,pointerEvents:"none"}}>
+            <img src={heroWatermark} alt="" style={{width:"100%",height:"100%",objectFit:"contain",filter:ACTIVE_THEME_MODE === "dark" ? "none" : "saturate(.9)"}} />
+          </div>
+          <div style={{maxWidth:1180,margin:"0 auto",padding:"30px 22px 78px",position:"relative"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:20,flexWrap:"wrap",marginBottom:58}}>
+              <div style={{display:"grid",gap:6}}>
+                <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:36,lineHeight:1,color:C.heading}}>Shepherd</div>
+                <div style={{fontSize:12,color:C.muted,letterSpacing:".12em",textTransform:"uppercase",fontWeight:700}}>
+                  Where Church Leadership Finds Clarity and Care
+                </div>
               </div>
-              <button
-                onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
-                style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:14,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,marginLeft:"auto",textAlign:"right"}}
-              >
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:40,lineHeight:1,color:C.heading}}>Shepherd</div>
-                  <div style={{fontSize:12,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",fontWeight:700}}>Where Church Leadership Finds Clarity and Care</div>
-                </div>
-                <BrandMark size={82} />
-              </button>
-            </div>
-
-            <div className="mobile-only" style={{display:"grid",gap:22,marginBottom:34}}>
-              <button
-                onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
-                style={{display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"nowrap",gap:12,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left",width:"100%"}}
-              >
-                <BrandMark size={72} />
-                <div style={{textAlign:"left",minWidth:0}}>
-                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:34,lineHeight:1,color:C.heading}}>Shepherd</div>
-                  <div style={{fontSize:11,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",fontWeight:700}}>Where Church Leadership Finds Clarity and Care</div>
-                </div>
-              </button>
               <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                 <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
                   Create Account
@@ -2372,46 +2351,47 @@ function LandingPage() {
               </div>
             </div>
 
-            <div style={{textAlign:"left",marginBottom:30}}>
-              <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:".14em",textTransform:"uppercase",marginBottom:16}}>
-                Welcome to Shepherd
-              </div>
-              <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(42px, 8vw, 78px)",lineHeight:1.02,fontWeight:500,color:C.heading,margin:0,maxWidth:860}}>
-                A calmer, clearer way to run church work together.
-              </h1>
-            </div>
-
-            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(320px,.9fr)",gap:34,alignItems:"start"}}>
-              <div style={{textAlign:"left"}}>
-                <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:".14em",textTransform:"uppercase",marginBottom:16}}>
-                  Built for the real rhythm of ministry
+            <div style={{display:"grid",gap:32}}>
+              <div style={{maxWidth:860,textAlign:"left"}}>
+                <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:".16em",textTransform:"uppercase",marginBottom:18}}>
+                  Welcome to Shepherd
                 </div>
-                <p style={{fontSize:17,color:C.muted,lineHeight:1.85,margin:"22px 0 0",maxWidth:720}}>
-                  Shepherd exists to help church teams work in one shared rhythm. Its heart is not just project management. It is clarity, follow-through, accountability, and peace for the people carrying ministry every week.
-                </p>
-                <p style={{fontSize:16,color:C.text,lineHeight:1.85,margin:"18px 0 0",maxWidth:720}}>
-                  Whether your team is planning events, assigning tasks, tracking ministry budgets, managing reviews, or coordinating the church calendar, Shepherd is designed to keep the right work in front of the right people at the right time.
-                </p>
-                <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:28}}>
-                  <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
-                    See What Shepherd Looks Like
-                  </button>
-                </div>
+                <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(42px, 8vw, 84px)",lineHeight:1.01,fontWeight:500,color:C.heading,margin:0}}>
+                  A calmer, clearer way to run church work together.
+                </h1>
               </div>
 
-              <div className="card" style={{padding:24,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:18,textAlign:"left"}}>
-                <div style={{display:"grid",gap:12}}>
-                  <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Helps You Hold Together</div>
-                  {highlights.map((item) => (
-                    <div key={item} style={{display:"grid",gridTemplateColumns:"16px 1fr",gap:12,alignItems:"start"}}>
-                      <div style={{width:10,height:10,borderRadius:"50%",background:C.gold,boxShadow:`0 0 0 4px ${C.goldGlow}`,marginTop:6}} />
-                      <div style={{fontSize:14,color:C.text,lineHeight:1.7}}>{item}</div>
+              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.05fr) minmax(300px,.95fr)",gap:28,alignItems:"start"}}>
+                <div style={{display:"grid",gap:18,textAlign:"left",maxWidth:700}}>
+                  <p style={{fontSize:18,color:C.text,lineHeight:1.9,margin:0}}>
+                    Shepherd helps church teams lead from one shared place for tasks, approvals, events, budgets, and calendar rhythm, so fewer things fall through the cracks and less energy gets wasted chasing updates.
+                  </p>
+                  <p style={{fontSize:15,color:C.muted,lineHeight:1.85,margin:0}}>
+                    It was built to bring more clarity, follow-through, accountability, and peace to the people carrying ministry every week.
+                  </p>
+                  <div style={{padding:"18px 20px",border:`1px solid ${C.border}`,borderRadius:18,background:ACTIVE_THEME_MODE === "dark" ? "rgba(255,255,255,.02)" : "rgba(255,255,255,.55)",backdropFilter:"blur(12px)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:18,flexWrap:"wrap"}}>
+                    <div style={{display:"grid",gap:6}}>
+                      <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>Preview Shepherd</div>
+                      <div style={{fontSize:14,color:C.text,lineHeight:1.7}}>See what Shepherd looks like before creating or joining an account.</div>
                     </div>
-                  ))}
+                    <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
+                      See What Shepherd Looks Like
+                    </button>
+                  </div>
                 </div>
-                <div style={{borderTop:`1px solid ${C.border}`,paddingTop:18}}>
-                  <div style={{fontSize:13,color:C.muted,lineHeight:1.8}}>
-                    Shepherd is built for churches that want a cleaner operating system, not just another app. The goal is simple: fewer dropped details, less confusion, and a healthier ministry pace for the whole team.
+
+                <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:18,textAlign:"left",boxShadow:ACTIVE_THEME_MODE === "dark" ? "0 22px 70px rgba(0,0,0,.26)" : "0 26px 60px rgba(31,40,62,.08)"}}>
+                  <div style={{display:"grid",gap:10}}>
+                    <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Holds Together</div>
+                    {highlights.map((item) => (
+                      <div key={item} style={{display:"grid",gridTemplateColumns:"16px 1fr",gap:12,alignItems:"start"}}>
+                        <div style={{width:10,height:10,borderRadius:"50%",background:C.gold,boxShadow:`0 0 0 4px ${C.goldGlow}`,marginTop:6}} />
+                        <div style={{fontSize:14,color:C.text,lineHeight:1.7}}>{item}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{borderTop:`1px solid ${C.border}`,paddingTop:18,fontSize:13,color:C.muted,lineHeight:1.8}}>
+                    Shepherd is for churches that want a healthier operating rhythm, not just another app to check.
                   </div>
                 </div>
               </div>

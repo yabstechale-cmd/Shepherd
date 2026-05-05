@@ -2332,9 +2332,6 @@ function LandingPage() {
           <div style={{maxWidth:1180,margin:"0 auto",padding:"28px 22px 70px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20,flexWrap:"wrap",marginBottom:46}}>
               <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
-                  View Sample
-                </button>
                 <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
                   Log In
                 </button>
@@ -2354,14 +2351,20 @@ function LandingPage() {
               </button>
             </div>
 
-            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(320px,.9fr)",gap:34,alignItems:"center"}}>
+            <div style={{textAlign:"left",marginBottom:30}}>
+              <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:".14em",textTransform:"uppercase",marginBottom:16}}>
+                Welcome to Shepherd
+              </div>
+              <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(42px, 8vw, 78px)",lineHeight:1.02,fontWeight:500,color:C.heading,margin:0,maxWidth:860}}>
+                A calmer, clearer way to run church work together.
+              </h1>
+            </div>
+
+            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(320px,.9fr)",gap:34,alignItems:"start"}}>
               <div style={{textAlign:"left"}}>
                 <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:".14em",textTransform:"uppercase",marginBottom:16}}>
-                  Welcome to Shepherd
+                  Built for the real rhythm of ministry
                 </div>
-                <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(42px, 8vw, 78px)",lineHeight:1.02,fontWeight:500,color:C.heading,margin:0,maxWidth:760}}>
-                  A calmer, clearer way to run church work together.
-                </h1>
                 <p style={{fontSize:17,color:C.muted,lineHeight:1.85,margin:"22px 0 0",maxWidth:720}}>
                   Shepherd exists to help church teams work in one shared rhythm. Its heart is not just project management. It is clarity, follow-through, accountability, and peace for the people carrying ministry every week.
                 </p>
@@ -2369,9 +2372,6 @@ function LandingPage() {
                   Whether your team is planning events, assigning tasks, tracking ministry budgets, managing reviews, or coordinating the church calendar, Shepherd is designed to keep the right work in front of the right people at the right time.
                 </p>
                 <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:28}}>
-                  <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
-                    Start Your Church Setup
-                  </button>
                   <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
                     See What Shepherd Looks Like
                   </button>

@@ -2330,13 +2330,13 @@ function LandingPage() {
         <div style={{position:"relative",overflow:"hidden",background:heroTone,borderBottom:`1px solid ${C.border}`}}>
           <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at top center, ${C.goldGlow} 0%, transparent 55%)`}} />
           <div style={{maxWidth:1180,margin:"0 auto",padding:"28px 22px 70px",position:"relative"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20,flexWrap:"wrap",marginBottom:46}}>
+            <div className="desktop-only" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20,flexWrap:"wrap",marginBottom:46}}>
               <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
-                  Log In
-                </button>
                 <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
                   Create Account
+                </button>
+                <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
+                  Log In
                 </button>
               </div>
               <button
@@ -2349,6 +2349,27 @@ function LandingPage() {
                 </div>
                 <BrandMark size={82} />
               </button>
+            </div>
+
+            <div className="mobile-only" style={{display:"grid",gap:22,marginBottom:34}}>
+              <button
+                onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"center"}}
+              >
+                <BrandMark size={72} />
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:34,lineHeight:1,color:C.heading}}>Shepherd</div>
+                  <div style={{fontSize:11,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",fontWeight:700}}>Where Church Leadership Finds Clarity and Care</div>
+                </div>
+              </button>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
+                  Create Account
+                </button>
+                <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
+                  Log In
+                </button>
+              </div>
             </div>
 
             <div style={{textAlign:"left",marginBottom:30}}>

@@ -2331,16 +2331,6 @@ function LandingPage() {
           <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at top center, ${C.goldGlow} 0%, transparent 55%)`}} />
           <div style={{maxWidth:1180,margin:"0 auto",padding:"28px 22px 70px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20,flexWrap:"wrap",marginBottom:46}}>
-              <button
-                onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
-                style={{display:"flex",alignItems:"center",gap:14,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text}}
-              >
-                <BrandMark size={82} />
-                <div style={{textAlign:"left"}}>
-                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:40,lineHeight:1,color:C.heading}}>Shepherd</div>
-                  <div style={{fontSize:12,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",fontWeight:700}}>Church Workflows Aligned</div>
-                </div>
-              </button>
               <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                 <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
                   View Sample
@@ -2352,6 +2342,16 @@ function LandingPage() {
                   Create Account
                 </button>
               </div>
+              <button
+                onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
+                style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:14,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,marginLeft:"auto",textAlign:"right"}}
+              >
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:40,lineHeight:1,color:C.heading}}>Shepherd</div>
+                  <div style={{fontSize:12,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",fontWeight:700}}>Where Church Leadership Finds Clarity and Care</div>
+                </div>
+                <BrandMark size={82} />
+              </button>
             </div>
 
             <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(320px,.9fr)",gap:34,alignItems:"center"}}>

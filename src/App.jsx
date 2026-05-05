@@ -2303,6 +2303,13 @@ function LandingPage() {
   const heroTone = ACTIVE_THEME_MODE === "dark"
     ? `linear-gradient(180deg, ${C.surface} 0%, ${C.bg} 100%)`
     : `linear-gradient(180deg, ${C.card} 0%, ${C.bg} 100%)`;
+  const previewOptions = [
+    { id: "dashboard", title: "Dashboard", image: dashboardPreview, description: "See the main dashboard with focus, notifications, and weekly rhythm in view.", aspectRatio: "951 / 760" },
+    { id: "tasks", title: "Tasks", image: tasksPreview, description: "Review task stages, ownership, review flow, and team visibility at a glance.", aspectRatio: "951 / 760" },
+    { id: "finances", title: "Finances", image: budgetPreview, description: "Preview budget oversight, ministry ledgers, and financial workflow tools.", aspectRatio: "1009 / 610" },
+  ];
+  const [activePreview, setActivePreview] = useState("dashboard");
+  const selectedPreview = previewOptions.find((option) => option.id === activePreview) || previewOptions[0];
 
   const featureCards = [
     {
@@ -2333,9 +2340,6 @@ function LandingPage() {
                   style={{display:"grid",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left",minWidth:0,flex:"1 1 auto"}}
                 >
                   <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(52px, 8vw, 104px)",lineHeight:.95,color:C.heading}}>Shepherd</div>
-                  <div style={{fontSize:12,color:C.muted,letterSpacing:".12em",textTransform:"uppercase",fontWeight:700}}>
-                    Where Church Leadership Finds Clarity and Care
-                  </div>
                 </button>
                 <details style={{position:"relative"}}>
                   <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer",padding:"9px 12px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,whiteSpace:"nowrap"}}>
@@ -2353,11 +2357,8 @@ function LandingPage() {
               </div>
             </div>
 
-            <div style={{maxWidth:"min(980px, 100%)",textAlign:"left",paddingRight:"clamp(0px, 8vw, 120px)"}}>
-              <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:".16em",textTransform:"uppercase",marginBottom:18}}>
-                Welcome to Shepherd
-              </div>
-              <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(30px, 4.4vw, 40px)",lineHeight:1.08,fontWeight:500,color:C.heading,margin:0,maxWidth:920}}>
+            <div style={{maxWidth:"min(1320px, 100%)",textAlign:"center",margin:"0 auto"}}>
+              <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(56px, 8vw, 132px)",lineHeight:.94,fontWeight:500,color:C.heading,margin:0}}>
                 A calmer, clearer way to run church work together.
               </h1>
             </div>
@@ -2399,18 +2400,35 @@ function LandingPage() {
               <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:860}}>
                 Here are a few real views from Shepherd so you can get a feel for the dashboard, task flow, and finances experience before stepping into the sample site.
               </div>
-              <div style={{display:"grid",gap:12}}>
-                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1.12fr .88fr",gap:14}}>
-                  <div style={{border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",background:C.surface}}>
-                    <img src={dashboardPreview} alt="Shepherd dashboard preview" style={{display:"block",width:"100%",height:"100%",objectFit:"cover"}} />
+              <div style={{display:"grid",gap:16}}>
+                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 260px",gap:16,alignItems:"start"}}>
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",background:C.surface}}>
+                    <img src={selectedPreview.image} alt={`${selectedPreview.title} preview`} style={{display:"block",width:"100%",aspectRatio:selectedPreview.aspectRatio,objectFit:"contain",background:C.surface}} />
                   </div>
-                  <div style={{display:"grid",gap:14}}>
-                    <div style={{border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",background:C.surface}}>
-                      <img src={tasksPreview} alt="Shepherd tasks preview" style={{display:"block",width:"100%",height:"100%",objectFit:"cover"}} />
-                    </div>
-                    <div style={{border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",background:C.surface}}>
-                      <img src={budgetPreview} alt="Shepherd budget preview" style={{display:"block",width:"100%",height:"100%",objectFit:"cover"}} />
-                    </div>
+                  <div style={{display:"grid",gap:12}}>
+                    {previewOptions.map((option) => {
+                      const isActive = option.id === selectedPreview.id;
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => setActivePreview(option.id)}
+                          style={{
+                            textAlign:"left",
+                            border:`1px solid ${isActive ? C.gold : C.border}`,
+                            borderRadius:16,
+                            background:isActive ? (ACTIVE_THEME_MODE === "dark" ? "rgba(201,168,76,.08)" : "rgba(162,126,25,.08)") : C.surface,
+                            padding:"14px 16px",
+                            display:"grid",
+                            gap:6,
+                            cursor:"pointer",
+                            boxShadow:isActive ? `0 0 0 1px ${C.goldGlow}` : "none",
+                          }}
+                        >
+                          <div style={{fontSize:13,color:isActive ? C.gold : C.heading,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase"}}>{option.title}</div>
+                          <div style={{fontSize:13,color:C.muted,lineHeight:1.7}}>{option.description}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

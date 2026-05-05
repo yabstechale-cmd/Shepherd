@@ -2100,7 +2100,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         if (!form.userId) throw new Error("Select your name first.");
         const selected = churchAccess.users.find((user) => user.id === form.userId);
         if (!selected?.email) throw new Error("That person has not registered yet. Use First Time to create the account.");
-        const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+        const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/password-recovery` : undefined;
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(selected.email, redirectTo ? { redirectTo } : undefined);
         if (resetError) throw resetError;
         setMessage("Password reset email sent. Use the link in that email to choose a new password.");
@@ -4250,7 +4250,7 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
       setResetError("There is no email attached to this account yet.");
       return;
     }
-    const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/password-recovery` : undefined;
     const { error } = await supabase.auth.resetPasswordForEmail(
       recoveryEmail,
       redirectTo ? { redirectTo } : undefined
@@ -13354,8 +13354,9 @@ function AppShell() {
   const isPublicSampleRoute = currentPath === "/sample";
   const isLoginRoute = currentPath === "/login";
   const isCreateAccountRoute = currentPath === "/create-account";
+  const isPasswordRecoveryRoute = currentPath === "/password-recovery";
   const isLandingRoute = currentPath === "/home";
-  const isPublicAuthRoute = isRootRoute || isLandingRoute || isLoginRoute || isCreateAccountRoute || isPublicSampleRoute;
+  const isPublicAuthRoute = isRootRoute || isLandingRoute || isLoginRoute || isCreateAccountRoute || isPasswordRecoveryRoute || isPublicSampleRoute;
   const pathSegments = currentPath.split("/").filter(Boolean);
   const isNewPublicEventRequestRoute = pathSegments[0] === "event-request" && pathSegments[1] === "new";
   const publicEventRequestChurchCode = isNewPublicEventRequestRoute ? pathSegments[2] || "" : "";
@@ -14179,8 +14180,8 @@ function AppShell() {
             window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
           }
         }
-        if (shouldShowRecovery && url.pathname !== "/login") {
-          window.history.replaceState({}, "", `/login${window.location.hash || ""}`);
+        if (shouldShowRecovery && url.pathname !== "/password-recovery") {
+          window.history.replaceState({}, "", `/password-recovery${window.location.hash || ""}`);
         }
       }
       const { data: { session } } = await supabase.auth.getSession();
@@ -14204,8 +14205,8 @@ function AppShell() {
       if (event === "PASSWORD_RECOVERY") {
         setAuthRecoveryMode(true);
         setSession(session);
-        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-          window.history.replaceState({}, "", `/login${window.location.hash || ""}`);
+        if (typeof window !== "undefined" && window.location.pathname !== "/password-recovery") {
+          window.history.replaceState({}, "", `/password-recovery${window.location.hash || ""}`);
         }
         setLoading(false);
         return;
@@ -14335,11 +14336,33 @@ function AppShell() {
           allowedModes={["reset"]}
           onPasswordResetComplete={() => {
             setAuthRecoveryMode(false);
-            if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+            if (typeof window !== "undefined" && window.location.pathname !== "/password-recovery") {
               window.history.replaceState({}, "", "/login");
             }
           }}
         />
+      </>
+    );
+  }
+
+  if (isPasswordRecoveryRoute) {
+    return (
+      <>
+        <GS/>
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,padding:"24px"}}>
+          <div className="card" style={{maxWidth:540,width:"100%",padding:28,textAlign:"left",display:"grid",gap:14}}>
+            <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>Password Recovery</div>
+            <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:32,lineHeight:1.08,color:C.heading}}>
+              This reset link is missing or has expired.
+            </div>
+            <div style={{fontSize:14,color:C.muted,lineHeight:1.8}}>
+              Open the most recent password-reset email and use that link, or go back to login and request a fresh reset email.
+            </div>
+            <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }} style={{justifySelf:"start"}}>
+              Back to Log In
+            </button>
+          </div>
+        </div>
       </>
     );
   }

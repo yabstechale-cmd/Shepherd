@@ -2303,6 +2303,7 @@ function LandingPage() {
   const heroTone = ACTIVE_THEME_MODE === "dark"
     ? `linear-gradient(180deg, ${C.surface} 0%, ${C.bg} 100%)`
     : `linear-gradient(180deg, ${C.card} 0%, ${C.bg} 100%)`;
+  const heroWatermark = getThemeBrandIcon();
   const previewOptions = [
     { id: "dashboard", title: "Dashboard", image: dashboardPreview, description: "See the main dashboard with focus, notifications, and weekly rhythm in view.", aspectRatio: "951 / 760" },
     { id: "tasks", title: "Tasks", image: tasksPreview, description: "Review task stages, ownership, review flow, and team visibility at a glance.", aspectRatio: "951 / 760" },
@@ -2331,7 +2332,10 @@ function LandingPage() {
       <GS/>
       <div style={{minHeight:"100vh",background:C.bg,color:C.text}}>
         <div style={{position:"relative",overflow:"hidden",background:heroTone,borderBottom:`1px solid ${C.border}`}}>
-          <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at 68% 28%, ${C.goldGlow} 0%, transparent 44%)`}} />
+          <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at 6% 18%, ${C.goldGlow} 0%, transparent 42%)`}} />
+          <div style={{position:"absolute",left:"clamp(18px, 4vw, 44px)",bottom:"-18px",width:"min(34vw, 420px)",opacity:ACTIVE_THEME_MODE === "dark" ? 0.08 : 0.06,pointerEvents:"none"}}>
+            <img src={heroWatermark} alt="" style={{display:"block",width:"100%",height:"auto",objectFit:"contain"}} />
+          </div>
           <div style={{width:"100%",padding:"34px clamp(20px, 4vw, 54px) 88px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"flex-start",alignItems:"flex-start",marginBottom:72}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:20,width:"100%",flexWrap:"nowrap"}}>
@@ -2358,7 +2362,7 @@ function LandingPage() {
             </div>
 
             <div style={{maxWidth:"min(1320px, 100%)",textAlign:"center",margin:"0 auto"}}>
-              <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(56px, 8vw, 132px)",lineHeight:.94,fontWeight:500,color:C.heading,margin:0}}>
+              <h1 style={{fontSize:"clamp(72px, 10vw, 176px)",lineHeight:.92,fontWeight:700,letterSpacing:"-.045em",color:C.heading,margin:0}}>
                 A calmer, clearer way to run church work together.
               </h1>
             </div>

@@ -2300,7 +2300,6 @@ function LandingPage() {
   const heroTone = ACTIVE_THEME_MODE === "dark"
     ? `linear-gradient(180deg, ${C.surface} 0%, ${C.bg} 100%)`
     : `linear-gradient(180deg, ${C.card} 0%, ${C.bg} 100%)`;
-  const heroWatermark = getThemeBrandIcon();
 
   const featureCards = [
     {
@@ -2330,15 +2329,12 @@ function LandingPage() {
       <div style={{minHeight:"100vh",background:C.bg,color:C.text}}>
         <div style={{position:"relative",overflow:"hidden",background:heroTone,borderBottom:`1px solid ${C.border}`}}>
           <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at 68% 28%, ${C.goldGlow} 0%, transparent 44%)`}} />
-          <div style={{position:"absolute",right:"-4%",top:"4%",width:"min(72vw, 1180px)",height:"min(72vw, 1180px)",opacity:ACTIVE_THEME_MODE === "dark" ? 0.075 : 0.05,pointerEvents:"none"}}>
-            <img src={heroWatermark} alt="" style={{width:"100%",height:"100%",objectFit:"contain",filter:ACTIVE_THEME_MODE === "dark" ? "none" : "saturate(.9)"}} />
-          </div>
           <div style={{width:"100%",padding:"34px clamp(20px, 4vw, 54px) 88px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"flex-start",alignItems:"flex-start",marginBottom:72}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:20,width:"100%",flexWrap:"wrap"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:20,width:"100%",flexWrap:"nowrap"}}>
                 <button
                   onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
-                  style={{display:"grid",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left"}}
+                  style={{display:"grid",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left",minWidth:0,flex:"1 1 auto"}}
                 >
                   <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:36,lineHeight:1,color:C.heading}}>Shepherd</div>
                   <div style={{fontSize:12,color:C.muted,letterSpacing:".12em",textTransform:"uppercase",fontWeight:700}}>
@@ -2346,8 +2342,12 @@ function LandingPage() {
                   </div>
                 </button>
                 <details style={{position:"relative"}}>
-                  <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer"}}>
-                    Get Started
+                  <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer",minWidth:46,padding:"10px 12px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <span style={{display:"grid",gap:4}}>
+                      <span style={{display:"block",width:16,height:2,borderRadius:999,background:C.text}} />
+                      <span style={{display:"block",width:16,height:2,borderRadius:999,background:C.text}} />
+                      <span style={{display:"block",width:16,height:2,borderRadius:999,background:C.text}} />
+                    </span>
                   </summary>
                   <div style={{position:"absolute",right:0,top:"calc(100% + 10px)",minWidth:210,padding:12,border:`1px solid ${C.border}`,borderRadius:16,background:C.card,boxShadow:ACTIVE_THEME_MODE === "dark" ? "0 22px 60px rgba(0,0,0,.3)" : "0 22px 60px rgba(31,40,62,.12)",display:"grid",gap:10,zIndex:4}}>
                     <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
@@ -2373,8 +2373,7 @@ function LandingPage() {
         </div>
 
         <div style={{width:"100%",padding:"24px clamp(20px, 4vw, 54px) 72px"}}>
-          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.05fr) minmax(320px,.95fr)",gap:28,alignItems:"start"}}>
-            <div style={{display:"grid",gap:24}}>
+          <div style={{display:"grid",gap:24}}>
             <div className="card" style={{padding:"30px clamp(22px, 3vw, 38px)",background:C.card,border:`1px solid ${C.border}`,textAlign:"left",boxShadow:ACTIVE_THEME_MODE === "dark" ? "0 24px 70px rgba(0,0,0,.22)" : "0 26px 70px rgba(31,40,62,.08)"}}>
               <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase",marginBottom:14}}>
                 What Shepherd Is
@@ -2392,48 +2391,51 @@ function LandingPage() {
               </div>
             </div>
 
-              <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
-                <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Holds Together</div>
-                {highlights.map((item) => (
-                  <div key={item} style={{display:"grid",gridTemplateColumns:"16px 1fr",gap:12,alignItems:"start"}}>
-                    <div style={{width:10,height:10,borderRadius:"50%",background:C.gold,boxShadow:`0 0 0 4px ${C.goldGlow}`,marginTop:6}} />
-                    <div style={{fontSize:14,color:C.text,lineHeight:1.7}}>{item}</div>
-                  </div>
-                ))}
-              </div>
+            <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
+              <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Holds Together</div>
+              {highlights.map((item) => (
+                <div key={item} style={{display:"grid",gridTemplateColumns:"16px 1fr",gap:12,alignItems:"start"}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:C.gold,boxShadow:`0 0 0 4px ${C.goldGlow}`,marginTop:6}} />
+                  <div style={{fontSize:14,color:C.text,lineHeight:1.7}}>{item}</div>
+                </div>
+              ))}
             </div>
-              <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
-                <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>See What Shepherd Looks Like</div>
-                <div style={{display:"grid",gap:12}}>
-                  <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
-                    <div style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Dashboard</div>
-                    <div style={{padding:12,display:"grid",gap:10}}>
-                      <div style={{height:16,width:"58%",borderRadius:999,background:C.border}} />
-                      <div style={{height:74,borderRadius:14,background:ACTIVE_THEME_MODE === "dark" ? "rgba(255,255,255,.03)" : "rgba(20,32,58,.05)"}} />
-                    </div>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                    <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
-                      <div style={{padding:"9px 11px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Tasks</div>
-                      <div style={{padding:11,display:"grid",gap:8}}>
-                        <div style={{height:12,width:"82%",borderRadius:999,background:C.border}} />
-                        <div style={{height:12,width:"63%",borderRadius:999,background:C.border}} />
-                        <div style={{height:12,width:"74%",borderRadius:999,background:C.border}} />
-                      </div>
-                    </div>
-                    <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
-                      <div style={{padding:"9px 11px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Finances</div>
-                      <div style={{padding:11,display:"grid",gap:8}}>
-                        <div style={{height:40,borderRadius:12,background:ACTIVE_THEME_MODE === "dark" ? "rgba(255,255,255,.03)" : "rgba(20,32,58,.05)"}} />
-                        <div style={{height:10,width:"68%",borderRadius:999,background:C.border}} />
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{fontSize:14,color:C.muted,lineHeight:1.8}}>
-                    Explore the sample first, or go straight into setting up your church and team.
+
+            <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
+              <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>See What Shepherd Looks Like</div>
+              <div style={{display:"grid",gap:12}}>
+                <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
+                  <div style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Dashboard</div>
+                  <div style={{padding:12,display:"grid",gap:10}}>
+                    <div style={{height:16,width:"58%",borderRadius:999,background:C.border}} />
+                    <div style={{height:74,borderRadius:14,background:ACTIVE_THEME_MODE === "dark" ? "rgba(255,255,255,.03)" : "rgba(20,32,58,.05)"}} />
                   </div>
                 </div>
+                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
+                    <div style={{padding:"9px 11px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Tasks</div>
+                    <div style={{padding:11,display:"grid",gap:8}}>
+                      <div style={{height:12,width:"82%",borderRadius:999,background:C.border}} />
+                      <div style={{height:12,width:"63%",borderRadius:999,background:C.border}} />
+                      <div style={{height:12,width:"74%",borderRadius:999,background:C.border}} />
+                    </div>
+                  </div>
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
+                    <div style={{padding:"9px 11px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Finances</div>
+                    <div style={{padding:11,display:"grid",gap:8}}>
+                      <div style={{height:40,borderRadius:12,background:ACTIVE_THEME_MODE === "dark" ? "rgba(255,255,255,.03)" : "rgba(20,32,58,.05)"}} />
+                      <div style={{height:10,width:"68%",borderRadius:999,background:C.border}} />
+                    </div>
+                  </div>
+                </div>
+                <div style={{fontSize:14,color:C.muted,lineHeight:1.8}}>
+                  Explore the sample first, or go straight into setting up your church and team.
+                </div>
               </div>
+              <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{width:"100%",justifyContent:"center"}}>
+                See What Shepherd Looks Like
+              </button>
+            </div>
           </div>
 
           <div style={{paddingTop:30}}>

@@ -2362,7 +2362,7 @@ function LandingPage() {
             </div>
 
             <div style={{maxWidth:"min(1320px, 100%)",textAlign:"center",margin:"0 auto"}}>
-              <h1 style={{fontSize:"clamp(72px, 10vw, 176px)",lineHeight:.92,fontWeight:700,letterSpacing:"-.045em",color:C.gold,margin:0}}>
+              <h1 style={{fontSize:"clamp(72px, 10vw, 110px)",lineHeight:.92,fontWeight:700,letterSpacing:"-.045em",color:C.gold,margin:0}}>
                 A calmer, clearer way to run church work together.
               </h1>
             </div>

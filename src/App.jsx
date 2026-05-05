@@ -539,7 +539,7 @@ const GS = () => (
     .tutorial-step-card{border:1px solid ${C.border};border-radius:16px;background:${C.overlayCard};padding:14px;text-align:left;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease}
     .tutorial-step-card:hover{transform:translateY(-2px);border-color:${C.goldDim};background:${C.goldGlow}}
     .tutorial-step-card.active{border-color:${C.gold};background:${C.goldGlow}}
-    .input-field{background:${C.surface};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;width:100%;max-width:100%;min-width:0;outline:none}
+    .input-field{background:${C.surface};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};caret-color:${C.text};-webkit-text-fill-color:${C.text};font-size:14px;width:100%;max-width:100%;min-width:0;outline:none}
     input.input-field[type="date"],input.input-field[type="time"]{-webkit-appearance:none;appearance:none;display:block}
     .input-field:focus{border-color:${C.gold};box-shadow:0 0 0 3px ${C.goldGlow}}
     .input-field::placeholder{color:${C.muted}}
@@ -2236,18 +2236,18 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
             </div>
           )}
           {(mode === "signup" || isChurchRegistration) && (
-            <input className="input-field" placeholder="Email address" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
+            <input className="input-field" placeholder="Email address" type="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
           )}
           {!isForgotPassword && (
             <div style={{position:"relative"}}>
-              <input className="input-field" placeholder={isLogin ? "Password" : "Create password"} type={showPassword?"text":"password"} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} style={{paddingRight:44}}/>
-              <button onClick={()=>setShowPassword(!showPassword)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:C.muted}}>
+              <input className="input-field" placeholder={isLogin ? "Password" : "Create password"} type={showPassword?"text":"password"} autoComplete={isLogin ? "current-password" : "new-password"} autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} style={{paddingRight:44,cursor:"text"}}/>
+              <button type="button" onClick={()=>setShowPassword(!showPassword)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:C.muted}}>
                 {showPassword?<Icons.eyeOff/>:<Icons.eye/>}
               </button>
             </div>
           )}
           {(mode === "signup" || isChurchRegistration) && (
-            <input className="input-field" placeholder="Confirm password" type="password" value={form.confirmPassword} onChange={e=>setForm({...form,confirmPassword:e.target.value})}/>
+            <input className="input-field" placeholder="Confirm password" type="password" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.confirmPassword} onChange={e=>setForm({...form,confirmPassword:e.target.value})}/>
           )}
           <button className="btn-gold" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"13px",fontSize:15,marginTop:4}}>
             {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isForgotPassword ? "Send reset email" : isLogin ? "Log In" : isChurchRegistration ? "Register Church" : "Register this account"}

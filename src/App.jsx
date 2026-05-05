@@ -2354,10 +2354,10 @@ function LandingPage() {
             <div className="mobile-only" style={{display:"grid",gap:22,marginBottom:34}}>
               <button
                 onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
-                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"center"}}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"nowrap",gap:12,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left",width:"100%"}}
               >
                 <BrandMark size={72} />
-                <div style={{textAlign:"left"}}>
+                <div style={{textAlign:"left",minWidth:0}}>
                   <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:34,lineHeight:1,color:C.heading}}>Shepherd</div>
                   <div style={{fontSize:11,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",fontWeight:700}}>Where Church Leadership Finds Clarity and Care</div>
                 </div>

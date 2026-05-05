@@ -1949,7 +1949,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
 };
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-function AuthScreen({ initialMode = "login" }) {
+function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", "church"] }) {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
   const [mode, setMode] = useState(initialMode);
   const [showPassword, setShowPassword] = useState(false);
@@ -1964,9 +1964,12 @@ function AuthScreen({ initialMode = "login" }) {
   const isLogin = mode === "login";
   const isForgotPassword = mode === "forgot";
   const isChurchRegistration = mode === "church";
+  const normalizedAllowedModes = allowedModes.filter(Boolean);
+  const visibleModes = normalizedAllowedModes.length ? normalizedAllowedModes : ["login"];
 
   useEffect(() => {
-    setMode(initialMode);
+    const nextMode = visibleModes.includes(initialMode) ? initialMode : visibleModes[0];
+    setMode(nextMode);
     setError("");
     setMessage("");
     setForm((current) => ({
@@ -1974,7 +1977,7 @@ function AuthScreen({ initialMode = "login" }) {
       password: "",
       confirmPassword: "",
     }));
-  }, [initialMode]);
+  }, [initialMode, visibleModes]);
 
   useEffect(() => {
     let active = true;
@@ -2174,9 +2177,9 @@ function AuthScreen({ initialMode = "login" }) {
         <div style={{display:"flex",background:C.surface,borderRadius:12,padding:4,marginBottom:24,border:`1px solid ${C.border}`}}>
           {[
             { id: "login", label: "Log In" },
-            { id: "signup", label: "First Time Login" },
+            { id: "signup", label: "First Time Log In" },
             { id: "church", label: "Register Your Church" },
-          ].map((tab)=>(
+          ].filter((tab) => visibleModes.includes(tab.id)).map((tab)=>(
             <button key={tab.id} onClick={()=>{setMode(tab.id);setError("");setMessage("");}} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:14,fontWeight:500,background:mode===tab.id?C.card:"transparent",color:mode===tab.id?C.text:C.muted}}>{tab.label}</button>
           ))}
         </div>
@@ -2278,6 +2281,14 @@ function AuthScreen({ initialMode = "login" }) {
             style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:13,marginTop:2}}
           >
             View Sample Website
+          </button>
+          <button
+            onClick={() => {
+              if (typeof window !== "undefined") window.location.href = "/home";
+            }}
+            style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:13,marginTop:2}}
+          >
+            Back to Home
           </button>
         </div>
       </div>
@@ -13277,17 +13288,13 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 // ── Main App ───────────────────────────────────────────────────────────────
 function AppShell() {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
-  let currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
-  const rootPath = currentPath === "" || currentPath === "/";
-  if (typeof window !== "undefined" && rootPath) {
-    const fallbackPath = "/home";
-    window.history.replaceState({}, "", fallbackPath);
-    currentPath = fallbackPath;
-  }
+  const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
+  const isRootRoute = currentPath === "" || currentPath === "/";
   const isPublicSampleRoute = currentPath === "/sample";
   const isLoginRoute = currentPath === "/login";
   const isCreateAccountRoute = currentPath === "/create-account";
   const isLandingRoute = currentPath === "/home";
+  const isPublicAuthRoute = isRootRoute || isLandingRoute || isLoginRoute || isCreateAccountRoute || isPublicSampleRoute;
   const pathSegments = currentPath.split("/").filter(Boolean);
   const isNewPublicEventRequestRoute = pathSegments[0] === "event-request" && pathSegments[1] === "new";
   const publicEventRequestChurchCode = isNewPublicEventRequestRoute ? pathSegments[2] || "" : "";
@@ -14252,12 +14259,33 @@ function AppShell() {
   }
 
   if (!session) {
+    if (isRootRoute) {
+      return <LandingPage />;
+    }
+    if (!isPublicAuthRoute) {
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.history.replaceState({}, "", "/login");
+      }
+      return (
+        <>
+          <GS/>
+          <AuthScreen initialMode="login" allowedModes={["login", "signup"]} />
+        </>
+      );
+    }
     return (
       <>
         <GS/>
-        <AuthScreen initialMode={isCreateAccountRoute ? "church" : "login"} />
+        <AuthScreen
+          initialMode={isCreateAccountRoute ? "church" : "login"}
+          allowedModes={isCreateAccountRoute ? ["church"] : ["login", "signup"]}
+        />
       </>
     );
+  }
+
+  if (isRootRoute) {
+    return null;
   }
 
   const pages = {

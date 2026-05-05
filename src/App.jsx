@@ -2335,18 +2335,30 @@ function LandingPage() {
           </div>
           <div style={{width:"100%",padding:"34px clamp(20px, 4vw, 54px) 88px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"flex-start",alignItems:"flex-start",marginBottom:72}}>
-              <button
-                onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
-                style={{display:"flex",alignItems:"center",gap:14,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left"}}
-              >
-                <BrandMark size={74} />
-                <div style={{display:"grid",gap:6}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:20,width:"100%",flexWrap:"wrap"}}>
+                <button
+                  onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
+                  style={{display:"grid",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left"}}
+                >
                   <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:36,lineHeight:1,color:C.heading}}>Shepherd</div>
                   <div style={{fontSize:12,color:C.muted,letterSpacing:".12em",textTransform:"uppercase",fontWeight:700}}>
                     Where Church Leadership Finds Clarity and Care
                   </div>
-                </div>
-              </button>
+                </button>
+                <details style={{position:"relative"}}>
+                  <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer"}}>
+                    Get Started
+                  </summary>
+                  <div style={{position:"absolute",right:0,top:"calc(100% + 10px)",minWidth:210,padding:12,border:`1px solid ${C.border}`,borderRadius:16,background:C.card,boxShadow:ACTIVE_THEME_MODE === "dark" ? "0 22px 60px rgba(0,0,0,.3)" : "0 22px 60px rgba(31,40,62,.12)",display:"grid",gap:10,zIndex:4}}>
+                    <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
+                      Create Account
+                    </button>
+                    <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
+                      Log In
+                    </button>
+                  </div>
+                </details>
+              </div>
             </div>
 
             <div style={{maxWidth:"min(980px, 100%)",textAlign:"left",paddingRight:"clamp(0px, 8vw, 120px)"}}>
@@ -2360,24 +2372,21 @@ function LandingPage() {
           </div>
         </div>
 
-        <div style={{width:"100%",padding:"0 clamp(20px, 4vw, 54px) 72px"}}>
-          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.05fr) minmax(320px,.95fr)",gap:28,alignItems:"start",marginTop:"-24px"}}>
+        <div style={{width:"100%",padding:"24px clamp(20px, 4vw, 54px) 72px"}}>
+          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.05fr) minmax(320px,.95fr)",gap:28,alignItems:"start"}}>
+            <div style={{display:"grid",gap:24}}>
             <div className="card" style={{padding:"30px clamp(22px, 3vw, 38px)",background:C.card,border:`1px solid ${C.border}`,textAlign:"left",boxShadow:ACTIVE_THEME_MODE === "dark" ? "0 24px 70px rgba(0,0,0,.22)" : "0 26px 70px rgba(31,40,62,.08)"}}>
               <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase",marginBottom:14}}>
                 What Shepherd Is
               </div>
               <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(28px, 3.2vw, 42px)",lineHeight:1.06,color:C.heading,marginBottom:18}}>
-                One shared operating rhythm for the people carrying ministry.
-              </div>
-              <p style={{fontSize:18,color:C.text,lineHeight:1.9,margin:"0 0 16px"}}>
                 Shepherd helps church teams lead from one place for tasks, approvals, events, budgets, and calendar rhythm, so fewer things fall through the cracks and less energy gets spent chasing updates.
-              </p>
+              </div>
               <p style={{fontSize:15,color:C.muted,lineHeight:1.85,margin:0,maxWidth:820}}>
                 It was built around the real pace of church leadership: ministry planning, shared responsibility, reviews, communication, and financial visibility. The goal is simple: more clarity, more follow-through, and more care for the people doing the work.
               </p>
             </div>
 
-            <div style={{display:"grid",gap:18}}>
               <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
                 <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Holds Together</div>
                 {highlights.map((item) => (
@@ -2387,24 +2396,42 @@ function LandingPage() {
                   </div>
                 ))}
               </div>
-              <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
-                <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>Next Step</div>
-                <div style={{fontSize:14,color:C.muted,lineHeight:1.8}}>
-                  Explore the sample first, or go straight into setting up your church and team.
-                </div>
-                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                  <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
-                    Create Account
-                  </button>
-                  <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
-                    Log In
-                  </button>
-                  <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
-                    See What Shepherd Looks Like
-                  </button>
-                </div>
-              </div>
             </div>
+              <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
+                <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>See What Shepherd Looks Like</div>
+                <div style={{display:"grid",gap:12}}>
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
+                    <div style={{padding:"10px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Dashboard</div>
+                    <div style={{padding:12,display:"grid",gap:10}}>
+                      <div style={{height:16,width:"58%",borderRadius:999,background:C.border}} />
+                      <div style={{height:74,borderRadius:14,background:ACTIVE_THEME_MODE === "dark" ? "rgba(255,255,255,.03)" : "rgba(20,32,58,.05)"}} />
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
+                      <div style={{padding:"9px 11px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Tasks</div>
+                      <div style={{padding:11,display:"grid",gap:8}}>
+                        <div style={{height:12,width:"82%",borderRadius:999,background:C.border}} />
+                        <div style={{height:12,width:"63%",borderRadius:999,background:C.border}} />
+                        <div style={{height:12,width:"74%",borderRadius:999,background:C.border}} />
+                      </div>
+                    </div>
+                    <div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",background:C.surface}}>
+                      <div style={{padding:"9px 11px",borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,color:C.heading}}>Finances</div>
+                      <div style={{padding:11,display:"grid",gap:8}}>
+                        <div style={{height:40,borderRadius:12,background:ACTIVE_THEME_MODE === "dark" ? "rgba(255,255,255,.03)" : "rgba(20,32,58,.05)"}} />
+                        <div style={{height:10,width:"68%",borderRadius:999,background:C.border}} />
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{fontSize:14,color:C.muted,lineHeight:1.8}}>
+                    Explore the sample first, or go straight into setting up your church and team.
+                  </div>
+                </div>
+                <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{width:"100%",justifyContent:"center"}}>
+                  See What Shepherd Looks Like
+                </button>
+              </div>
           </div>
 
           <div style={{paddingTop:30}}>

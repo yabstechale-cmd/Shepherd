@@ -2343,7 +2343,7 @@ function LandingPage() {
                   onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
                   style={{display:"grid",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left",minWidth:0,flex:"1 1 auto"}}
                 >
-                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(52px, 8vw, 104px)",lineHeight:.95,color:C.heading}}>Shepherd</div>
+                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(52px, 8vw, 104px)",lineHeight:.95,color:C.gold}}>Shepherd</div>
                 </button>
                 <details style={{position:"relative"}}>
                   <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer",padding:"9px 12px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,whiteSpace:"nowrap"}}>
@@ -2362,7 +2362,7 @@ function LandingPage() {
             </div>
 
             <div style={{maxWidth:"min(1320px, 100%)",textAlign:"center",margin:"0 auto"}}>
-              <h1 style={{fontSize:"clamp(72px, 10vw, 176px)",lineHeight:.92,fontWeight:700,letterSpacing:"-.045em",color:C.heading,margin:0}}>
+              <h1 style={{fontSize:"clamp(72px, 10vw, 176px)",lineHeight:.92,fontWeight:700,letterSpacing:"-.045em",color:C.gold,margin:0}}>
                 A calmer, clearer way to run church work together.
               </h1>
             </div>

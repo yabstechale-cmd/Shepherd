@@ -1949,9 +1949,9 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
 };
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-function AuthScreen() {
+function AuthScreen({ initialMode = "login" }) {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState(initialMode);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -1964,6 +1964,17 @@ function AuthScreen() {
   const isLogin = mode === "login";
   const isForgotPassword = mode === "forgot";
   const isChurchRegistration = mode === "church";
+
+  useEffect(() => {
+    setMode(initialMode);
+    setError("");
+    setMessage("");
+    setForm((current) => ({
+      ...current,
+      password: "",
+      confirmPassword: "",
+    }));
+  }, [initialMode]);
 
   useEffect(() => {
     let active = true;
@@ -2271,6 +2282,127 @@ function AuthScreen() {
         </div>
       </div>
     </div>
+  );
+}
+
+function LandingPage() {
+  const heroTone = ACTIVE_THEME_MODE === "dark"
+    ? `linear-gradient(180deg, ${C.surface} 0%, ${C.bg} 100%)`
+    : `linear-gradient(180deg, ${C.card} 0%, ${C.bg} 100%)`;
+
+  const featureCards = [
+    {
+      title: "Keep Church Work Moving Together",
+      body: "Shepherd brings tasks, event planning, calendar rhythm, finances, reviews, and approvals into one shared system so your team can stop juggling disconnected tools.",
+    },
+    {
+      title: "Build Around Ministry Reality",
+      body: "From youth events and content requests to staff availability and budget tracking, Shepherd is designed around the real workflows a church team actually lives in each week.",
+    },
+    {
+      title: "Lead With Clarity, Not Guesswork",
+      body: "Shepherd helps pastors and staff see what needs attention, who owns what, and where work stands without chasing updates through texts, side notes, or scattered spreadsheets.",
+    },
+  ];
+
+  const highlights = [
+    "Shared dashboards and current-focus visibility",
+    "Task ownership, recurring tasks, comments, and review workflows",
+    "Event requests, event planning, and church calendar coordination",
+    "Ministry budget tracking, transactions, and purchase orders",
+  ];
+
+  return (
+    <>
+      <GS/>
+      <div style={{minHeight:"100vh",background:C.bg,color:C.text}}>
+        <div style={{position:"relative",overflow:"hidden",background:heroTone,borderBottom:`1px solid ${C.border}`}}>
+          <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at top center, ${C.goldGlow} 0%, transparent 55%)`}} />
+          <div style={{maxWidth:1180,margin:"0 auto",padding:"28px 22px 70px",position:"relative"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20,flexWrap:"wrap",marginBottom:46}}>
+              <button
+                onClick={() => { if (typeof window !== "undefined") window.location.href = "/"; }}
+                style={{display:"flex",alignItems:"center",gap:14,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text}}
+              >
+                <BrandMark size={82} />
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:40,lineHeight:1,color:C.heading}}>Shepherd</div>
+                  <div style={{fontSize:12,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",fontWeight:700}}>Church Workflows Aligned</div>
+                </div>
+              </button>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
+                  View Sample
+                </button>
+                <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
+                  Log In
+                </button>
+                <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
+                  Create Account
+                </button>
+              </div>
+            </div>
+
+            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(320px,.9fr)",gap:34,alignItems:"center"}}>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:".14em",textTransform:"uppercase",marginBottom:16}}>
+                  Welcome to Shepherd
+                </div>
+                <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(42px, 8vw, 78px)",lineHeight:1.02,fontWeight:500,color:C.heading,margin:0,maxWidth:760}}>
+                  A calmer, clearer way to run church work together.
+                </h1>
+                <p style={{fontSize:17,color:C.muted,lineHeight:1.85,margin:"22px 0 0",maxWidth:720}}>
+                  Shepherd exists to help church teams work in one shared rhythm. Its heart is not just project management. It is clarity, follow-through, accountability, and peace for the people carrying ministry every week.
+                </p>
+                <p style={{fontSize:16,color:C.text,lineHeight:1.85,margin:"18px 0 0",maxWidth:720}}>
+                  Whether your team is planning events, assigning tasks, tracking ministry budgets, managing reviews, or coordinating the church calendar, Shepherd is designed to keep the right work in front of the right people at the right time.
+                </p>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:28}}>
+                  <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
+                    Start Your Church Setup
+                  </button>
+                  <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }}>
+                    See What Shepherd Looks Like
+                  </button>
+                </div>
+              </div>
+
+              <div className="card" style={{padding:24,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:18,textAlign:"left"}}>
+                <div style={{display:"grid",gap:12}}>
+                  <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Helps You Hold Together</div>
+                  {highlights.map((item) => (
+                    <div key={item} style={{display:"grid",gridTemplateColumns:"16px 1fr",gap:12,alignItems:"start"}}>
+                      <div style={{width:10,height:10,borderRadius:"50%",background:C.gold,boxShadow:`0 0 0 4px ${C.goldGlow}`,marginTop:6}} />
+                      <div style={{fontSize:14,color:C.text,lineHeight:1.7}}>{item}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{borderTop:`1px solid ${C.border}`,paddingTop:18}}>
+                  <div style={{fontSize:13,color:C.muted,lineHeight:1.8}}>
+                    Shepherd is built for churches that want a cleaner operating system, not just another app. The goal is simple: fewer dropped details, less confusion, and a healthier ministry pace for the whole team.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{maxWidth:1180,margin:"0 auto",padding:"42px 22px 64px"}}>
+          <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:18}}>
+            {featureCards.map((card) => (
+              <div key={card.title} className="card" style={{padding:24,background:C.card,border:`1px solid ${C.border}`,textAlign:"left"}}>
+                <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:28,lineHeight:1.15,color:C.heading}}>
+                  {card.title}
+                </div>
+                <p style={{fontSize:14,color:C.muted,lineHeight:1.8,margin:"14px 0 0"}}>
+                  {card.body}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -13147,6 +13279,9 @@ function AppShell() {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
   const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
   const isPublicSampleRoute = currentPath === "/sample";
+  const isLoginRoute = currentPath === "/login";
+  const isCreateAccountRoute = currentPath === "/create-account";
+  const isLandingRoute = currentPath === "" || currentPath === "/";
   const pathSegments = currentPath.split("/").filter(Boolean);
   const isNewPublicEventRequestRoute = pathSegments[0] === "event-request" && pathSegments[1] === "new";
   const publicEventRequestChurchCode = isNewPublicEventRequestRoute ? pathSegments[2] || "" : "";
@@ -14107,10 +14242,13 @@ function AppShell() {
   }
 
   if (!session) {
+    if (isLandingRoute) {
+      return <LandingPage />;
+    }
     return (
       <>
         <GS/>
-        <AuthScreen/>
+        <AuthScreen initialMode={isCreateAccountRoute ? "church" : "login"} />
       </>
     );
   }

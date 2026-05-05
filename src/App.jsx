@@ -1967,8 +1967,10 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
   const isLogin = mode === "login";
   const isForgotPassword = mode === "forgot";
   const isChurchRegistration = mode === "church";
-  const normalizedAllowedModes = allowedModes.filter(Boolean);
-  const visibleModes = normalizedAllowedModes.length ? normalizedAllowedModes : ["login"];
+  const visibleModes = useMemo(() => {
+    const normalizedAllowedModes = allowedModes.filter(Boolean);
+    return normalizedAllowedModes.length ? normalizedAllowedModes : ["login"];
+  }, [allowedModes]);
 
   useEffect(() => {
     const nextMode = visibleModes.includes(initialMode) ? initialMode : visibleModes[0];

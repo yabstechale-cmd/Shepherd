@@ -1952,7 +1952,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
 };
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", "church"] }) {
+function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", "church"], onPasswordResetComplete = null }) {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
   const [mode, setMode] = useState(initialMode);
   const [showPassword, setShowPassword] = useState(false);
@@ -1967,6 +1967,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
   const isLogin = mode === "login";
   const isForgotPassword = mode === "forgot";
   const isChurchRegistration = mode === "church";
+  const isPasswordReset = mode === "reset";
   const visibleModes = useMemo(() => {
     const normalizedAllowedModes = allowedModes.filter(Boolean);
     return normalizedAllowedModes.length ? normalizedAllowedModes : ["login"];
@@ -2105,6 +2106,17 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         setMessage("Password reset email sent. Use the link in that email to choose a new password.");
         setMode("login");
         setForm((current) => ({ ...current, password: "", confirmPassword: "" }));
+      } else if (isPasswordReset) {
+        if (!form.password) throw new Error("Enter your new password.");
+        if (form.password.length < 6) throw new Error("Use a password with at least 6 characters.");
+        if (form.password !== form.confirmPassword) throw new Error("Your passwords do not match.");
+        const { error: updateError } = await supabase.auth.updateUser({ password: form.password });
+        if (updateError) throw updateError;
+        await supabase.auth.signOut();
+        setMessage("Password updated. Please log in with your new password.");
+        setMode("login");
+        setForm((current) => ({ ...current, password: "", confirmPassword: "" }));
+        onPasswordResetComplete?.();
       } else if (isLogin) {
         if (!churchAccess.church) throw new Error("Select your church first.");
         if (!form.userId) throw new Error("Select your name first.");
@@ -2172,6 +2184,8 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
           <p style={{color:C.muted,fontSize:11,marginTop:18,whiteSpace:"nowrap"}}>
             {isChurchRegistration
               ? "Set up your church and first admin below."
+              : isPasswordReset
+              ? "Choose a new password for your account."
               : isForgotPassword
               ? "Choose your church and account for password reset."
               : isLogin
@@ -2184,6 +2198,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
             { id: "login", label: "Log In" },
             { id: "signup", label: "First Time Log In" },
             { id: "church", label: "Register Your Church" },
+            { id: "reset", label: "Reset Password" },
           ].filter((tab) => visibleModes.includes(tab.id)).map((tab)=>(
             <button key={tab.id} onClick={()=>{setMode(tab.id);setError("");setMessage("");}} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",fontSize:14,fontWeight:500,background:mode===tab.id?C.card:"transparent",color:mode===tab.id?C.text:C.muted}}>{tab.label}</button>
           ))}
@@ -2191,7 +2206,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         {error && <div style={{background:"rgba(224,82,82,.1)",border:"1px solid rgba(224,82,82,.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.danger,marginBottom:14}}>{error}</div>}
         {message && <div style={{background:"rgba(82,200,122,.1)",border:"1px solid rgba(82,200,122,.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.success,marginBottom:14}}>{message}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {!isChurchRegistration && (
+          {!isChurchRegistration && !isPasswordReset && (
             <select
               className="input-field"
               value={selectedChurchId}
@@ -2248,11 +2263,11 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
               </button>
             </div>
           )}
-          {(mode === "signup" || isChurchRegistration) && (
+          {(mode === "signup" || isChurchRegistration || isPasswordReset) && (
             <input className="input-field" placeholder="Confirm password" type="password" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.confirmPassword} onChange={e=>setForm({...form,confirmPassword:e.target.value})}/>
           )}
           <button className="btn-gold" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"13px",fontSize:15,marginTop:4}}>
-            {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isForgotPassword ? "Send reset email" : isLogin ? "Log In" : isChurchRegistration ? "Register Church" : "Register this account"}
+            {loading ? <span style={{display:"inline-block",width:18,height:18,border:"2px solid rgba(0,0,0,.3)",borderTopColor:"#0f1117",borderRadius:"50%",animation:"spin .8s linear infinite"}}/> : isForgotPassword ? "Send reset email" : isPasswordReset ? "Save new password" : isLogin ? "Log In" : isChurchRegistration ? "Register Church" : "Register this account"}
           </button>
           {isLogin && (
             <button
@@ -2277,6 +2292,20 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
               style={{background:"none",border:"none",cursor:"pointer",color:C.gold,fontSize:13,marginTop:4}}
             >
               Back to Log In
+            </button>
+          )}
+          {isPasswordReset && (
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                setMode("login");
+                setError("");
+                setMessage("");
+                onPasswordResetComplete?.();
+              }}
+              style={{background:"none",border:"none",cursor:"pointer",color:C.gold,fontSize:13,marginTop:4}}
+            >
+              Cancel reset
             </button>
           )}
           <button
@@ -13333,6 +13362,7 @@ function AppShell() {
   const publicEventRequestToken = pathSegments[0] === "event-request" && !isNewPublicEventRequestRoute ? pathSegments[1] || "" : "";
   const isPublicEventRequestRoute = currentPath === "/event-request" || isNewPublicEventRequestRoute || !!publicEventRequestToken;
   const [session, setSession] = useState(null);
+  const [authRecoveryMode, setAuthRecoveryMode] = useState(false);
   const [profile, setProfile] = useState(null);
   const [church, setChurch] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -14132,10 +14162,13 @@ function AppShell() {
 
   useEffect(() => {
     const initializeSession = async () => {
+      let shouldShowRecovery = false;
       if (typeof window !== "undefined") {
         const url = new URL(window.location.href);
         const code = url.searchParams.get("code");
         const state = url.searchParams.get("state");
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        shouldShowRecovery = hashParams.get("type") === "recovery";
         const isGoogleCalendarOauth = url.searchParams.get("google_calendar_oauth") === "1"
           || hasStoredGoogleCalendarOAuthState(state);
         if (code && !isGoogleCalendarOauth) {
@@ -14146,10 +14179,16 @@ function AppShell() {
             window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
           }
         }
+        if (shouldShowRecovery && url.pathname !== "/login") {
+          window.history.replaceState({}, "", `/login${window.location.hash || ""}`);
+        }
       }
       const { data: { session } } = await supabase.auth.getSession();
+      if (shouldShowRecovery) {
+        setAuthRecoveryMode(true);
+      }
       setSession(session);
-      if (session) {
+      if (session && !shouldShowRecovery) {
         await loadData(session.user.id);
         await recordAuthActivity({
           userId: session.user.id,
@@ -14162,6 +14201,15 @@ function AppShell() {
     };
     initializeSession();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthRecoveryMode(true);
+        setSession(session);
+        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+          window.history.replaceState({}, "", `/login${window.location.hash || ""}`);
+        }
+        setLoading(false);
+        return;
+      }
       setSession(session);
       const nextUserId = session?.user?.id || null;
       if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
@@ -14177,6 +14225,10 @@ function AppShell() {
         return;
       }
       if (session) {
+        if (authRecoveryMode) {
+          setLoading(false);
+          return;
+        }
         loadData(session.user.id).then(async () => {
           if (event === "SIGNED_IN") {
             await recordAuthActivity({
@@ -14189,6 +14241,7 @@ function AppShell() {
         });
       }
       else {
+        setAuthRecoveryMode(false);
         const signingOutProfile = profileRef.current;
         const signingOutChurch = churchRef.current;
         if (event === "SIGNED_OUT" && signingOutProfile?.id && signingOutChurch?.id) {
@@ -14221,7 +14274,7 @@ function AppShell() {
       }
     });
     return () => subscription.unsubscribe();
-  }, [recordAuthActivity]);
+  }, [authRecoveryMode, recordAuthActivity]);
   const logout = async () => {
     await recordActivity?.({
       action: "requested",
@@ -14271,6 +14324,24 @@ function AppShell() {
 
   if (isPublicSampleRoute) {
     return <PublicSampleShell />;
+  }
+
+  if (authRecoveryMode) {
+    return (
+      <>
+        <GS/>
+        <AuthScreen
+          initialMode="reset"
+          allowedModes={["reset"]}
+          onPasswordResetComplete={() => {
+            setAuthRecoveryMode(false);
+            if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+              window.history.replaceState({}, "", "/login");
+            }
+          }}
+        />
+      </>
+    );
   }
 
   if (isLandingRoute) {

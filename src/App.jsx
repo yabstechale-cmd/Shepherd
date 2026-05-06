@@ -2416,7 +2416,7 @@ function LandingPage() {
             </div>
 
             <div style={{maxWidth:"min(1320px, 100%)",textAlign:"center",margin:"0 auto"}}>
-              <h1 style={{fontSize:"clamp(72px, 10vw, 110px)",lineHeight:.96,fontWeight:400,letterSpacing:".01em",color:C.gold,margin:0}}>
+              <h1 style={{fontSize:"clamp(58px, 8vw, 92px)",lineHeight:.96,fontWeight:400,letterSpacing:"0",color:C.gold,margin:0}}>
                 Where Church Leadership Finds Clarity and Care
               </h1>
             </div>

@@ -1952,7 +1952,7 @@ const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabil
 };
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", "church"], onPasswordResetComplete = null }) {
+function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", "church"], onPasswordResetComplete = null, recoveryIdentity = null }) {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
   const [mode, setMode] = useState(initialMode);
   const [showPassword, setShowPassword] = useState(false);
@@ -2237,7 +2237,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
                 ))}
               </select>
             </>
-          ) : (
+          ) : !isPasswordReset ? (
             <select className="input-field" value={form.userId} onChange={e=>setForm({...form,userId:e.target.value})} style={{background:C.surface}} disabled={!churchAccess.church || lookupLoading || churchAccess.users.length === 0}>
               <option value="">{lookupLoading ? "Looking up church..." : "Select your name"}</option>
               {churchAccess.users.map((user) => (
@@ -2246,6 +2246,29 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
                 </option>
               ))}
             </select>
+          ) : (
+            <div
+              style={{
+                border:`1px solid ${C.border}`,
+                borderRadius:14,
+                background:C.surface,
+                padding:"14px 16px",
+                display:"grid",
+                gap:4,
+              }}
+            >
+              <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".1em",textTransform:"uppercase"}}>
+                Confirming Account
+              </div>
+              <div style={{fontSize:15,color:C.text,fontWeight:600}}>
+                {recoveryIdentity?.name || recoveryIdentity?.email || "Secure password recovery session"}
+              </div>
+              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                {recoveryIdentity?.email
+                  ? `You are resetting the password for ${recoveryIdentity.email}.`
+                  : "This reset link is tied to one secure account only. Shepherd will not let you choose or reset someone else's password here."}
+              </div>
+            </div>
           )}
           {!isChurchRegistration && selectedChurchId && churchAccess.church && churchAccess.users.length === 0 && (
             <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
@@ -13950,13 +13973,13 @@ function AppShell() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!session || isRootRoute || isPublicEventRequestRoute || isPublicSampleRoute || isLandingRoute) return;
+    if (!session || authRecoveryMode || isPasswordRecoveryRoute || isRootRoute || isPublicEventRequestRoute || isPublicSampleRoute || isLandingRoute) return;
     window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, safeActive);
     const nextPath = PAGE_PATHS[safeActive] || "/dashboard";
     if (window.location.pathname !== nextPath) {
       window.history.pushState({ shepherdPage: safeActive }, "", nextPath);
     }
-  }, [safeActive, session, isRootRoute, isPublicEventRequestRoute, isPublicSampleRoute, isLandingRoute]);
+  }, [safeActive, session, authRecoveryMode, isPasswordRecoveryRoute, isRootRoute, isPublicEventRequestRoute, isPublicSampleRoute, isLandingRoute]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -14334,9 +14357,13 @@ function AppShell() {
         <AuthScreen
           initialMode="reset"
           allowedModes={["reset"]}
+          recoveryIdentity={{
+            name: session?.user?.user_metadata?.full_name || "",
+            email: session?.user?.email || "",
+          }}
           onPasswordResetComplete={() => {
             setAuthRecoveryMode(false);
-            if (typeof window !== "undefined" && window.location.pathname !== "/password-recovery") {
+            if (typeof window !== "undefined") {
               window.history.replaceState({}, "", "/login");
             }
           }}

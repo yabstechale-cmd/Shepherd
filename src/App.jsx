@@ -2368,19 +2368,19 @@ function LandingPage() {
 
   const featureCards = [
     {
-      title: "Tasks and approvals stay visible",
+      title: "Task Management",
       body: "Your team can assign work, track review steps, and keep ownership clear, which means less confusion about who has the ball and fewer stalled projects.",
     },
     {
-      title: "Events and weekly planning stay coordinated",
+      title: "Event Planning",
       body: "Requests, planning details, calendar rhythm, and ministry follow-through can live together, helping your team prepare ahead instead of scrambling late.",
     },
     {
-      title: "Budgets and spending stay understandable",
+      title: "Finances",
       body: "Leaders can see ministry budgets, transactions, and purchase activity in one place, making it easier to steward money well and answer questions quickly.",
     },
     {
-      title: "Communication becomes easier to trust",
+      title: "Clear Communication",
       body: "Comments, updates, and notifications stay tied to the actual work, so your team spends less time chasing status and more time moving the mission forward.",
     },
   ];
@@ -2436,7 +2436,7 @@ function LandingPage() {
         <div style={{width:"100%",padding:"24px clamp(20px, 4vw, 54px) 72px"}}>
           <div style={{display:"grid",gap:24}}>
             <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
-              <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Can Do</div>
+              <div style={{fontSize:14,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Can Do</div>
               <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:900}}>
                 Shepherd is built to help a church team stay aligned, prepared, and accountable in the everyday work of ministry. Here is what that can look like in practice:
               </div>
@@ -2455,7 +2455,7 @@ function LandingPage() {
             </div>
 
             <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
-              <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>See What Shepherd Looks Like</div>
+              <div style={{fontSize:14,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>See What Shepherd Looks Like</div>
               <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:860}}>
                 Here are a few real views from Shepherd so you can get a feel for the dashboard, task flow, and finances experience before stepping into the sample site.
               </div>

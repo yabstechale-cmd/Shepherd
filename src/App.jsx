@@ -2390,7 +2390,7 @@ function LandingPage() {
           <div style={{position:"absolute",left:"clamp(18px, 4vw, 44px)",bottom:"-18px",width:"min(34vw, 420px)",opacity:ACTIVE_THEME_MODE === "dark" ? 0.08 : 0.06,pointerEvents:"none"}}>
             <img src={heroWatermark} alt="" style={{display:"block",width:"100%",height:"auto",objectFit:"contain"}} />
           </div>
-          <div style={{width:"100%",padding:"34px clamp(20px, 4vw, 54px) 88px",position:"relative"}}>
+          <div style={{width:"100%",padding:"68px clamp(20px, 4vw, 54px) 120px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"flex-start",alignItems:"flex-start",marginBottom:72}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:20,width:"100%",flexWrap:"nowrap"}}>
                 <button
@@ -2415,10 +2415,16 @@ function LandingPage() {
               </div>
             </div>
 
-            <div style={{maxWidth:"min(1320px, 100%)",textAlign:"center",margin:"0 auto"}}>
-              <h1 style={{fontSize:"clamp(29px, 4vw, 46px)",lineHeight:.98,fontWeight:400,letterSpacing:"-0.02em",color:C.gold,margin:0}}>
-                Where Church Leadership Finds Clarity and Care
+            <div style={{maxWidth:"min(1320px, 100%)",textAlign:"center",margin:"0 auto",display:"grid",justifyItems:"center",gap:18}}>
+              <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(42px, 6vw, 74px)",lineHeight:0.98,fontWeight:500,letterSpacing:"-0.02em",color:C.heading,margin:0}}>
+                Organize. Equip. <span style={{color:C.gold}}>Shepherd.</span>
               </h1>
+              <div style={{maxWidth:860,fontSize:"clamp(16px, 2vw, 22px)",lineHeight:1.7,color:C.muted}}>
+                Shepherd helps your church team move with more clarity, stronger follow-through, and less energy lost chasing updates.
+              </div>
+              <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }} style={{justifyContent:"center",paddingInline:22}}>
+                Get Started
+              </button>
             </div>
           </div>
         </div>

@@ -6,9 +6,6 @@ import mobileBannerGold from "./assets/icons/mobile-banner-gold.png";
 import mobileBannerBlue from "./assets/icons/mobile-banner-blue.png";
 import brandIconGold from "./assets/icons/brand-icon-gold.png";
 import brandIconBlue from "./assets/icons/brand-icon-blue.png";
-import dashboardPreview from "./assets/landing/dashboard-preview.png";
-import budgetPreview from "./assets/landing/budget-preview.png";
-import tasksPreview from "./assets/landing/tasks-preview.png";
 
 const DEFAULT_THEME_MODE = "dark";
 let ACTIVE_THEME_MODE = DEFAULT_THEME_MODE;
@@ -2350,23 +2347,6 @@ function LandingPage() {
     ? `linear-gradient(180deg, ${C.surface} 0%, ${C.bg} 100%)`
     : `linear-gradient(180deg, ${C.card} 0%, ${C.bg} 100%)`;
   const heroWatermark = getThemeBrandIcon();
-  const previewOptions = [
-    { id: "dashboard", title: "Dashboard", image: dashboardPreview, description: "See the main dashboard with focus, notifications, and weekly rhythm in view.", aspectRatio: "951 / 760" },
-    { id: "tasks", title: "Tasks", image: tasksPreview, description: "Review task stages, ownership, review flow, and team visibility at a glance.", aspectRatio: "951 / 760" },
-    { id: "finances", title: "Finances", image: budgetPreview, description: "Preview budget oversight, ministry ledgers, and financial workflow tools.", aspectRatio: "1009 / 610" },
-  ];
-  const [activePreview, setActivePreview] = useState("dashboard");
-  const activePreviewIndex = Math.max(0, previewOptions.findIndex((option) => option.id === activePreview));
-  const selectedPreview = previewOptions.find((option) => option.id === activePreview) || previewOptions[0];
-  const showPreviousPreview = () => {
-    const nextIndex = (activePreviewIndex - 1 + previewOptions.length) % previewOptions.length;
-    setActivePreview(previewOptions[nextIndex].id);
-  };
-  const showNextPreview = () => {
-    const nextIndex = (activePreviewIndex + 1) % previewOptions.length;
-    setActivePreview(previewOptions[nextIndex].id);
-  };
-
   const featureCards = [
     {
       title: "Task Management",
@@ -2468,65 +2448,15 @@ function LandingPage() {
             <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"center",justifyItems:"center"}}>
               <div style={{fontSize:19,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Looks Like</div>
               <div style={{fontSize:19,color:C.muted,lineHeight:1.8,maxWidth:860}}>
-                Here are a few real views from Shepherd so you can get a feel for the dashboard, task flow, and finances experience before stepping into the sample site.
+                The best way to understand Shepherd is to step inside it for yourself. Explore the sample experience and get a feel for how tasks, planning, communication, and finances come together in one place for a church team.
               </div>
               <div style={{width:"100%",height:1,background:C.border}} />
-              <div style={{display:"grid",gap:16,width:"100%"}}>
-                <div style={{display:"grid",gap:12,justifyItems:"center"}}>
-                  <div style={{fontSize:21,color:C.heading,fontWeight:700}}>
-                    {selectedPreview.title}
-                  </div>
-                  <div style={{fontSize:19,color:C.muted,lineHeight:1.8,maxWidth:720}}>
-                    {selectedPreview.description}
-                  </div>
-                  <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
-                    {previewOptions.map((option) => {
-                      const isActive = option.id === selectedPreview.id;
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => setActivePreview(option.id)}
-                          aria-label={`Show ${option.title} preview`}
-                          style={{
-                            border:`1px solid ${isActive ? C.gold : C.border}`,
-                            borderRadius:999,
-                            background:isActive ? (ACTIVE_THEME_MODE === "dark" ? "rgba(201,168,76,.1)" : "rgba(162,126,25,.1)") : C.surface,
-                            color:isActive ? C.gold : C.muted,
-                            padding:"8px 14px",
-                            fontSize:13,
-                            fontWeight:700,
-                            cursor:"pointer",
-                          }}
-                        >
-                          {option.title}
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div style={{display:"grid",gap:14,justifyItems:"center",maxWidth:760}}>
+                <div style={{fontSize:21,color:C.heading,fontWeight:700}}>
+                  Step inside and experience the flow for yourself
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"44px minmax(0,960px) 44px",gap:14,alignItems:"center",width:"100%",justifyContent:"center"}}>
-                  <button
-                    type="button"
-                    onClick={showPreviousPreview}
-                    aria-label="Show previous preview"
-                    className="btn-outline"
-                    style={{width:44,height:44,padding:0,justifyContent:"center",alignSelf:"center"}}
-                  >
-                    <span style={{fontSize:20,lineHeight:1}}>‹</span>
-                  </button>
-                  <div style={{border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",background:C.surface}}>
-                    <img src={selectedPreview.image} alt={`${selectedPreview.title} preview`} style={{display:"block",width:"100%",aspectRatio:selectedPreview.aspectRatio,objectFit:"contain",background:C.surface}} />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={showNextPreview}
-                    aria-label="Show next preview"
-                    className="btn-outline"
-                    style={{width:44,height:44,padding:0,justifyContent:"center",alignSelf:"center"}}
-                  >
-                    <span style={{fontSize:20,lineHeight:1}}>›</span>
-                  </button>
+                <div style={{fontSize:19,color:C.muted,lineHeight:1.8}}>
+                  Walk through a live sample of Shepherd and see how the workspace feels when a team is actually using it to stay aligned and moving forward.
                 </div>
               </div>
               <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{justifyContent:"center",paddingInline:22}}>

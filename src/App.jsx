@@ -2450,17 +2450,8 @@ function LandingPage() {
               <div style={{fontSize:19,color:C.muted,lineHeight:1.8,maxWidth:860}}>
                 The best way to understand Shepherd is to step inside it for yourself. Explore the sample experience and get a feel for how tasks, planning, communication, and finances come together in one place for a church team.
               </div>
-              <div style={{width:"100%",height:1,background:C.border}} />
-              <div style={{display:"grid",gap:14,justifyItems:"center",maxWidth:760}}>
-                <div style={{fontSize:21,color:C.heading,fontWeight:700}}>
-                  Step inside and experience the flow for yourself
-                </div>
-                <div style={{fontSize:19,color:C.muted,lineHeight:1.8}}>
-                  Walk through a live sample of Shepherd and see how the workspace feels when a team is actually using it to stay aligned and moving forward.
-                </div>
-              </div>
               <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{justifyContent:"center",paddingInline:22}}>
-                Step Inside Shepherd
+                Step Inside And Experience The Flow For Yourself
               </button>
             </div>
           </div>

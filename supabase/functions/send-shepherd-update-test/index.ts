@@ -38,6 +38,16 @@ function isValidEmailAddress(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function extractEmailAddress(value: string) {
+  const trimmed = String(value || "").trim();
+  const mailboxMatch = trimmed.match(/<\s*([^<>\s@]+@[^\s@]+\.[^\s@]+)\s*>$/);
+  return mailboxMatch?.[1]?.trim() || trimmed;
+}
+
+function isValidSenderAddress(value: string) {
+  return isValidEmailAddress(extractEmailAddress(value));
+}
+
 function sanitizeItemList(value: unknown, maxItems = 12, maxLength = 240) {
   if (!Array.isArray(value)) return [];
   return value
@@ -109,7 +119,7 @@ Deno.serve(async (req) => {
     if (!resendApiKey || !fromEmail) {
       return jsonResponse(500, { error: "Email provider is not configured yet." });
     }
-    if (!isValidEmailAddress(fromEmail)) {
+    if (!isValidSenderAddress(fromEmail)) {
       return jsonResponse(500, { error: "The configured sender email is invalid." });
     }
 

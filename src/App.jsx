@@ -68,6 +68,7 @@ const CATEGORY_STYLES = {
 };
 
 const getTag = (name) => CATEGORY_STYLES[name]?.tag || "tag-admin";
+const isValidEmailAddress = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 const parseAppDate = (value) => {
   if (!value) return null;
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -286,7 +287,9 @@ const clearShepherdStoredState = () => {
       if (shouldClearKey(key || "")) localKeys.push(key);
     }
     localKeys.forEach((key) => key && window.localStorage.removeItem(key));
-  } catch {}
+  } catch (error) {
+    console.warn("Could not clear Shepherd local storage.", error);
+  }
   try {
     const sessionKeys = [];
     for (let index = 0; index < window.sessionStorage.length; index += 1) {
@@ -294,7 +297,9 @@ const clearShepherdStoredState = () => {
       if (shouldClearKey(key || "")) sessionKeys.push(key);
     }
     sessionKeys.forEach((key) => key && window.sessionStorage.removeItem(key));
-  } catch {}
+  } catch (error) {
+    console.warn("Could not clear Shepherd session storage.", error);
+  }
 };
 const AppCrashFallback = ({ error, onReload, onReset }) => {
   const detail = String(error?.message || error || "").trim() || "Shepherd hit an unexpected problem while loading this page.";
@@ -642,6 +647,7 @@ const normalizeAccessUser = (record) => ({
   staff_roles: Array.isArray(record?.staff_roles) ? record.staff_roles : (record?.role ? [record.role] : []),
   favorite_items: Array.isArray(record?.favorite_items) ? record.favorite_items.map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [],
   photo_url: record?.photo_url || "",
+  has_registered_account: record?.has_registered_account ?? (!!record?.auth_user_id || !!record?.email),
   canSeeTeamOverview: record?.can_see_team_overview ?? record?.canSeeTeamOverview ?? false,
   canSeeAdminOverview: record?.can_see_admin_overview ?? record?.canSeeAdminOverview ?? false,
   readOnlyOversight: record?.read_only_oversight ?? record?.readOnlyOversight ?? false,
@@ -873,12 +879,6 @@ const claimStaffProfile = async (staffId, churchId) => {
     p_church_id: churchId,
   });
   if (error) throw error;
-};
-const fetchChurchByCode = async (code) => {
-  const { data, error } = await supabase.rpc("get_public_church_by_code", { p_code: code });
-  if (error) throw error;
-  if (!data?.id) throw new Error("That church code was not found.");
-  return data;
 };
 const fetchChurchList = async () => {
   const { data, error } = await supabase.rpc("list_public_churches");
@@ -1585,15 +1585,6 @@ const getLinkedEventPlanName = (task) => {
 };
 const findLinkedEventPlanTask = (tasks, nodeId) =>
   (tasks || []).find((task) => typeof task?.notes === "string" && task.notes.includes(`Event plan node ID: ${nodeId}`)) || null;
-const commentMentionsProfile = (comment, profile) => {
-  if (!comment?.body || !profile?.full_name) return false;
-  const body = String(comment.body || "");
-  const token = getStaffMentionToken(profile.full_name);
-  return [token].filter(Boolean).some((name) => {
-    const escaped = escapeRegExp(name);
-    return new RegExp(`@${escaped}(?=$|[^a-zA-Z])`, "i").test(body);
-  });
-};
 const canManageComment = (comment, profile) => samePerson(comment?.author, profile?.full_name);
 const getCommentParticipantNames = (comments = [], currentAuthor = "") => {
   const seen = new Set();
@@ -1786,7 +1777,9 @@ const createPersistentNotification = async ({
   if (sendEmail && saved?.id) {
     supabase.functions.invoke("send-notification-email", {
       body: { notificationId: saved.id },
-    }).then(() => {});
+    }).catch((invokeError) => {
+      console.error("Could not send Shepherd notification email.", invokeError);
+    });
   }
   return saved || null;
 };
@@ -1845,109 +1838,6 @@ const dedupeNotifications = (items) => {
     })
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 };
-const buildNotifications = (tasks, eventRequests, purchaseOrders, staffAvailabilityRequests, profile) => {
-  if (!profile?.full_name) return [];
-  const fullName = profile.full_name;
-  const seniorPastorViewer =
-    profile?.role === "senior_pastor"
-    || (profile?.staff_roles || []).includes("senior_pastor")
-    || samePerson(profile?.title, "Senior Pastor");
-  const financeDirectorViewer = isFinanceDirector(profile);
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfTomorrow = new Date(startOfToday);
-  endOfTomorrow.setDate(endOfTomorrow.getDate() + 2);
-
-  const items = [];
-
-  tasks.forEach((task) => {
-    const assignedToMe = samePerson(task.assignee, fullName);
-    const dueDate = parseAppDate(task.due_date);
-    const dueDay = dueDate ? new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate()) : null;
-
-    if (assignedToMe && task.status !== "done" && isAfterDueDate(task.due_date, now)) {
-      items.push({
-        id: `overdue-${task.id}`,
-        tone: C.danger,
-        title: "Task overdue",
-        detail: `${task.title} is overdue.`,
-        target: "tasks",
-        taskId: task.id,
-        createdAt: dueDay.getTime(),
-      });
-    } else if (assignedToMe && task.status !== "done" && dueDay && dueDay.getTime() >= startOfToday.getTime() && dueDay.getTime() < endOfTomorrow.getTime()) {
-      items.push({
-        id: `due-${task.id}`,
-        tone: C.gold,
-        title: getRelativeDueLabel(task.due_date),
-        detail: `${task.title} needs attention soon.`,
-        target: "tasks",
-        taskId: task.id,
-        createdAt: dueDay.getTime(),
-      });
-    }
-
-    if (seniorPastorViewer && task.status !== "done" && isAfterDueDate(task.due_date, now) && !assignedToMe) {
-      items.push({
-        id: `admin-overdue-${task.id}`,
-        tone: C.danger,
-        title: "Team Task Needs Attention",
-        detail: `${task.title} assigned to ${task.assignee || "a team member"} is overdue.`,
-        target: "tasks",
-        taskId: task.id,
-        createdAt: dueDay.getTime(),
-      });
-    } else if (seniorPastorViewer && task.status !== "done" && dueDay && dueDay.getTime() >= startOfToday.getTime() && dueDay.getTime() < endOfTomorrow.getTime() && !assignedToMe) {
-      items.push({
-        id: `admin-due-${task.id}`,
-        tone: C.gold,
-        title: "Team task due soon",
-        detail: `${task.title} assigned to ${task.assignee || "a team member"} is ${getRelativeDueLabel(task.due_date).toLowerCase()}.`,
-        target: "tasks",
-        taskId: task.id,
-        createdAt: dueDay.getTime(),
-      });
-    }
-  });
-
-  (purchaseOrders || []).forEach((order) => {
-    const neededBy = order.needed_by ? new Date(order.needed_by) : null;
-    const reminderThreshold = neededBy ? new Date(neededBy.getTime() - (48 * 60 * 60 * 1000)) : null;
-    const isAwaitingDecision = ["pending", "in-review"].includes(order.status || "pending");
-
-    if (financeDirectorViewer && isAwaitingDecision && reminderThreshold && now.getTime() >= reminderThreshold.getTime()) {
-      items.push({
-        id: `purchase-order-reminder-${order.id}`,
-        tone: C.gold,
-        title: "Purchase order needs a decision",
-        detail: `${order.title} is still awaiting review and is requested for ${fmtDate(order.needed_by)}.`,
-        target: "budget",
-        createdAt: reminderThreshold.getTime(),
-      });
-    }
-  });
-
-  (eventRequests || []).forEach((request) => {
-    if (!isEventApplicant(profile, request)) return;
-    if (!["approved", "declined"].includes(request.status)) return;
-    const decisionAt = request.decided_at ? new Date(request.decided_at) : null;
-    if (!decisionAt) return;
-    if (now.getTime() - decisionAt.getTime() > 14 * 86400000) return;
-    items.push({
-      id: `event-decision-${request.id}-${request.status}`,
-      tone: request.status === "approved" ? C.success : C.danger,
-      title: request.status === "approved" ? "Event request approved" : "Event request denied",
-      detail: `${request.event_name} has been ${request.status === "approved" ? "approved" : "denied"}.`,
-      target: "events-board",
-      createdAt: decisionAt.getTime(),
-    });
-  });
-
-  return items
-    .filter((item) => (now.getTime() - Number(item.createdAt || 0)) <= NOTIFICATION_RETENTION_MS)
-    .sort((a, b) => b.createdAt - a.createdAt);
-};
-
 // ── Auth ───────────────────────────────────────────────────────────────────
 function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", "church"], onPasswordResetComplete = null, recoveryIdentity = null }) {
   const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
@@ -1980,7 +1870,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
       password: "",
       confirmPassword: "",
     }));
-  }, [initialMode, visibleModeKey]);
+  }, [initialMode, visibleModes]);
 
   useEffect(() => {
     let active = true;
@@ -1989,9 +1879,11 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         if (!active) return;
         setChurches(list);
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error("Could not load the public church list.", error);
         if (!active) return;
         setChurches([]);
+        setError("We couldn't load the church list right now.");
       });
     return () => {
       active = false;
@@ -2096,13 +1988,26 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         if (!churchAccess.church) throw new Error("Select your church first.");
         if (!form.userId) throw new Error("Select your name first.");
         const selected = churchAccess.users.find((user) => user.id === form.userId);
-        if (!selected?.email) throw new Error("That person has not registered yet. Use First Time to create the account.");
+        if (!selected?.has_registered_account) throw new Error("That person has not registered yet. Use First Time Log In instead.");
         const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/password-recovery` : undefined;
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(selected.email, redirectTo ? { redirectTo } : undefined);
-        if (resetError) throw resetError;
+        const { error: resetError } = await supabase.functions.invoke("request-password-reset", {
+          body: {
+            churchId: churchAccess.church.id,
+            staffId: selected.id,
+            redirectTo,
+          },
+        });
+        if (resetError) {
+          let functionMessage = "";
+          if (resetError.context && typeof resetError.context.json === "function") {
+            const payload = await resetError.context.json().catch(() => null);
+            functionMessage = payload?.error || "";
+          }
+          throw new Error(functionMessage || resetError.message || "We couldn't send that reset email.");
+        }
         setMessage("Password reset email sent. Use the link in that email to choose a new password.");
         setMode("login");
-        setForm((current) => ({ ...current, password: "", confirmPassword: "" }));
+        setForm((current) => ({ ...current, password: "", confirmPassword: "", email: "" }));
       } else if (isPasswordReset) {
         if (!form.password) throw new Error("Enter your new password.");
         if (form.password.length < 6) throw new Error("Use a password with at least 6 characters.");
@@ -2119,23 +2024,31 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         if (!form.userId) throw new Error("Select your name first.");
         const selected = churchAccess.users.find((user) => user.id === form.userId);
         if (!selected) throw new Error("Select your name first.");
-        if (!selected.email) throw new Error("That person has not registered yet. Use First Time to create the account.");
+        if (!selected.has_registered_account) throw new Error("That person has not registered yet. Use First Time Log In instead.");
+        if (!form.email || !isValidEmailAddress(form.email)) throw new Error("Enter the email address tied to this account.");
         if (!form.password) throw new Error("Enter your password.");
-        const { error: loginError } = await supabase.auth.signInWithPassword({ email: selected.email, password: form.password });
+        const normalizedEmail = form.email.trim().toLowerCase();
+        const { error: loginError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password: form.password });
         if (loginError) throw loginError;
-        await claimStaffProfile(selected.id, churchAccess.church.id);
+        try {
+          await claimStaffProfile(selected.id, churchAccess.church.id);
+        } catch (claimError) {
+          await supabase.auth.signOut();
+          throw new Error(claimError?.message || "That email/password does not match the selected church account.");
+        }
       } else {
         if (!churchAccess.church) throw new Error("Select your church first.");
         if (!form.userId) throw new Error("Select your name first.");
         const selected = churchAccess.users.find((user) => user.id === form.userId);
         if (!selected) throw new Error("Select your name first.");
-        if (selected.auth_user_id || selected.email) throw new Error("That person has already registered. Use Log In instead.");
+        if (selected.has_registered_account) throw new Error("That person has already registered. Use Log In instead.");
         if (!form.email || !form.password) throw new Error("Fill in every registration field.");
         if (form.password.length < 6) throw new Error("Use a password with at least 6 characters.");
         if (form.password !== form.confirmPassword) throw new Error("Your passwords do not match.");
+        const normalizedEmail = form.email.trim().toLowerCase();
 
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email: form.email,
+          email: normalizedEmail,
           password: form.password,
           options: {
             emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
@@ -2143,7 +2056,6 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
               church_id: churchAccess.church.id,
               staff_id: selected.id,
               full_name: selected.full_name,
-              role: selected.role,
             },
           },
         });
@@ -2153,7 +2065,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         const { error: reserveError } = await supabase.rpc("reserve_staff_registration", {
           p_staff_id: selected.id,
           p_church_id: churchAccess.church.id,
-          p_email: form.email,
+          p_email: normalizedEmail,
         });
         if (reserveError) throw reserveError;
 
@@ -2272,8 +2184,8 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
               No staff have been added to this church yet. Ask the church account admin to add the team in <span style={{color:C.text}}>Church Team</span> before anyone else uses First Time Login.
             </div>
           )}
-          {(mode === "signup" || isChurchRegistration) && (
-            <input className="input-field" placeholder="Email address" type="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
+          {(mode === "signup" || isChurchRegistration || isLogin) && (
+            <input className="input-field" placeholder={isLogin ? "Email address" : "Email address"} type="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
           )}
           {!isForgotPassword && (
             <div style={{position:"relative"}}>
@@ -3055,7 +2967,7 @@ function ShepherdTutorial({ profile, church, onClose, onComplete }) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
-function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, unreadCount, onStartTutorial }) {
+function Sidebar({ active, setActive, profile, church, collapsed, setCollapsed, unreadCount }) {
   const nav = [
     {id:"dashboard",label:"Dashboard",I:Icons.home},
     {id:"workspaces",label:"Frameworks",I:Icons.workspace},
@@ -3284,15 +3196,12 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
         return;
       }
       try {
-        const { data, error } = await supabase
-          .from("church_google_connections")
-          .select("church_id, google_account_email")
-          .eq("church_id", churchId)
-          .maybeSingle();
-        if (error) throw error;
+        const data = await invokeGoogleCalendarSync({
+          action: "getConnectionStatus",
+        });
         if (!active) return;
-        setGoogleCalendarLinked(!!data?.church_id);
-        setGoogleConnectionEmail(data?.google_account_email || "");
+        setGoogleCalendarLinked(!!data?.connected);
+        setGoogleConnectionEmail(data?.connectedEmail || "");
       } catch (error) {
         if (!active) return;
         setGoogleCalendarLinked(false);
@@ -3453,11 +3362,9 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
       return;
     }
     try {
-      const { error: connectionError } = await supabase
-        .from("church_google_connections")
-        .delete()
-        .eq("church_id", church.id);
-      if (connectionError) throw connectionError;
+      await invokeGoogleCalendarSync({
+        action: "disconnectConnection",
+      });
       const { error: calendarEventError } = await supabase
         .from("calendar_events")
         .delete()
@@ -6269,37 +6176,46 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
   useEffect(() => {
     if (!eventOpenRequest) return;
     if (eventOpenRequest.kind === "board") {
-      setEventsSection("home");
-      setSelectedWorkflow(null);
-      setSelectedRequest(null);
-      clearEventOpenRequest?.();
-      return;
+      const timer = window.setTimeout(() => {
+        setEventsSection("home");
+        setSelectedWorkflow(null);
+        setSelectedRequest(null);
+        clearEventOpenRequest?.();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
     if (eventOpenRequest.kind === "section") {
-      setEventsSection(eventOpenRequest.section === "requests" ? "requests" : "planning");
-      setSelectedWorkflow(null);
-      setSelectedRequest(null);
-      clearEventOpenRequest?.();
-      return;
+      const timer = window.setTimeout(() => {
+        setEventsSection(eventOpenRequest.section === "requests" ? "requests" : "planning");
+        setSelectedWorkflow(null);
+        setSelectedRequest(null);
+        clearEventOpenRequest?.();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
     if (!eventOpenRequest.id) return;
     if (eventOpenRequest.kind === "workflow") {
       const match = (eventWorkflows || []).find((entry) => entry.id === eventOpenRequest.id);
       if (!match) return;
-      setEventsSection("planning");
-      setSelectedRequest(null);
-      setSelectedWorkflow(match);
-      setPlanningFilter(samePerson(match.owner_name, profile?.full_name) ? "mine" : "others");
-      clearEventOpenRequest?.();
-      return;
+      const timer = window.setTimeout(() => {
+        setEventsSection("planning");
+        setSelectedRequest(null);
+        setSelectedWorkflow(match);
+        setPlanningFilter(samePerson(match.owner_name, profile?.full_name) ? "mine" : "others");
+        clearEventOpenRequest?.();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
     if (eventOpenRequest.kind === "request") {
       const match = (requests || []).find((entry) => entry.id === eventOpenRequest.id);
       if (!match) return;
-      setEventsSection("requests");
-      setSelectedWorkflow(null);
-      setSelectedRequest(match);
-      clearEventOpenRequest?.();
+      const timer = window.setTimeout(() => {
+        setEventsSection("requests");
+        setSelectedWorkflow(null);
+        setSelectedRequest(match);
+        clearEventOpenRequest?.();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [eventOpenRequest, eventWorkflows, requests, profile?.full_name, clearEventOpenRequest]);
 
@@ -8893,7 +8809,10 @@ function PublicEventRequestSharePage({ token }) {
   }, [token]);
 
   useEffect(() => {
-    loadSharedRequest();
+    const timer = window.setTimeout(() => {
+      loadSharedRequest();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadSharedRequest]);
 
   const saveSharedRequest = async () => {
@@ -9136,7 +9055,7 @@ function PublicEventRequestPage({ churchCode = "" }) {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile, setPreviewUsers, churchLockupAssignments, notifications, archivedNotifications, unreadCount, readNotificationIds, archiveNotification, restoreNotification, openNotificationTarget, favorites, openFavorite, toggleFavorite, isFavorite }) {
+function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile, setPreviewUsers, churchLockupAssignments, notifications, archivedNotifications, unreadCount, readNotificationIds, openNotificationTarget, favorites, openFavorite, toggleFavorite }) {
   const hasAdminOversight = hasAdministrativeOversight(profile, church);
   const canSeeTeamSnapshot = !!profile && (
     profile?.role === "senior_pastor"
@@ -9157,7 +9076,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
       return true;
     }
   });
-  const [notificationsOpen, setNotificationsOpen] = useState(() => {
+  const [notificationsOpen] = useState(() => {
     if (typeof window === "undefined" || !profile?.id) return true;
     try {
       const stored = readStoredJson(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)), {});
@@ -9175,7 +9094,7 @@ function Dashboard({ tasks, setActive, profile, church, previewUsers, setProfile
       return true;
     }
   });
-  const [archivedNotificationsOpen, setArchivedNotificationsOpen] = useState(() => {
+  const [archivedNotificationsOpen] = useState(() => {
     if (typeof window === "undefined" || !profile?.id) return false;
     try {
       const stored = readStoredJson(window.localStorage.getItem(getDashboardSectionStateStorageKey(profile.id)), {});
@@ -13331,7 +13250,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
 
 // ── Main App ───────────────────────────────────────────────────────────────
 function AppShell() {
-  const authBrandColor = ACTIVE_THEME_MODE === "dark" ? C.gold : C.text;
   const currentPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
   const isRootRoute = currentPath === "" || currentPath === "/";
   const isPublicSampleRoute = currentPath === "/sample";
@@ -13367,6 +13285,8 @@ function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [themeMode, setThemeMode] = useState(() => getStoredThemeMode());
   const [loading, setLoading] = useState(true);
+  const [dataLoadError, setDataLoadError] = useState("");
+  const [notificationSyncError, setNotificationSyncError] = useState("");
   const [readNotificationIds, setReadNotificationIds] = useState([]);
   const [archivedNotificationIds, setArchivedNotificationIds] = useState([]);
   const [persistentNotifications, setPersistentNotifications] = useState([]);
@@ -13403,6 +13323,14 @@ function AppShell() {
     ...(shouldShowChurchTeam(profile, church) ? ["church-team"] : []),
   ]);
   const safeActive = allowedPages.has(active) ? active : "dashboard";
+  const reportDataLoadIssue = useCallback((message, error) => {
+    console.error(message, error);
+    setDataLoadError(message);
+  }, []);
+  const reportNotificationSyncIssue = useCallback((message, error) => {
+    console.error(message, error);
+    setNotificationSyncError(message);
+  }, []);
 
   const refreshActivityLogs = useCallback(async (churchIdOverride = church?.id) => {
     if (!churchIdOverride || churchIdOverride === "preview" || !canViewActivityLog(profile)) {
@@ -13417,10 +13345,12 @@ function AppShell() {
       .limit(120);
     if (error) {
       setActivityLogs([]);
+      reportDataLoadIssue("Some activity history could not be loaded right now.", error);
       return;
     }
+    setDataLoadError((current) => current === "Some activity history could not be loaded right now." ? "" : current);
     setActivityLogs((data || []).map(normalizeActivityLog));
-  }, [church?.id, profile]);
+  }, [church?.id, profile, reportDataLoadIssue]);
 
   const recordActivity = useCallback(async (activity) => {
     const saved = await createActivityLog({
@@ -13517,32 +13447,68 @@ function AppShell() {
 
   const markNotificationRead = (id) => {
     if (!id) return;
+    setNotificationSyncError("");
     setReadNotificationIds((current) => current.includes(id) ? current : [...current, id]);
     const persistent = notifications.find((item) => item.id === id && item.rowId);
     if (persistent?.rowId && !persistent.readAt) {
       const readAt = new Date().toISOString();
       setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, read_at: readAt } : item));
-      supabase.from("notifications").update({ read_at: readAt }).eq("id", persistent.rowId).then(() => {});
+      supabase
+        .from("notifications")
+        .update({ read_at: readAt })
+        .eq("id", persistent.rowId)
+        .then(({ error }) => {
+          if (error) throw error;
+        })
+        .catch((error) => {
+          setReadNotificationIds((current) => current.filter((entry) => entry !== id));
+          setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, read_at: persistent.readAt || null } : item));
+          reportNotificationSyncIssue("We couldn't mark that notification as read right now.", error);
+        });
     }
   };
   const archiveNotification = (id) => {
     if (!id) return;
+    setNotificationSyncError("");
     setArchivedNotificationIds((current) => current.includes(id) ? current : [...current, id]);
     const persistent = notifications.find((item) => item.id === id && item.rowId);
     if (persistent?.rowId && !persistent.archivedAt) {
       const archivedAt = new Date().toISOString();
       const readAt = persistent.readAt || archivedAt;
       setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, archived_at: archivedAt, read_at: item.read_at || readAt } : item));
-      supabase.from("notifications").update({ archived_at: archivedAt, read_at: readAt }).eq("id", persistent.rowId).then(() => {});
+      supabase
+        .from("notifications")
+        .update({ archived_at: archivedAt, read_at: readAt })
+        .eq("id", persistent.rowId)
+        .then(({ error }) => {
+          if (error) throw error;
+        })
+        .catch((error) => {
+          setArchivedNotificationIds((current) => current.filter((entry) => entry !== id));
+          setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, archived_at: persistent.archivedAt || null, read_at: persistent.readAt || null } : item));
+          reportNotificationSyncIssue("We couldn't archive that notification right now.", error);
+        });
     }
   };
   const restoreNotification = (id) => {
     if (!id) return;
+    setNotificationSyncError("");
     setArchivedNotificationIds((current) => current.filter((entry) => entry !== id));
     const persistent = notifications.find((item) => item.id === id && item.rowId);
     if (persistent?.rowId) {
       setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, archived_at: null } : item));
-      supabase.from("notifications").update({ archived_at: null }).eq("id", persistent.rowId).then(() => {});
+      supabase
+        .from("notifications")
+        .update({ archived_at: null })
+        .eq("id", persistent.rowId)
+        .then(({ error }) => {
+          if (error) throw error;
+        })
+        .catch((error) => {
+          setArchivedNotificationIds((current) => current.includes(id) ? current : [...current, id]);
+          setPersistentNotifications((current) => (current || []).map((item) => item.id === persistent.rowId ? { ...item, archived_at: persistent.archivedAt || null } : item));
+          reportNotificationSyncIssue("We couldn't restore that notification right now.", error);
+        });
     }
   };
   const markAllNotificationsRead = () => {
@@ -13725,6 +13691,8 @@ function AppShell() {
   const loadData = async (uid) => {
     loadedUserIdRef.current = uid || null;
     setLoading(true);
+    setDataLoadError("");
+    setNotificationSyncError("");
     const { data: authState } = await supabase.auth.getUser();
     const authUser = authState?.user || null;
     const authEmail = authUser?.email || "";
@@ -13741,8 +13709,8 @@ function AppShell() {
           const retry = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
           profileRow = retry.data;
           prof = retry.data;
-        } catch {
-          // Fall back to legacy recovery if profile claiming hasn't completed yet.
+        } catch (error) {
+          console.warn("Could not claim staff profile during login recovery.", error);
         }
       }
     }
@@ -13828,6 +13796,10 @@ function AppShell() {
         supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
         supabase.from("notifications").select("*").eq("recipient_profile_id", prof.id).order("created_at", { ascending: false }).limit(100),
       ]);
+      const primaryErrors = [ch.error, t.error, cla.error, staff.error, profileRows.error, notificationRows.error].filter(Boolean);
+      if (primaryErrors.length) {
+        reportDataLoadIssue("Some church data could not be loaded completely. Refresh and try again.", primaryErrors.map((entry) => entry.message || String(entry)).join(" | "));
+      }
       const enhancedProfile = normalizedProfile
         ? {
             ...normalizedProfile,
@@ -13847,7 +13819,16 @@ function AppShell() {
           .order("created_at", { ascending: false })
           .limit(120)
           .then(({ data, error }) => {
-            setActivityLogs(error ? [] : (data || []).map(normalizeActivityLog));
+            if (error) {
+              setActivityLogs([]);
+              reportDataLoadIssue("Some activity history could not be loaded right now.", error);
+              return;
+            }
+            setActivityLogs((data || []).map(normalizeActivityLog));
+          })
+          .catch((error) => {
+            setActivityLogs([]);
+            reportDataLoadIssue("Some activity history could not be loaded right now.", error);
           });
       } else {
         setActivityLogs([]);
@@ -13878,7 +13859,9 @@ function AppShell() {
         setStaffAvailabilityRequests((sar.data || []).map(normalizeStaffAvailabilityRequest));
         setCalendarEvents(ce.data || []);
         setMinistries(m.data || []);
-      }).catch(() => {});
+      }).catch((error) => {
+        reportDataLoadIssue("Some church data could not be loaded completely. Refresh and try again.", error);
+      });
       return;
     } else {
       setProfile(normalizedProfile);
@@ -14425,7 +14408,17 @@ function AppShell() {
         <DesktopTopBanner setActive={setActive} />
         <div className="app-shell" style={{display:"flex",flex:1,minHeight:0}}>
           <Sidebar active={safeActive} setActive={setActive} profile={profile} church={church} collapsed={collapsed} setCollapsed={setCollapsed} unreadCount={unreadNotifications.length} onStartTutorial={startTutorial}/>
-          <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>{pages[safeActive] || pages.dashboard}</main>
+          <main style={{flex:1,minWidth:0,overflowY:"auto",background:C.bg}}>
+            {(dataLoadError || notificationSyncError) && (
+              <div style={{padding:"18px 18px 0"}}>
+                <div style={{background:"rgba(224,82,82,.08)",border:"1px solid rgba(224,82,82,.28)",borderRadius:14,padding:"12px 14px",display:"grid",gap:6}}>
+                  {dataLoadError && <div style={{fontSize:13,color:C.text}}>{dataLoadError}</div>}
+                  {notificationSyncError && <div style={{fontSize:13,color:C.text}}>{notificationSyncError}</div>}
+                </div>
+              </div>
+            )}
+            {pages[safeActive] || pages.dashboard}
+          </main>
         </div>
       </div>
       {showTutorial && (

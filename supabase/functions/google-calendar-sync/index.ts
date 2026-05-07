@@ -21,6 +21,32 @@ function jsonResponse(status: number, payload: Record<string, unknown>) {
   });
 }
 
+function sanitizePlainText(value: unknown, maxLength: number) {
+  return String(value || "").trim().slice(0, maxLength);
+}
+
+function getExpectedAppOrigin() {
+  const appUrl = sanitizePlainText(Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-s.com", 200);
+  return new URL(appUrl).origin;
+}
+
+function validateRedirectUri(rawValue: unknown) {
+  const value = sanitizePlainText(rawValue, 400);
+  if (!value) {
+    throw new Error("redirectUri is required.");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("redirectUri must be a valid URL.");
+  }
+  if (parsed.origin !== getExpectedAppOrigin()) {
+    throw new Error("redirectUri must stay on the Shepherd app domain.");
+  }
+  return parsed.toString();
+}
+
 async function getRequesterProfile(req: Request) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
@@ -170,6 +196,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+  if (req.method !== "POST") {
+    return jsonResponse(405, { error: "Method not allowed." });
+  }
 
   try {
     const profile = await getRequesterProfile(req);
@@ -183,14 +212,14 @@ Deno.serve(async (req) => {
 
     if (action === "getAuthUrl") {
       const clientId = Deno.env.get("GOOGLE_CLIENT_ID") || "";
-      const redirectUri = String(body?.redirectUri || "").trim();
-      const state = String(body?.state || "").trim();
+      const redirectUri = validateRedirectUri(body?.redirectUri);
+      const state = sanitizePlainText(body?.state, 200);
 
       if (!clientId) {
         return jsonResponse(500, { error: "Google client credentials are not configured for this function yet." });
       }
-      if (!redirectUri || !state) {
-        return jsonResponse(400, { error: "redirectUri and state are required." });
+      if (!state) {
+        return jsonResponse(400, { error: "state is required." });
       }
 
       const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -205,11 +234,26 @@ Deno.serve(async (req) => {
       return jsonResponse(200, { authUrl: authUrl.toString() });
     }
 
+    if (action === "getConnectionStatus") {
+      const { data, error } = await adminClient
+        .from("church_google_connections")
+        .select("church_id, google_account_email")
+        .eq("church_id", profile.church_id)
+        .maybeSingle();
+      if (error) {
+        throw new Error(error.message || "We couldn't load the saved Google connection for this church.");
+      }
+      return jsonResponse(200, {
+        connected: !!data?.church_id,
+        connectedEmail: data?.google_account_email || null,
+      });
+    }
+
     if (action === "completeConnection") {
-      const code = String(body?.code || "").trim();
-      const redirectUri = String(body?.redirectUri || "").trim();
-      if (!code || !redirectUri) {
-        return jsonResponse(400, { error: "code and redirectUri are required." });
+      const code = sanitizePlainText(body?.code, 400);
+      const redirectUri = validateRedirectUri(body?.redirectUri);
+      if (!code) {
+        return jsonResponse(400, { error: "code is required." });
       }
 
       const tokenPayload = await exchangeAuthorizationCode(code, redirectUri);
@@ -230,6 +274,17 @@ Deno.serve(async (req) => {
         throw new Error(error.message || "We couldn't save the Google connection for this church.");
       }
       return jsonResponse(200, { connectedEmail: connectedEmail || null });
+    }
+
+    if (action === "disconnectConnection") {
+      const { error } = await adminClient
+        .from("church_google_connections")
+        .delete()
+        .eq("church_id", profile.church_id);
+      if (error) {
+        throw new Error(error.message || "We couldn't disconnect Google for this church.");
+      }
+      return jsonResponse(200, { disconnected: true });
     }
 
     const connection = await getChurchGoogleConnection(adminClient, profile.church_id);

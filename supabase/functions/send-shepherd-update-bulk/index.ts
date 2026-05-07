@@ -4,7 +4,7 @@ import { renderShepherdNotificationEmail } from "../_shared/shepherd-email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-shepherd-job-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -22,6 +22,31 @@ function getAdminClient() {
     throw new Error("Supabase service role credentials are not configured.");
   }
   return createClient(supabaseUrl, serviceRoleKey);
+}
+
+function isValidEmailAddress(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function sanitizePlainText(value: unknown, maxLength: number) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function sanitizeItemList(value: unknown, maxItems = 12, maxLength = 240) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => sanitizePlainText(item, maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function requestHasBulkSecret(req: Request) {
+  const expectedSecret = Deno.env.get("SHEPHERD_BULK_EMAIL_SECRET") || "";
+  const providedSecret = (req.headers.get("x-shepherd-job-secret") || "").trim();
+  if (!expectedSecret) {
+    throw new Error("The bulk update sender secret has not been configured.");
+  }
+  return providedSecret === expectedSecret;
 }
 
 function escapeHtml(value: unknown) {
@@ -65,24 +90,36 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
   try {
+    let hasSecret = false;
+    try {
+      hasSecret = requestHasBulkSecret(req);
+    } catch (configError) {
+      return jsonResponse(503, { error: configError instanceof Error ? configError.message : "The bulk update sender secret is not configured." });
+    }
+    if (!hasSecret) {
+      return jsonResponse(403, { error: "The Shepherd bulk update sender requires the configured job secret." });
+    }
+
+    const adminClient = getAdminClient();
     const body = await req.json().catch(() => ({}));
-    const campaignKey = String(body?.campaignKey || "").trim();
-    const scheduledFor = String(body?.scheduledFor || "").trim();
-    const subject = String(body?.subject || "Shepherd Updates Are Live").trim();
-    const title = String(body?.title || "Shepherd Updates Are Live").trim();
-    const intro = String(body?.intro || "I wanted to send a quick update and let you know that several new Shepherd improvements are now live.").trim();
-    const detail = String(body?.detail || intro).trim();
-    const closing = String(body?.closing || "Thank you again for the feedback, testing, and patience as Shepherd continues to improve. More updates are still to come.").trim();
-    const footerText = String(body?.footerText || "You received this because you are an active Shepherd user.").trim();
-    const updateItems = Array.isArray(body?.updateItems)
-      ? body.updateItems.map((item) => String(item || "").trim()).filter(Boolean)
-      : [];
+    const campaignKey = sanitizePlainText(body?.campaignKey, 120);
+    const scheduledFor = sanitizePlainText(body?.scheduledFor, 80);
+    const subject = sanitizePlainText(body?.subject || "Shepherd Updates Are Live", 160);
+    const title = sanitizePlainText(body?.title || "Shepherd Updates Are Live", 160);
+    const intro = sanitizePlainText(body?.intro || "I wanted to send a quick update and let you know that several new Shepherd improvements are now live.", 600);
+    const detail = sanitizePlainText(body?.detail || intro, 600);
+    const closing = sanitizePlainText(body?.closing || "Thank you again for the feedback, testing, and patience as Shepherd continues to improve. More updates are still to come.", 600);
+    const footerText = sanitizePlainText(body?.footerText || "You received this because you are an active Shepherd user.", 320);
+    const updateItems = sanitizeItemList(body?.updateItems);
 
     if (!campaignKey) {
       return jsonResponse(400, { error: "campaignKey is required." });
     }
     if (!scheduledFor) {
       return jsonResponse(400, { error: "scheduledFor is required." });
+    }
+    if (!subject || !title || !intro || !closing) {
+      return jsonResponse(400, { error: "subject, title, intro, and closing are required." });
     }
 
     const scheduledAt = new Date(scheduledFor);
@@ -94,12 +131,13 @@ Deno.serve(async (req) => {
     }
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
-    const fromEmail = Deno.env.get("SHEPHERD_EMAIL_FROM") || "";
+    const fromEmail = sanitizePlainText(Deno.env.get("SHEPHERD_EMAIL_FROM") || "", 200);
     if (!resendApiKey || !fromEmail) {
       return jsonResponse(500, { error: "Email provider is not configured yet." });
     }
-
-    const adminClient = getAdminClient();
+    if (!isValidEmailAddress(fromEmail)) {
+      return jsonResponse(500, { error: "The configured sender email is invalid." });
+    }
     const { data: existingCampaign } = await adminClient
       .from("shepherd_update_campaigns")
       .select("campaign_key, sent_at, scheduled_for")
@@ -139,12 +177,13 @@ Deno.serve(async (req) => {
 
     const uniqueRecipients = new Map<string, { id: string; full_name: string; email: string }>();
     for (const recipient of recipients || []) {
-      const email = String(recipient.email || "").trim().toLowerCase();
+      const email = sanitizePlainText(recipient.email || "", 200).toLowerCase();
       if (!email) continue;
+      if (!isValidEmailAddress(email)) continue;
       if (!uniqueRecipients.has(email)) {
         uniqueRecipients.set(email, {
           id: String(recipient.id || ""),
-          full_name: String(recipient.full_name || "").trim(),
+          full_name: sanitizePlainText(recipient.full_name || "", 120),
           email,
         });
       }

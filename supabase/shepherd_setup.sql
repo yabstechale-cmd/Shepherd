@@ -858,17 +858,12 @@ begin
 
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', s.id,
-    'church_id', s.church_id,
     'full_name', s.full_name,
-    'role', s.role,
-    'staff_roles', coalesce(s.staff_roles, '{}'::text[]),
     'title', s.title,
-    'email', s.email,
-    'auth_user_id', s.auth_user_id,
-    'ministries', coalesce(s.ministries, '{}'::text[]),
-    'can_see_team_overview', coalesce(s.can_see_team_overview, false),
-    'can_see_admin_overview', coalesce(s.can_see_admin_overview, false),
-    'read_only_oversight', coalesce(s.read_only_oversight, false)
+    'has_registered_account', (
+      s.auth_user_id is not null
+      or nullif(trim(coalesce(s.email, '')), '') is not null
+    )
   ) order by s.full_name), '[]'::jsonb)
   into staff_payload
   from public.church_staff s
@@ -1587,17 +1582,7 @@ using (public.user_can_manage_church(id))
 with check (public.user_can_manage_church(id));
 
 drop policy if exists "church google connection admin read" on public.church_google_connections;
-create policy "church google connection admin read"
-on public.church_google_connections
-for select
-using (public.user_can_manage_calendar_settings(church_id));
-
 drop policy if exists "church google connection admin write" on public.church_google_connections;
-create policy "church google connection admin write"
-on public.church_google_connections
-for all
-using (public.user_can_manage_calendar_settings(church_id))
-with check (public.user_can_manage_calendar_settings(church_id));
 
 drop policy if exists "church staff lookup" on public.church_staff;
 create policy "church staff lookup"

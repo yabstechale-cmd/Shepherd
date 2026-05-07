@@ -33,6 +33,14 @@ function getAdminClient() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
+function sanitizePlainText(value: unknown, maxLength: number) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function isValidEmailAddress(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
@@ -57,15 +65,21 @@ Deno.serve(async (req) => {
       ? await adminClient.from("churches").select("name").eq("id", profile.church_id).maybeSingle()
       : { data: null };
 
-    const recipientEmail = profile?.email || authData.user.email || "";
+    const recipientEmail = sanitizePlainText(profile?.email || authData.user.email || "", 200);
     if (!recipientEmail) {
       return jsonResponse(400, { error: "Your Shepherd profile does not have an email address yet." });
     }
+    if (!isValidEmailAddress(recipientEmail)) {
+      return jsonResponse(400, { error: "Your Shepherd profile needs a valid email before a preview can be sent." });
+    }
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
-    const fromEmail = Deno.env.get("SHEPHERD_EMAIL_FROM") || "";
+    const fromEmail = sanitizePlainText(Deno.env.get("SHEPHERD_EMAIL_FROM") || "", 200);
     if (!resendApiKey || !fromEmail) {
       return jsonResponse(500, { error: "Email provider is not configured yet." });
+    }
+    if (!isValidEmailAddress(fromEmail)) {
+      return jsonResponse(500, { error: "The configured sender email is invalid." });
     }
 
     const appUrl = (Deno.env.get("SHEPHERD_APP_URL") || "https://shepherd-s.com").replace(/\/+$/, "");

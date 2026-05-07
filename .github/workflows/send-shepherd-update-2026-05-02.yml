@@ -20,6 +20,7 @@ jobs:
         run: |
           curl --fail-with-body -X POST "https://nplrfjmxstaxsgribirs.functions.supabase.co/send-shepherd-update-bulk" \
             -H "Content-Type: application/json" \
+            -H "x-shepherd-job-secret: ${{ secrets.SHEPHERD_BULK_EMAIL_SECRET }}" \
             --data @- <<'JSON'
           {
             "campaignKey": "shepherd-updates-2026-05-02-0800-edt",

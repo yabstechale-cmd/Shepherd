@@ -2503,28 +2503,28 @@ function LandingPage() {
                     })}
                   </div>
                 </div>
-                <div style={{width:"100%"}}>
-                  <div style={{position:"relative",border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",background:C.surface}}>
-                    <button
-                      type="button"
-                      onClick={showPreviousPreview}
-                      aria-label="Show previous preview"
-                      className="btn-outline"
-                      style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",width:44,height:44,padding:0,justifyContent:"center",zIndex:2,backdropFilter:"blur(10px)"}}
-                    >
-                      <span style={{fontSize:20,lineHeight:1}}>‹</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={showNextPreview}
-                      aria-label="Show next preview"
-                      className="btn-outline"
-                      style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",width:44,height:44,padding:0,justifyContent:"center",zIndex:2,backdropFilter:"blur(10px)"}}
-                    >
-                      <span style={{fontSize:20,lineHeight:1}}>›</span>
-                    </button>
+                <div style={{display:"grid",gridTemplateColumns:"44px minmax(0,1fr) 44px",gap:14,alignItems:"center",width:"100%"}}>
+                  <button
+                    type="button"
+                    onClick={showPreviousPreview}
+                    aria-label="Show previous preview"
+                    className="btn-outline"
+                    style={{width:44,height:44,padding:0,justifyContent:"center",alignSelf:"center"}}
+                  >
+                    <span style={{fontSize:20,lineHeight:1}}>‹</span>
+                  </button>
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",background:C.surface}}>
                     <img src={selectedPreview.image} alt={`${selectedPreview.title} preview`} style={{display:"block",width:"100%",aspectRatio:selectedPreview.aspectRatio,objectFit:"contain",background:C.surface}} />
                   </div>
+                  <button
+                    type="button"
+                    onClick={showNextPreview}
+                    aria-label="Show next preview"
+                    className="btn-outline"
+                    style={{width:44,height:44,padding:0,justifyContent:"center",alignSelf:"center"}}
+                  >
+                    <span style={{fontSize:20,lineHeight:1}}>›</span>
+                  </button>
                 </div>
               </div>
               <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{justifyContent:"center",paddingInline:22}}>

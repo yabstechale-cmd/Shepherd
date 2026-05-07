@@ -2435,9 +2435,19 @@ function LandingPage() {
               <div style={{maxWidth:860,fontSize:"clamp(21px, 2vw, 27px)",lineHeight:1.7,color:C.muted}}>
                 Shepherd helps your church team move with more clarity, visibility, and accountability so fewer things fall through the cracks and less energy gets spent chasing updates.
               </div>
-              <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }} style={{justifyContent:"center",paddingInline:22}}>
-                Get Started
-              </button>
+              <details style={{position:"relative"}}>
+                <summary className="btn-gold" style={{listStyle:"none",cursor:"pointer",paddingInline:22,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  Get Started
+                </summary>
+                <div style={{position:"absolute",left:"50%",top:"calc(100% + 10px)",transform:"translateX(-50%)",minWidth:210,padding:12,border:`1px solid ${C.border}`,borderRadius:16,background:C.card,boxShadow:ACTIVE_THEME_MODE === "dark" ? "0 22px 60px rgba(0,0,0,.3)" : "0 22px 60px rgba(31,40,62,.12)",display:"grid",gap:10,zIndex:4}}>
+                  <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }}>
+                    Create Account
+                  </button>
+                  <button className="btn-outline" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login"; }}>
+                    Log In
+                  </button>
+                </div>
+              </details>
             </div>
           </div>
         </div>

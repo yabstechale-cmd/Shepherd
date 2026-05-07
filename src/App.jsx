@@ -2402,7 +2402,7 @@ function LandingPage() {
                   onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
                   style={{display:"grid",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left",minWidth:0,flex:"1 1 auto"}}
                 >
-                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:44,lineHeight:1,color:C.gold,paddingTop:0}}>Shepherd</div>
+                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:30,lineHeight:1,color:C.gold,paddingTop:0}}>Shepherd</div>
                 </button>
                 <details style={{position:"relative"}}>
                   <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer",padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,whiteSpace:"nowrap"}}>

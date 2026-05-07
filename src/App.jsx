@@ -2394,17 +2394,17 @@ function LandingPage() {
           <div style={{position:"absolute",left:"clamp(18px, 4vw, 44px)",bottom:"-18px",width:"min(34vw, 420px)",opacity:ACTIVE_THEME_MODE === "dark" ? 0.08 : 0.06,pointerEvents:"none"}}>
             <img src={heroWatermark} alt="" style={{display:"block",width:"100%",height:"auto",objectFit:"contain"}} />
           </div>
-          <div style={{width:"100%",padding:"54px clamp(20px, 4vw, 54px) 120px",position:"relative"}}>
+          <div style={{width:"100%",padding:"34px clamp(20px, 4vw, 54px) 120px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"flex-start",alignItems:"flex-start",marginBottom:72}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:20,width:"100%",flexWrap:"nowrap"}}>
                 <button
                   onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
                   style={{display:"grid",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left",minWidth:0,flex:"1 1 auto"}}
                 >
-                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:56,lineHeight:1,color:C.gold,paddingTop:2}}>Shepherd</div>
+                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:44,lineHeight:1,color:C.gold,paddingTop:0}}>Shepherd</div>
                 </button>
                 <details style={{position:"relative"}}>
-                  <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer",padding:"9px 12px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,whiteSpace:"nowrap"}}>
+                  <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer",padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,whiteSpace:"nowrap"}}>
                     Get Started
                   </summary>
                   <div style={{position:"absolute",right:0,top:"calc(100% + 10px)",minWidth:210,padding:12,border:`1px solid ${C.border}`,borderRadius:16,background:C.card,boxShadow:ACTIVE_THEME_MODE === "dark" ? "0 22px 60px rgba(0,0,0,.3)" : "0 22px 60px rgba(31,40,62,.12)",display:"grid",gap:10,zIndex:4}}>

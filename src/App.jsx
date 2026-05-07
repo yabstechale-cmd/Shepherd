@@ -2429,10 +2429,10 @@ function LandingPage() {
             </div>
 
             <div style={{maxWidth:"min(1320px, 100%)",textAlign:"center",margin:"0 auto",display:"grid",justifyItems:"center",gap:18}}>
-              <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(42px, 6vw, 74px)",lineHeight:0.98,fontWeight:500,letterSpacing:"-0.02em",color:C.heading,margin:0}}>
+              <h1 style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(47px, 6vw, 79px)",lineHeight:0.98,fontWeight:500,letterSpacing:"-0.02em",color:C.heading,margin:0}}>
                 Organize. Equip. <span style={{color:C.gold}}>Shepherd.</span>
               </h1>
-              <div style={{maxWidth:860,fontSize:"clamp(16px, 2vw, 22px)",lineHeight:1.7,color:C.muted}}>
+              <div style={{maxWidth:860,fontSize:"clamp(21px, 2vw, 27px)",lineHeight:1.7,color:C.muted}}>
                 Shepherd helps your church team move with more clarity, visibility, and accountability so fewer things fall through the cracks and less energy gets spent chasing updates.
               </div>
               <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }} style={{justifyContent:"center",paddingInline:22}}>
@@ -2445,17 +2445,17 @@ function LandingPage() {
         <div style={{width:"100%",padding:"24px clamp(20px, 4vw, 54px) 72px"}}>
           <div style={{display:"grid",gap:24}}>
             <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"center",justifyItems:"center"}}>
-              <div style={{fontSize:14,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Can Do</div>
-              <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:900}}>
+              <div style={{fontSize:19,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Can Do</div>
+              <div style={{fontSize:19,color:C.muted,lineHeight:1.8,maxWidth:900}}>
                 Shepherd is built to help a church team stay aligned, prepared, and accountable in the everyday work of ministry. Here is what that can look like in practice:
               </div>
               <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:18}}>
                 {featureCards.map((card) => (
                   <div key={card.title} style={{border:`1px solid ${C.border}`,borderRadius:16,padding:18,background:C.surface,display:"grid",gap:10}}>
-                    <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:26,lineHeight:1.1,color:C.heading}}>
+                    <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:31,lineHeight:1.1,color:C.heading}}>
                       {card.title}
                     </div>
-                    <div style={{fontSize:14,color:C.muted,lineHeight:1.8}}>
+                    <div style={{fontSize:19,color:C.muted,lineHeight:1.8}}>
                       {card.body}
                     </div>
                   </div>
@@ -2464,17 +2464,17 @@ function LandingPage() {
             </div>
 
             <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"center",justifyItems:"center"}}>
-              <div style={{fontSize:14,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Looks Like</div>
-              <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:860}}>
+              <div style={{fontSize:19,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Looks Like</div>
+              <div style={{fontSize:19,color:C.muted,lineHeight:1.8,maxWidth:860}}>
                 Here are a few real views from Shepherd so you can get a feel for the dashboard, task flow, and finances experience before stepping into the sample site.
               </div>
               <div style={{width:"100%",height:1,background:C.border}} />
               <div style={{display:"grid",gap:16,width:"100%"}}>
                 <div style={{display:"grid",gap:12,justifyItems:"center"}}>
-                  <div style={{fontSize:16,color:C.heading,fontWeight:700}}>
+                  <div style={{fontSize:21,color:C.heading,fontWeight:700}}>
                     {selectedPreview.title}
                   </div>
-                  <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:720}}>
+                  <div style={{fontSize:19,color:C.muted,lineHeight:1.8,maxWidth:720}}>
                     {selectedPreview.description}
                   </div>
                   <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>

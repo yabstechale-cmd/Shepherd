@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
     const intro = sanitizePlainText(body?.intro || "I wanted to send a quick update and let you know that several new Shepherd improvements are now live.", 600);
     const detail = sanitizePlainText(body?.detail || intro, 600);
     const closing = sanitizePlainText(body?.closing || "Thank you again for the feedback, testing, and patience as Shepherd continues to improve. More updates are still to come.", 600);
-    const footerText = sanitizePlainText(body?.footerText || "You received this because you are an active Shepherd user.", 320);
+    const footerText = sanitizePlainText(body?.footerText || "", 320);
     const updateItems = sanitizeItemList(body?.updateItems);
 
     if (!campaignKey) {

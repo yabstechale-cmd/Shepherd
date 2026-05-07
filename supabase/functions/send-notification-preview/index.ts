@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
           churchName: church?.name || "Preview Church",
           eyebrow: "Shepherd Event Request",
           detailLabel: "Confirmation",
-          footerText: "You received this because you submitted an event request through Shepherd. Keep this email so you can return to your request later.",
+          footerText: "",
         }),
       }),
     });

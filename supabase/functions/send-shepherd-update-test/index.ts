@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
     const intro = sanitizePlainText(body?.intro || "Here is a quick rundown of the Shepherd updates that are now live.", 600);
     const detail = sanitizePlainText(body?.detail || intro, 600);
     const closing = sanitizePlainText(body?.closing || "Thank you for all the input and feedback you have shared so far. More improvements are already on the way as Shepherd continues to grow.", 600);
-    const footerText = sanitizePlainText(body?.footerText || "You received this because Shepherd is preparing a user update email. Once approved, Shepherd can send a personalized version to each active user.", 320);
+    const footerText = sanitizePlainText(body?.footerText || "", 320);
     const updateItems = sanitizeItemList(body?.updateItems);
 
     if (!recipientEmail || !isValidEmailAddress(recipientEmail)) {

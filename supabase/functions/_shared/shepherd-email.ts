@@ -30,7 +30,7 @@ export function renderShepherdNotificationEmail({
   eyebrow = "Shepherd Notification",
   previewText,
   detailLabel = "Update",
-  footerText = "You received this because something in Shepherd needs your attention. If this does not look right, open Shepherd and check your current assignments and notifications.",
+  footerText = "",
 }: ShepherdNotificationEmailOptions) {
   const safeTitle = escapeHtml(title);
   const safeDetail = escapeHtml(detail);
@@ -41,6 +41,17 @@ export function renderShepherdNotificationEmail({
   const safeActionUrl = escapeHtml(actionUrl);
   const safeDetailLabel = escapeHtml(detailLabel || "Update");
   const safeFooterText = escapeHtml(footerText);
+  const footerSection = safeFooterText
+    ? `
+                  <tr>
+                    <td bgcolor="#1c2333" style="padding:8px 28px 30px 28px;background:#1c2333!important;background-color:#1c2333!important;">
+                      <div style="height:1px;line-height:1px;background:#30384c;margin:0 0 18px 0;">&nbsp;</div>
+                      <p class="shepherd-muted" style="margin:0;color:#9ca8bc!important;-webkit-text-fill-color:#9ca8bc!important;font-family:'DM Sans',Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;">
+                        ${safeFooterText}
+                      </p>
+                    </td>
+                  </tr>`
+    : "";
 
   return `<!doctype html>
 <html lang="en" style="margin:0!important;padding:0!important;background:#161b27!important;background-color:#161b27!important;">
@@ -191,14 +202,7 @@ export function renderShepherdNotificationEmail({
                       </a>
                     </td>
                   </tr>
-                  <tr>
-                    <td bgcolor="#1c2333" style="padding:8px 28px 30px 28px;background:#1c2333!important;background-color:#1c2333!important;">
-                      <div style="height:1px;line-height:1px;background:#30384c;margin:0 0 18px 0;">&nbsp;</div>
-                      <p class="shepherd-muted" style="margin:0;color:#9ca8bc!important;-webkit-text-fill-color:#9ca8bc!important;font-family:'DM Sans',Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;">
-                        ${safeFooterText}
-                      </p>
-                    </td>
-                  </tr>
+                  ${footerSection}
                 </table>
               </td>
             </tr>

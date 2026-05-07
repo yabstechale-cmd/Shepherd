@@ -2364,7 +2364,16 @@ function LandingPage() {
     { id: "finances", title: "Finances", image: budgetPreview, description: "Preview budget oversight, ministry ledgers, and financial workflow tools.", aspectRatio: "1009 / 610" },
   ];
   const [activePreview, setActivePreview] = useState("dashboard");
+  const activePreviewIndex = Math.max(0, previewOptions.findIndex((option) => option.id === activePreview));
   const selectedPreview = previewOptions.find((option) => option.id === activePreview) || previewOptions[0];
+  const showPreviousPreview = () => {
+    const nextIndex = (activePreviewIndex - 1 + previewOptions.length) % previewOptions.length;
+    setActivePreview(previewOptions[nextIndex].id);
+  };
+  const showNextPreview = () => {
+    const nextIndex = (activePreviewIndex + 1) % previewOptions.length;
+    setActivePreview(previewOptions[nextIndex].id);
+  };
 
   const featureCards = [
     {
@@ -2435,7 +2444,7 @@ function LandingPage() {
 
         <div style={{width:"100%",padding:"24px clamp(20px, 4vw, 54px) 72px"}}>
           <div style={{display:"grid",gap:24}}>
-            <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
+            <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"center",justifyItems:"center"}}>
               <div style={{fontSize:14,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Can Do</div>
               <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:900}}>
                 Shepherd is built to help a church team stay aligned, prepared, and accountable in the everyday work of ministry. Here is what that can look like in practice:
@@ -2454,44 +2463,70 @@ function LandingPage() {
               </div>
             </div>
 
-            <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
-              <div style={{fontSize:14,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>See What Shepherd Looks Like</div>
+            <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"center",justifyItems:"center"}}>
+              <div style={{fontSize:14,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Looks Like</div>
               <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:860}}>
                 Here are a few real views from Shepherd so you can get a feel for the dashboard, task flow, and finances experience before stepping into the sample site.
               </div>
-              <div style={{display:"grid",gap:16}}>
-                <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 260px",gap:16,alignItems:"start"}}>
+              <div style={{display:"grid",gap:16,width:"100%"}}>
+                <div style={{display:"grid",gridTemplateColumns:"44px minmax(0,1fr) 44px",gap:14,alignItems:"center",width:"100%"}}>
+                  <button
+                    type="button"
+                    onClick={showPreviousPreview}
+                    aria-label="Show previous preview"
+                    className="btn-outline"
+                    style={{width:44,height:44,padding:0,justifyContent:"center",alignSelf:"stretch"}}
+                  >
+                    <span style={{fontSize:20,lineHeight:1}}>‹</span>
+                  </button>
                   <div style={{border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",background:C.surface}}>
                     <img src={selectedPreview.image} alt={`${selectedPreview.title} preview`} style={{display:"block",width:"100%",aspectRatio:selectedPreview.aspectRatio,objectFit:"contain",background:C.surface}} />
                   </div>
-                  <div style={{display:"grid",gap:12}}>
-                    {previewOptions.map((option) => {
-                      const isActive = option.id === selectedPreview.id;
-                      return (
-                        <button
-                          key={option.id}
-                          onClick={() => setActivePreview(option.id)}
-                          style={{
-                            textAlign:"left",
-                            border:`1px solid ${isActive ? C.gold : C.border}`,
-                            borderRadius:16,
-                            background:isActive ? (ACTIVE_THEME_MODE === "dark" ? "rgba(201,168,76,.08)" : "rgba(162,126,25,.08)") : C.surface,
-                            padding:"14px 16px",
-                            display:"grid",
-                            gap:6,
-                            cursor:"pointer",
-                            boxShadow:isActive ? `0 0 0 1px ${C.goldGlow}` : "none",
-                          }}
-                        >
-                          <div style={{fontSize:13,color:isActive ? C.gold : C.heading,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase"}}>{option.title}</div>
-                          <div style={{fontSize:13,color:C.muted,lineHeight:1.7}}>{option.description}</div>
-                        </button>
-                      );
-                    })}
+                  <button
+                    type="button"
+                    onClick={showNextPreview}
+                    aria-label="Show next preview"
+                    className="btn-outline"
+                    style={{width:44,height:44,padding:0,justifyContent:"center",alignSelf:"stretch"}}
+                  >
+                    <span style={{fontSize:20,lineHeight:1}}>›</span>
+                  </button>
+                </div>
+                <div style={{display:"grid",gap:8,justifyItems:"center"}}>
+                  <div style={{fontSize:16,color:C.heading,fontWeight:700}}>
+                    {selectedPreview.title}
+                  </div>
+                  <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:720}}>
+                    {selectedPreview.description}
                   </div>
                 </div>
+                <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
+                  {previewOptions.map((option) => {
+                    const isActive = option.id === selectedPreview.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setActivePreview(option.id)}
+                        aria-label={`Show ${option.title} preview`}
+                        style={{
+                          border:`1px solid ${isActive ? C.gold : C.border}`,
+                          borderRadius:999,
+                          background:isActive ? (ACTIVE_THEME_MODE === "dark" ? "rgba(201,168,76,.1)" : "rgba(162,126,25,.1)") : C.surface,
+                          color:isActive ? C.gold : C.muted,
+                          padding:"8px 14px",
+                          fontSize:13,
+                          fontWeight:700,
+                          cursor:"pointer",
+                        }}
+                      >
+                        {option.title}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{justifyContent:"center",justifySelf:"start",paddingInline:22}}>
+              <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{justifyContent:"center",paddingInline:22}}>
                 See What Shepherd Looks Like
               </button>
             </div>

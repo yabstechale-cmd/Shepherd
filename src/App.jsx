@@ -13689,196 +13689,202 @@ function AppShell() {
   };
 
   const loadData = async (uid) => {
-    loadedUserIdRef.current = uid || null;
-    setLoading(true);
-    setDataLoadError("");
-    setNotificationSyncError("");
-    const { data: authState } = await supabase.auth.getUser();
-    const authUser = authState?.user || null;
-    const authEmail = authUser?.email || "";
-    let { data: profileRow } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
-    let prof = profileRow;
+    try {
+      loadedUserIdRef.current = uid || null;
+      setLoading(true);
+      setDataLoadError("");
+      setNotificationSyncError("");
+      const { data: authState } = await supabase.auth.getUser();
+      const authUser = authState?.user || null;
+      const authEmail = authUser?.email || "";
+      let { data: profileRow } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
+      let prof = profileRow;
 
-    if (!prof) {
-      const staffId = authUser?.user_metadata?.staff_id;
-      const churchId = authUser?.user_metadata?.church_id;
+      if (!prof) {
+        const staffId = authUser?.user_metadata?.staff_id;
+        const churchId = authUser?.user_metadata?.church_id;
 
-      if (staffId && churchId) {
-        try {
-          await claimStaffProfile(staffId, churchId);
-          const retry = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
-          profileRow = retry.data;
-          prof = retry.data;
-        } catch (error) {
-          console.warn("Could not claim staff profile during login recovery.", error);
+        if (staffId && churchId) {
+          try {
+            await claimStaffProfile(staffId, churchId);
+            const retry = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
+            profileRow = retry.data;
+            prof = retry.data;
+          } catch (error) {
+            console.warn("Could not claim staff profile during login recovery.", error);
+          }
         }
       }
-    }
 
-    if (!prof) {
-      const { data: staffRow } = await supabase.from("church_staff").select("*").eq("auth_user_id", uid).maybeSingle();
-      if (staffRow) {
-        prof = createProfilePayload(uid, staffRow.church_id, staffRow, authEmail || staffRow.email || "");
-        await supabase.from("profiles").upsert(prof);
+      if (!prof) {
+        const { data: staffRow } = await supabase.from("church_staff").select("*").eq("auth_user_id", uid).maybeSingle();
+        if (staffRow) {
+          prof = createProfilePayload(uid, staffRow.church_id, staffRow, authEmail || staffRow.email || "");
+          await supabase.from("profiles").upsert(prof);
+        }
       }
-    }
 
-    if (!prof) {
-      setProfile(null);
-      setChurch(null);
-      setTasks([]);
-      setEventRequests(null);
-      setTransactions([]);
-      setPurchaseOrders([]);
-      setStaffAvailabilityRequests([]);
-      setChurchLockupAssignments([]);
-      setCalendarEvents([]);
-      setMinistries([]);
-      setPreviewUsers([]);
-      setPersistentNotifications([]);
-      setActivityLogs([]);
-      setReadNotificationIds([]);
-      setArchivedNotificationIds([]);
-      setFavorites([]);
-      setTrashItems([]);
-      lastSyncedFavoritesRef.current = "[]";
+      if (!prof) {
+        setProfile(null);
+        setChurch(null);
+        setTasks([]);
+        setEventRequests(null);
+        setTransactions([]);
+        setPurchaseOrders([]);
+        setStaffAvailabilityRequests([]);
+        setChurchLockupAssignments([]);
+        setCalendarEvents([]);
+        setMinistries([]);
+        setPreviewUsers([]);
+        setPersistentNotifications([]);
+        setActivityLogs([]);
+        setReadNotificationIds([]);
+        setArchivedNotificationIds([]);
+        setFavorites([]);
+        setTrashItems([]);
+        lastSyncedFavoritesRef.current = "[]";
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(REMOVED_CHURCH_ACCESS_MESSAGE_KEY, "Your access to this church has been removed.");
+        }
+        await supabase.auth.signOut();
+        setSession(null);
+        setLoading(false);
+        return;
+      }
+
+      if (prof && authEmail && prof.email !== authEmail) {
+        prof = { ...prof, email: authEmail };
+        await supabase.from("profiles").update({ email: authEmail }).eq("id", uid);
+        if (prof.staff_id) {
+          await supabase.from("church_staff").update({ email: authEmail }).eq("id", prof.staff_id);
+        }
+      }
+
+      let normalizedProfile = prof ? normalizeAccessUser(prof) : null;
+      if (typeof window !== "undefined" && normalizedProfile?.id) {
+        const storedPhoto = window.localStorage.getItem(`shepherd-profile-photo:${normalizedProfile.id}`);
+        if (storedPhoto) normalizedProfile = { ...normalizedProfile, photo_url: storedPhoto };
+      }
       if (typeof window !== "undefined") {
-        window.localStorage.setItem(REMOVED_CHURCH_ACCESS_MESSAGE_KEY, "Your access to this church has been removed.");
+        const rawTrash = window.localStorage.getItem(getTrashStorageKey(prof?.church_id));
+        setTrashItems(rawTrash ? readStoredJson(rawTrash, []) : []);
       }
-      await supabase.auth.signOut();
-      setSession(null);
-      setLoading(false);
-      return;
-    }
-
-    if (prof && authEmail && prof.email !== authEmail) {
-      prof = { ...prof, email: authEmail };
-      await supabase.from("profiles").update({ email: authEmail }).eq("id", uid);
-      if (prof.staff_id) {
-        await supabase.from("church_staff").update({ email: authEmail }).eq("id", prof.staff_id);
+      if (prof?.id && typeof window !== "undefined") {
+        const raw = window.localStorage.getItem(getNotificationStorageKey(prof.id));
+        setReadNotificationIds(raw ? readStoredJson(raw, []) : []);
+        const archivedRaw = window.localStorage.getItem(getArchivedNotificationStorageKey(prof.id));
+        setArchivedNotificationIds(archivedRaw ? readStoredJson(archivedRaw, []) : []);
+        const favoritesRaw = window.localStorage.getItem(getFavoritesStorageKey(prof.id));
+        const localFavorites = favoritesRaw ? readStoredJson(favoritesRaw, []).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
+        const serverFavorites = Array.isArray(prof.favorite_items) ? prof.favorite_items.map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
+        const resolvedFavorites = serverFavorites.length ? serverFavorites : localFavorites;
+        setFavorites(resolvedFavorites);
+        lastSyncedFavoritesRef.current = JSON.stringify(serverFavorites);
+      } else {
+        setReadNotificationIds([]);
+        setArchivedNotificationIds([]);
+        setPersistentNotifications([]);
+        setFavorites([]);
+        lastSyncedFavoritesRef.current = "[]";
+        setTrashItems([]);
       }
-    }
-
-    let normalizedProfile = prof ? normalizeAccessUser(prof) : null;
-    if (typeof window !== "undefined" && normalizedProfile?.id) {
-      const storedPhoto = window.localStorage.getItem(`shepherd-profile-photo:${normalizedProfile.id}`);
-      if (storedPhoto) normalizedProfile = { ...normalizedProfile, photo_url: storedPhoto };
-    }
-    if (typeof window !== "undefined") {
-      const rawTrash = window.localStorage.getItem(getTrashStorageKey(prof?.church_id));
-      setTrashItems(rawTrash ? readStoredJson(rawTrash, []) : []);
-    }
-    if (prof?.id && typeof window !== "undefined") {
-      const raw = window.localStorage.getItem(getNotificationStorageKey(prof.id));
-      setReadNotificationIds(raw ? readStoredJson(raw, []) : []);
-      const archivedRaw = window.localStorage.getItem(getArchivedNotificationStorageKey(prof.id));
-      setArchivedNotificationIds(archivedRaw ? readStoredJson(archivedRaw, []) : []);
-      const favoritesRaw = window.localStorage.getItem(getFavoritesStorageKey(prof.id));
-      const localFavorites = favoritesRaw ? readStoredJson(favoritesRaw, []).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
-      const serverFavorites = Array.isArray(prof.favorite_items) ? prof.favorite_items.map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
-      const resolvedFavorites = serverFavorites.length ? serverFavorites : localFavorites;
-      setFavorites(resolvedFavorites);
-      lastSyncedFavoritesRef.current = JSON.stringify(serverFavorites);
-    } else {
-      setReadNotificationIds([]);
-      setArchivedNotificationIds([]);
-      setPersistentNotifications([]);
-      setFavorites([]);
-      lastSyncedFavoritesRef.current = "[]";
-      setTrashItems([]);
-    }
-    if (prof?.church_id) {
-      const [ch, t, cla, staff, profileRows, notificationRows] = await Promise.all([
-        supabase.from("churches").select("*").eq("id", prof.church_id).single(),
-        supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
-        supabase.from("church_lockup_assignments").select("*").eq("church_id", prof.church_id).order("week_of", { ascending: true }),
-        supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
-        supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
-        supabase.from("notifications").select("*").eq("recipient_profile_id", prof.id).order("created_at", { ascending: false }).limit(100),
-      ]);
-      const primaryErrors = [ch.error, t.error, cla.error, staff.error, profileRows.error, notificationRows.error].filter(Boolean);
-      if (primaryErrors.length) {
-        reportDataLoadIssue("Some church data could not be loaded completely. Refresh and try again.", primaryErrors.map((entry) => entry.message || String(entry)).join(" | "));
-      }
-      const enhancedProfile = normalizedProfile
-        ? {
-            ...normalizedProfile,
-            is_account_admin: isChurchAccountAdmin(normalizedProfile, ch.data),
-          }
-        : normalizedProfile;
-      setProfile(enhancedProfile);
-      setChurch(ch.data);
-      setTasks((t.data || []).map(normalizeTask));
-      setChurchLockupAssignments((cla.data || []).map(normalizeChurchLockupAssignment));
-      setPersistentNotifications(notificationRows.data || []);
-      if (canViewActivityLog(enhancedProfile)) {
-        supabase
-          .from("activity_logs")
-          .select("*")
-          .eq("church_id", prof.church_id)
-          .order("created_at", { ascending: false })
-          .limit(120)
-          .then(({ data, error }) => {
-            if (error) {
+      if (prof?.church_id) {
+        const [ch, t, cla, staff, profileRows, notificationRows] = await Promise.all([
+          supabase.from("churches").select("*").eq("id", prof.church_id).single(),
+          supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+          supabase.from("church_lockup_assignments").select("*").eq("church_id", prof.church_id).order("week_of", { ascending: true }),
+          supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
+          supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
+          supabase.from("notifications").select("*").eq("recipient_profile_id", prof.id).order("created_at", { ascending: false }).limit(100),
+        ]);
+        const primaryErrors = [ch.error, t.error, cla.error, staff.error, profileRows.error, notificationRows.error].filter(Boolean);
+        if (primaryErrors.length) {
+          reportDataLoadIssue("Some church data could not be loaded completely. Refresh and try again.", primaryErrors.map((entry) => entry.message || String(entry)).join(" | "));
+        }
+        const enhancedProfile = normalizedProfile
+          ? {
+              ...normalizedProfile,
+              is_account_admin: isChurchAccountAdmin(normalizedProfile, ch.data),
+            }
+          : normalizedProfile;
+        setProfile(enhancedProfile);
+        setChurch(ch.data);
+        setTasks((t.data || []).map(normalizeTask));
+        setChurchLockupAssignments((cla.data || []).map(normalizeChurchLockupAssignment));
+        setPersistentNotifications(notificationRows.data || []);
+        if (canViewActivityLog(enhancedProfile)) {
+          supabase
+            .from("activity_logs")
+            .select("*")
+            .eq("church_id", prof.church_id)
+            .order("created_at", { ascending: false })
+            .limit(120)
+            .then(({ data, error }) => {
+              if (error) {
+                setActivityLogs([]);
+                reportDataLoadIssue("Some activity history could not be loaded right now.", error);
+                return;
+              }
+              setActivityLogs((data || []).map(normalizeActivityLog));
+            })
+            .catch((error) => {
               setActivityLogs([]);
               reportDataLoadIssue("Some activity history could not be loaded right now.", error);
-              return;
-            }
-            setActivityLogs((data || []).map(normalizeActivityLog));
-          })
-          .catch((error) => {
-            setActivityLogs([]);
-            reportDataLoadIssue("Some activity history could not be loaded right now.", error);
+            });
+        } else {
+          setActivityLogs([]);
+        }
+        const profileFocusMap = new Map((profileRows.data || []).map((entry) => [entry.staff_id || entry.id || entry.full_name, entry]));
+        setPreviewUsers((staff.data || []).map((entry) => {
+          const match = profileFocusMap.get(entry.id)
+            || (profileRows.data || []).find((row) => row.staff_id === entry.id || samePerson(row.full_name, entry.full_name));
+          return normalizeAccessUser({
+            ...entry,
+            current_focus_task_id: match?.current_focus_task_id || null,
+            current_focus_updated_at: match?.current_focus_updated_at || null,
           });
+        }));
+        setLoading(false);
+
+        Promise.all([
+          supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+          supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
+          supabase.from("purchase_orders").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+          supabase.from("staff_availability_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
+          supabase.from("calendar_events").select("*").eq("church_id", prof.church_id).order("event_date", { ascending: true }),
+          supabase.from("ministries").select("*").eq("church_id", prof.church_id),
+        ]).then(([er, tr, po, sar, ce, m]) => {
+          setEventRequests(er.data || []);
+          setTransactions(tr.data || []);
+          setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
+          setStaffAvailabilityRequests((sar.data || []).map(normalizeStaffAvailabilityRequest));
+          setCalendarEvents(ce.data || []);
+          setMinistries(m.data || []);
+        }).catch((error) => {
+          reportDataLoadIssue("Some church data could not be loaded completely. Refresh and try again.", error);
+        });
+        return;
       } else {
+        setProfile(normalizedProfile);
+        setChurch(null);
+        setTasks([]);
+        setEventRequests(null);
+        setTransactions([]);
+        setPurchaseOrders([]);
+        setStaffAvailabilityRequests([]);
+        setChurchLockupAssignments([]);
+        setCalendarEvents([]);
+        setMinistries([]);
+        setPreviewUsers([]);
+        setPersistentNotifications([]);
         setActivityLogs([]);
       }
-      const profileFocusMap = new Map((profileRows.data || []).map((entry) => [entry.staff_id || entry.id || entry.full_name, entry]));
-      setPreviewUsers((staff.data || []).map((entry) => {
-        const match = profileFocusMap.get(entry.id)
-          || (profileRows.data || []).find((row) => row.staff_id === entry.id || samePerson(row.full_name, entry.full_name));
-        return normalizeAccessUser({
-          ...entry,
-          current_focus_task_id: match?.current_focus_task_id || null,
-          current_focus_updated_at: match?.current_focus_updated_at || null,
-        });
-      }));
       setLoading(false);
-
-      Promise.all([
-        supabase.from("event_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
-        supabase.from("transactions").select("*").eq("church_id", prof.church_id).order("date", { ascending: false }),
-        supabase.from("purchase_orders").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
-        supabase.from("staff_availability_requests").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
-        supabase.from("calendar_events").select("*").eq("church_id", prof.church_id).order("event_date", { ascending: true }),
-        supabase.from("ministries").select("*").eq("church_id", prof.church_id),
-      ]).then(([er, tr, po, sar, ce, m]) => {
-        setEventRequests(er.data || []);
-        setTransactions(tr.data || []);
-        setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
-        setStaffAvailabilityRequests((sar.data || []).map(normalizeStaffAvailabilityRequest));
-        setCalendarEvents(ce.data || []);
-        setMinistries(m.data || []);
-      }).catch((error) => {
-        reportDataLoadIssue("Some church data could not be loaded completely. Refresh and try again.", error);
-      });
-      return;
-    } else {
-      setProfile(normalizedProfile);
-      setChurch(null);
-      setTasks([]);
-      setEventRequests(null);
-      setTransactions([]);
-      setPurchaseOrders([]);
-      setStaffAvailabilityRequests([]);
-      setChurchLockupAssignments([]);
-      setCalendarEvents([]);
-      setMinistries([]);
-      setPreviewUsers([]);
-      setPersistentNotifications([]);
-      setActivityLogs([]);
+    } catch (error) {
+      console.error("Shepherd could not finish loading this session.", error);
+      reportDataLoadIssue("Shepherd could not finish loading this session. Please try again.", error);
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -14129,44 +14135,54 @@ function AppShell() {
 
   useEffect(() => {
     const initializeSession = async () => {
-      let shouldShowRecovery = false;
-      if (typeof window !== "undefined") {
-        const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
-        const state = url.searchParams.get("state");
-        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-        shouldShowRecovery = hashParams.get("type") === "recovery";
-        const isGoogleCalendarOauth = url.searchParams.get("google_calendar_oauth") === "1"
-          || hasStoredGoogleCalendarOAuthState(state);
-        if (code && !isGoogleCalendarOauth) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (!error) {
-            url.searchParams.delete("code");
-            url.searchParams.delete("state");
-            window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      try {
+        let shouldShowRecovery = false;
+        if (typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          const code = url.searchParams.get("code");
+          const state = url.searchParams.get("state");
+          const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+          shouldShowRecovery = hashParams.get("type") === "recovery";
+          const isGoogleCalendarOauth = url.searchParams.get("google_calendar_oauth") === "1"
+            || hasStoredGoogleCalendarOAuthState(state);
+          if (code && !isGoogleCalendarOauth) {
+            const { error } = await supabase.auth.exchangeCodeForSession(code);
+            if (!error) {
+              url.searchParams.delete("code");
+              url.searchParams.delete("state");
+              window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+            }
+          }
+          if (shouldShowRecovery && url.pathname !== "/password-recovery") {
+            window.history.replaceState({}, "", `/password-recovery${window.location.hash || ""}`);
           }
         }
-        if (shouldShowRecovery && url.pathname !== "/password-recovery") {
-          window.history.replaceState({}, "", `/password-recovery${window.location.hash || ""}`);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (shouldShowRecovery) {
+          setAuthRecoveryMode(true);
         }
+        setSession(session);
+        if (session && !shouldShowRecovery) {
+          await loadData(session.user.id);
+          await recordAuthActivity({
+            userId: session.user.id,
+            email: session.user.email || "",
+            action: "session_restored",
+            sessionKey: session.access_token || session.user.id,
+          });
+        }
+        else setLoading(false);
+      } catch (error) {
+        console.error("Shepherd could not initialize the current session.", error);
+        reportDataLoadIssue("Shepherd could not initialize this session. Please try again.", error);
+        setLoading(false);
       }
-      const { data: { session } } = await supabase.auth.getSession();
-      if (shouldShowRecovery) {
-        setAuthRecoveryMode(true);
-      }
-      setSession(session);
-      if (session && !shouldShowRecovery) {
-        await loadData(session.user.id);
-        await recordAuthActivity({
-          userId: session.user.id,
-          email: session.user.email || "",
-          action: "session_restored",
-          sessionKey: session.access_token || session.user.id,
-        });
-      }
-      else setLoading(false);
     };
-    initializeSession();
+    initializeSession().catch((error) => {
+      console.error("Shepherd hit an unexpected session bootstrap error.", error);
+      reportDataLoadIssue("Shepherd could not initialize this session. Please try again.", error);
+      setLoading(false);
+    });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY") {
         setAuthRecoveryMode(true);
@@ -14196,16 +14212,22 @@ function AppShell() {
           setLoading(false);
           return;
         }
-        loadData(session.user.id).then(async () => {
-          if (event === "SIGNED_IN") {
-            await recordAuthActivity({
-              userId: session.user.id,
-              email: session.user.email || "",
-              action: "logged_in",
-              sessionKey: session.access_token || session.user.id,
-            });
-          }
-        });
+        loadData(session.user.id)
+          .then(async () => {
+            if (event === "SIGNED_IN") {
+              await recordAuthActivity({
+                userId: session.user.id,
+                email: session.user.email || "",
+                action: "logged_in",
+                sessionKey: session.access_token || session.user.id,
+              });
+            }
+          })
+          .catch((error) => {
+            console.error("Shepherd could not refresh this session after an auth event.", error);
+            reportDataLoadIssue("Shepherd could not refresh this session. Please try again.", error);
+            setLoading(false);
+          });
       }
       else {
         setAuthRecoveryMode(false);

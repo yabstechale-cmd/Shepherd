@@ -2333,14 +2333,6 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
           )}
           <button
             onClick={() => {
-              if (typeof window !== "undefined") window.location.href = "/sample";
-            }}
-            style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:13,marginTop:2}}
-          >
-            View Sample Website
-          </button>
-          <button
-            onClick={() => {
               if (typeof window !== "undefined") window.location.href = "/home";
             }}
             style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:13,marginTop:2}}

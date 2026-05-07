@@ -2503,7 +2503,7 @@ function LandingPage() {
                     })}
                   </div>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"44px minmax(0,1fr) 44px",gap:14,alignItems:"center",width:"100%"}}>
+                <div style={{display:"grid",gridTemplateColumns:"44px minmax(0,960px) 44px",gap:14,alignItems:"center",width:"100%",justifyContent:"center"}}>
                   <button
                     type="button"
                     onClick={showPreviousPreview}

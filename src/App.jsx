@@ -2469,6 +2469,39 @@ function LandingPage() {
                 Here are a few real views from Shepherd so you can get a feel for the dashboard, task flow, and finances experience before stepping into the sample site.
               </div>
               <div style={{display:"grid",gap:16,width:"100%"}}>
+                <div style={{display:"grid",gap:12,justifyItems:"center"}}>
+                  <div style={{fontSize:16,color:C.heading,fontWeight:700}}>
+                    {selectedPreview.title}
+                  </div>
+                  <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:720}}>
+                    {selectedPreview.description}
+                  </div>
+                  <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
+                    {previewOptions.map((option) => {
+                      const isActive = option.id === selectedPreview.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setActivePreview(option.id)}
+                          aria-label={`Show ${option.title} preview`}
+                          style={{
+                            border:`1px solid ${isActive ? C.gold : C.border}`,
+                            borderRadius:999,
+                            background:isActive ? (ACTIVE_THEME_MODE === "dark" ? "rgba(201,168,76,.1)" : "rgba(162,126,25,.1)") : C.surface,
+                            color:isActive ? C.gold : C.muted,
+                            padding:"8px 14px",
+                            fontSize:13,
+                            fontWeight:700,
+                            cursor:"pointer",
+                          }}
+                        >
+                          {option.title}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div style={{display:"grid",gridTemplateColumns:"44px minmax(0,1fr) 44px",gap:14,alignItems:"center",width:"100%"}}>
                   <button
                     type="button"
@@ -2492,42 +2525,9 @@ function LandingPage() {
                     <span style={{fontSize:20,lineHeight:1}}>›</span>
                   </button>
                 </div>
-                <div style={{display:"grid",gap:8,justifyItems:"center"}}>
-                  <div style={{fontSize:16,color:C.heading,fontWeight:700}}>
-                    {selectedPreview.title}
-                  </div>
-                  <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:720}}>
-                    {selectedPreview.description}
-                  </div>
-                </div>
-                <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
-                  {previewOptions.map((option) => {
-                    const isActive = option.id === selectedPreview.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setActivePreview(option.id)}
-                        aria-label={`Show ${option.title} preview`}
-                        style={{
-                          border:`1px solid ${isActive ? C.gold : C.border}`,
-                          borderRadius:999,
-                          background:isActive ? (ACTIVE_THEME_MODE === "dark" ? "rgba(201,168,76,.1)" : "rgba(162,126,25,.1)") : C.surface,
-                          color:isActive ? C.gold : C.muted,
-                          padding:"8px 14px",
-                          fontSize:13,
-                          fontWeight:700,
-                          cursor:"pointer",
-                        }}
-                      >
-                        {option.title}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
               <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/sample"; }} style={{justifyContent:"center",paddingInline:22}}>
-                See What Shepherd Looks Like
+                Step Inside Shepherd
               </button>
             </div>
           </div>

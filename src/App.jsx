@@ -2368,16 +2368,20 @@ function LandingPage() {
 
   const featureCards = [
     {
-      title: "Keep Church Work Moving Together",
-      body: "Shepherd brings tasks, event planning, calendar rhythm, finances, reviews, and approvals into one shared system so your team can stop juggling disconnected tools.",
+      title: "Tasks and approvals stay visible",
+      body: "Your team can assign work, track review steps, and keep ownership clear, which means less confusion about who has the ball and fewer stalled projects.",
     },
     {
-      title: "Build Around Ministry Reality",
-      body: "From youth events and content requests to staff availability and budget tracking, Shepherd is designed around the real workflows a church team actually lives in each week.",
+      title: "Events and weekly planning stay coordinated",
+      body: "Requests, planning details, calendar rhythm, and ministry follow-through can live together, helping your team prepare ahead instead of scrambling late.",
     },
     {
-      title: "Lead With Clarity, Not Guesswork",
-      body: "Shepherd helps pastors and staff see what needs attention, who owns what, and where work stands without chasing updates through texts, side notes, or scattered spreadsheets.",
+      title: "Budgets and spending stay understandable",
+      body: "Leaders can see ministry budgets, transactions, and purchase activity in one place, making it easier to steward money well and answer questions quickly.",
+    },
+    {
+      title: "Communication becomes easier to trust",
+      body: "Comments, updates, and notifications stay tied to the actual work, so your team spends less time chasing status and more time moving the mission forward.",
     },
   ];
 
@@ -2390,14 +2394,14 @@ function LandingPage() {
           <div style={{position:"absolute",left:"clamp(18px, 4vw, 44px)",bottom:"-18px",width:"min(34vw, 420px)",opacity:ACTIVE_THEME_MODE === "dark" ? 0.08 : 0.06,pointerEvents:"none"}}>
             <img src={heroWatermark} alt="" style={{display:"block",width:"100%",height:"auto",objectFit:"contain"}} />
           </div>
-          <div style={{width:"100%",padding:"68px clamp(20px, 4vw, 54px) 120px",position:"relative"}}>
+          <div style={{width:"100%",padding:"54px clamp(20px, 4vw, 54px) 120px",position:"relative"}}>
             <div style={{display:"flex",justifyContent:"flex-start",alignItems:"flex-start",marginBottom:72}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:20,width:"100%",flexWrap:"nowrap"}}>
                 <button
                   onClick={() => { if (typeof window !== "undefined") window.location.href = "/home"; }}
                   style={{display:"grid",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",color:C.text,textAlign:"left",minWidth:0,flex:"1 1 auto"}}
                 >
-                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:"clamp(52px, 8vw, 104px)",lineHeight:.95,color:C.gold}}>Shepherd</div>
+                  <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:12,lineHeight:1,color:C.gold,paddingTop:2}}>Shepherd</div>
                 </button>
                 <details style={{position:"relative"}}>
                   <summary className="btn-outline" style={{listStyle:"none",cursor:"pointer",padding:"9px 12px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,whiteSpace:"nowrap"}}>
@@ -2420,7 +2424,7 @@ function LandingPage() {
                 Organize. Equip. <span style={{color:C.gold}}>Shepherd.</span>
               </h1>
               <div style={{maxWidth:860,fontSize:"clamp(16px, 2vw, 22px)",lineHeight:1.7,color:C.muted}}>
-                Shepherd helps your church team move with more clarity, stronger follow-through, and less energy lost chasing updates.
+                Shepherd helps your church team move with more clarity, visibility, and accountability so fewer things fall through the cracks and less energy gets spent chasing updates.
               </div>
               <button className="btn-gold" onClick={() => { if (typeof window !== "undefined") window.location.href = "/create-account"; }} style={{justifyContent:"center",paddingInline:22}}>
                 Get Started
@@ -2431,24 +2435,15 @@ function LandingPage() {
 
         <div style={{width:"100%",padding:"24px clamp(20px, 4vw, 54px) 72px"}}>
           <div style={{display:"grid",gap:24}}>
-            <div className="card" style={{padding:"30px clamp(22px, 3vw, 38px)",background:C.card,border:`1px solid ${C.border}`,textAlign:"left",boxShadow:ACTIVE_THEME_MODE === "dark" ? "0 24px 70px rgba(0,0,0,.22)" : "0 26px 70px rgba(31,40,62,.08)"}}>
-              <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase",marginBottom:14}}>
-                What Shepherd Is
-              </div>
-              <div style={{fontSize:"clamp(18px, 2.2vw, 24px)",lineHeight:1.5,color:C.text,fontWeight:600,marginBottom:18,maxWidth:940}}>
-                Shepherd helps church teams lead from one place for tasks, approvals, events, budgets, and calendar rhythm, so fewer things fall through the cracks and less energy gets spent chasing updates.
-              </div>
-              <p style={{fontSize:15,color:C.muted,lineHeight:1.85,margin:0,maxWidth:820}}>
-                It was built around the real pace of church leadership: ministry planning, shared responsibility, reviews, communication, and financial visibility. The goal is simple: more clarity, more follow-through, and more care for the people doing the work.
-              </p>
-            </div>
-
             <div className="card" style={{padding:26,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"left"}}>
-              <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What It Can Do</div>
-              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:18}}>
+              <div style={{fontSize:11,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Can Do</div>
+              <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:900}}>
+                Shepherd is built to help a church team stay aligned, prepared, and accountable in the everyday work of ministry. Here is what that can look like in practice:
+              </div>
+              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:18}}>
                 {featureCards.map((card) => (
                   <div key={card.title} style={{border:`1px solid ${C.border}`,borderRadius:16,padding:18,background:C.surface,display:"grid",gap:10}}>
-                    <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:28,lineHeight:1.1,color:C.heading}}>
+                    <div style={{fontFamily:"'Young Serif Medium', 'Young Serif', Georgia, serif",fontSize:26,lineHeight:1.1,color:C.heading}}>
                       {card.title}
                     </div>
                     <div style={{fontSize:14,color:C.muted,lineHeight:1.8}}>

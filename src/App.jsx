@@ -2465,10 +2465,10 @@ function LandingPage() {
 
             <div className="card" style={{padding:22,background:C.card,border:`1px solid ${C.border}`,display:"grid",gap:14,textAlign:"center",justifyItems:"center"}}>
               <div style={{fontSize:14,color:C.gold,fontWeight:800,letterSpacing:".12em",textTransform:"uppercase"}}>What Shepherd Looks Like</div>
-              <div style={{width:"100%",height:1,background:C.border}} />
               <div style={{fontSize:14,color:C.muted,lineHeight:1.8,maxWidth:860}}>
                 Here are a few real views from Shepherd so you can get a feel for the dashboard, task flow, and finances experience before stepping into the sample site.
               </div>
+              <div style={{width:"100%",height:1,background:C.border}} />
               <div style={{display:"grid",gap:16,width:"100%"}}>
                 <div style={{display:"grid",gap:12,justifyItems:"center"}}>
                   <div style={{fontSize:16,color:C.heading,fontWeight:700}}>

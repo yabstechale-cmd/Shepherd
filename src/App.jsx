@@ -2372,7 +2372,7 @@ function LandingPage() {
       <div style={{minHeight:"100vh",background:C.bg,color:C.text}}>
         <div style={{position:"relative",overflow:"hidden",background:heroTone,borderBottom:`1px solid ${C.border}`}}>
           <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at 6% 18%, ${C.goldGlow} 0%, transparent 42%)`}} />
-          <div style={{position:"absolute",right:"clamp(18px, 4vw, 44px)",bottom:"clamp(18px, 6vw, 44px)",width:"clamp(220px, 44vw, 420px)",opacity:ACTIVE_THEME_MODE === "dark" ? 0.08 : 0.06,pointerEvents:"none"}}>
+          <div style={{position:"absolute",right:"clamp(18px, 4vw, 44px)",top:"clamp(10px, 3vw, 28px)",width:"clamp(220px, 44vw, 420px)",opacity:ACTIVE_THEME_MODE === "dark" ? 0.08 : 0.06,pointerEvents:"none"}}>
             <img src={heroWatermark} alt="" style={{display:"block",width:"100%",height:"auto",objectFit:"contain"}} />
           </div>
           <div style={{width:"100%",padding:"34px clamp(20px, 4vw, 54px) 120px",position:"relative"}}>

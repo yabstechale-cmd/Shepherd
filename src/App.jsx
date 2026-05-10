@@ -1852,6 +1852,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
   const [churchAccess, setChurchAccess] = useState({ church: null, users: [] });
   const [form, setForm] = useState({ userId: "", email: "", password: "", confirmPassword: "", churchName: "", adminFirstName: "", adminLastName: "", adminRole: "church_administrator" });
   const isLogin = mode === "login";
+  const isFirstTimeLogin = mode === "signup";
   const isForgotPassword = mode === "forgot";
   const isChurchRegistration = mode === "church";
   const isPasswordReset = mode === "reset";
@@ -1873,6 +1874,10 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
   }, [initialMode, visibleModes]);
 
   useEffect(() => {
+    if (!visibleModes.includes("signup")) {
+      setChurches([]);
+      return () => {};
+    }
     let active = true;
     fetchChurchList()
       .then((list) => {
@@ -1888,12 +1893,12 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
     return () => {
       active = false;
     };
-  }, []);
+  }, [visibleModes]);
 
   useEffect(() => {
     let active = true;
 
-    if (isChurchRegistration) {
+    if (!isFirstTimeLogin) {
       setChurchAccess({ church: null, users: [] });
       setLookupLoading(false);
       setError("");
@@ -1931,7 +1936,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
     return () => {
       active = false;
     };
-  }, [selectedChurchId, isChurchRegistration]);
+  }, [selectedChurchId, isFirstTimeLogin]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1985,27 +1990,14 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
           ? `Church registered. Your church framework is ready to use. Internal church code: ${generatedCode}.`
               : `Church registered. Check your email to verify the primary administrator account, then log in. Internal church code: ${generatedCode}.`);
       } else if (isForgotPassword) {
-        if (!churchAccess.church) throw new Error("Select your church first.");
-        if (!form.userId) throw new Error("Select your name first.");
-        const selected = churchAccess.users.find((user) => user.id === form.userId);
-        if (!selected?.has_registered_account) throw new Error("That person has not registered yet. Use First Time Log In instead.");
+        if (!form.email || !isValidEmailAddress(form.email)) throw new Error("Enter the email address tied to your account.");
         const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/password-recovery` : undefined;
-        const { error: resetError } = await supabase.functions.invoke("request-password-reset", {
-          body: {
-            churchId: churchAccess.church.id,
-            staffId: selected.id,
-            redirectTo,
-          },
+        const normalizedEmail = form.email.trim().toLowerCase();
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+          redirectTo,
         });
-        if (resetError) {
-          let functionMessage = "";
-          if (resetError.context && typeof resetError.context.json === "function") {
-            const payload = await resetError.context.json().catch(() => null);
-            functionMessage = payload?.error || "";
-          }
-          throw new Error(functionMessage || resetError.message || "We couldn't send that reset email.");
-        }
-        setMessage("Password reset email sent. Use the link in that email to choose a new password.");
+        if (resetError) throw resetError;
+        setMessage("If an account exists for that email, a password reset link has been sent.");
         setMode("login");
         setForm((current) => ({ ...current, password: "", confirmPassword: "", email: "" }));
       } else if (isPasswordReset) {
@@ -2020,22 +2012,11 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         setForm((current) => ({ ...current, password: "", confirmPassword: "" }));
         onPasswordResetComplete?.();
       } else if (isLogin) {
-        if (!churchAccess.church) throw new Error("Select your church first.");
-        if (!form.userId) throw new Error("Select your name first.");
-        const selected = churchAccess.users.find((user) => user.id === form.userId);
-        if (!selected) throw new Error("Select your name first.");
-        if (!selected.has_registered_account) throw new Error("That person has not registered yet. Use First Time Log In instead.");
         if (!form.email || !isValidEmailAddress(form.email)) throw new Error("Enter the email address tied to this account.");
         if (!form.password) throw new Error("Enter your password.");
         const normalizedEmail = form.email.trim().toLowerCase();
         const { error: loginError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password: form.password });
-        if (loginError) throw loginError;
-        try {
-          await claimStaffProfile(selected.id, churchAccess.church.id);
-        } catch (claimError) {
-          await supabase.auth.signOut();
-          throw new Error(claimError?.message || "That email/password does not match the selected church account.");
-        }
+        if (loginError) throw new Error("That email or password is incorrect.");
       } else {
         if (!churchAccess.church) throw new Error("Select your church first.");
         if (!form.userId) throw new Error("Select your name first.");
@@ -2096,9 +2077,9 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
               : isPasswordReset
               ? "Choose a new password for your account."
               : isForgotPassword
-              ? "Choose your church and account for password reset."
+              ? "Enter the email for the account you need to recover."
               : isLogin
-              ? "Choose your church and account to sign in."
+              ? "Use your Shepherd email and password to sign in."
               : "Choose your church and account to get started."}
           </p>
         </div>
@@ -2115,7 +2096,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
         {error && <div style={{background:"rgba(224,82,82,.1)",border:"1px solid rgba(224,82,82,.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.danger,marginBottom:14}}>{error}</div>}
         {message && <div style={{background:"rgba(82,200,122,.1)",border:"1px solid rgba(82,200,122,.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.success,marginBottom:14}}>{message}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {!isChurchRegistration && !isPasswordReset && (
+          {isFirstTimeLogin && (
             <select
               className="input-field"
               value={selectedChurchId}
@@ -2146,7 +2127,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
                 ))}
               </select>
             </>
-          ) : !isPasswordReset ? (
+          ) : isFirstTimeLogin ? (
             <select className="input-field" value={form.userId} onChange={e=>setForm({...form,userId:e.target.value})} style={{background:C.surface}} disabled={!churchAccess.church || lookupLoading || churchAccess.users.length === 0}>
               <option value="">{lookupLoading ? "Looking up church..." : "Select your name"}</option>
               {churchAccess.users.map((user) => (
@@ -2179,12 +2160,12 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
               </div>
             </div>
           )}
-          {!isChurchRegistration && selectedChurchId && churchAccess.church && churchAccess.users.length === 0 && (
+          {isFirstTimeLogin && selectedChurchId && churchAccess.church && churchAccess.users.length === 0 && (
             <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
               No staff have been added to this church yet. Ask the church account admin to add the team in <span style={{color:C.text}}>Church Team</span> before anyone else uses First Time Login.
             </div>
           )}
-          {(mode === "signup" || isChurchRegistration || isLogin) && (
+          {(isFirstTimeLogin || isChurchRegistration || isLogin || isForgotPassword) && (
             <input className="input-field" placeholder={isLogin ? "Email address" : "Email address"} type="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
           )}
           {!isForgotPassword && (

@@ -43,9 +43,9 @@ const applyThemePalette = (mode = DEFAULT_THEME_MODE) => {
 };
 const getStoredThemeMode = (userId = "") => {
   if (typeof window === "undefined") return DEFAULT_THEME_MODE;
-  const specific = window.localStorage.getItem(getThemeStorageKey(userId));
+  const specific = safeLocalStorageGet(getThemeStorageKey(userId));
   if (specific === "dark" || specific === "light") return specific;
-  const global = window.localStorage.getItem(GLOBAL_THEME_STORAGE_KEY);
+  const global = safeLocalStorageGet(GLOBAL_THEME_STORAGE_KEY);
   return global === "light" || global === "dark" ? global : DEFAULT_THEME_MODE;
 };
 
@@ -244,6 +244,36 @@ const TUTORIAL_AUTO_PROMPT_LIMIT = 10;
 const NOTIFICATION_RETENTION_MS = 40 * 24 * 60 * 60 * 1000;
 const EVENT_LOCATION_AREA_OPTIONS = ["Youth Room", "Kids Rooms", "Sanctuary", "Kitchen / Dining Area"];
 const ACTIVITY_LOG_ALLOWED_USER_IDS = ["725a6cc4-106d-4c7f-9819-b994c1927f53"];
+
+const safeLocalStorageGet = (key) => {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    console.warn(`Could not read Shepherd local storage key "${key}".`, error);
+    return null;
+  }
+};
+const safeLocalStorageSet = (key, value) => {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.warn(`Could not write Shepherd local storage key "${key}".`, error);
+    return false;
+  }
+};
+const safeLocalStorageRemove = (key) => {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.removeItem(key);
+    return true;
+  } catch (error) {
+    console.warn(`Could not remove Shepherd local storage key "${key}".`, error);
+    return false;
+  }
+};
 
 const getGoogleCalendarOAuthStateStorageKey = (churchId) => `${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:${churchId || "anon"}`;
 const getTutorialCompletedStorageKey = (userId) => `${TUTORIAL_COMPLETED_STORAGE_PREFIX}:${userId || "anon"}`;
@@ -1139,7 +1169,7 @@ const formatRoleTitles = (roleValues) => {
   if (labels.length === 0) return "Staff";
   if (labels.length === 1) return labels[0];
   if (labels.length === 2) return `${labels[0]} & ${labels[1]}`;
-  return `${labels.slice(0, -1).join(", ")} & ${labels.at(-1)}`;
+  return `${labels.slice(0, -1).join(", ")} & ${labels[labels.length - 1]}`;
 };
 const buildRoleBundle = (roleValues) => {
   const selectedRoles = normalizeSelectedRoles(roleValues);
@@ -1956,11 +1986,11 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const removedAccessMessage = window.localStorage.getItem(REMOVED_CHURCH_ACCESS_MESSAGE_KEY);
-    if (!removedAccessMessage) return;
-    setError(removedAccessMessage);
-    setMessage("");
-    window.localStorage.removeItem(REMOVED_CHURCH_ACCESS_MESSAGE_KEY);
+  const removedAccessMessage = safeLocalStorageGet(REMOVED_CHURCH_ACCESS_MESSAGE_KEY);
+  if (!removedAccessMessage) return;
+  setError(removedAccessMessage);
+  setMessage("");
+  safeLocalStorageRemove(REMOVED_CHURCH_ACCESS_MESSAGE_KEY);
   }, []);
 
   const submit = async () => {
@@ -13759,19 +13789,19 @@ function AppShell() {
 
       let normalizedProfile = prof ? normalizeAccessUser(prof) : null;
       if (typeof window !== "undefined" && normalizedProfile?.id) {
-        const storedPhoto = window.localStorage.getItem(`shepherd-profile-photo:${normalizedProfile.id}`);
+        const storedPhoto = safeLocalStorageGet(`shepherd-profile-photo:${normalizedProfile.id}`);
         if (storedPhoto) normalizedProfile = { ...normalizedProfile, photo_url: storedPhoto };
       }
       if (typeof window !== "undefined") {
-        const rawTrash = window.localStorage.getItem(getTrashStorageKey(prof?.church_id));
+        const rawTrash = safeLocalStorageGet(getTrashStorageKey(prof?.church_id));
         setTrashItems(rawTrash ? readStoredJson(rawTrash, []) : []);
       }
       if (prof?.id && typeof window !== "undefined") {
-        const raw = window.localStorage.getItem(getNotificationStorageKey(prof.id));
+        const raw = safeLocalStorageGet(getNotificationStorageKey(prof.id));
         setReadNotificationIds(raw ? readStoredJson(raw, []) : []);
-        const archivedRaw = window.localStorage.getItem(getArchivedNotificationStorageKey(prof.id));
+        const archivedRaw = safeLocalStorageGet(getArchivedNotificationStorageKey(prof.id));
         setArchivedNotificationIds(archivedRaw ? readStoredJson(archivedRaw, []) : []);
-        const favoritesRaw = window.localStorage.getItem(getFavoritesStorageKey(prof.id));
+        const favoritesRaw = safeLocalStorageGet(getFavoritesStorageKey(prof.id));
         const localFavorites = favoritesRaw ? readStoredJson(favoritesRaw, []).map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
         const serverFavorites = Array.isArray(prof.favorite_items) ? prof.favorite_items.map(normalizeFavoriteItem).filter(isSupportedFavoriteItem) : [];
         const resolvedFavorites = serverFavorites.length ? serverFavorites : localFavorites;
@@ -13886,17 +13916,17 @@ function AppShell() {
 
   useEffect(() => {
     if (!profile?.id) return;
-    window.localStorage.setItem(getNotificationStorageKey(profile.id), JSON.stringify(cleanedReadNotificationIds));
+    safeLocalStorageSet(getNotificationStorageKey(profile.id), JSON.stringify(cleanedReadNotificationIds));
   }, [profile?.id, cleanedReadNotificationIds]);
 
   useEffect(() => {
     if (!profile?.id) return;
-    window.localStorage.setItem(getArchivedNotificationStorageKey(profile.id), JSON.stringify(cleanedArchivedNotificationIds));
+    safeLocalStorageSet(getArchivedNotificationStorageKey(profile.id), JSON.stringify(cleanedArchivedNotificationIds));
   }, [profile?.id, cleanedArchivedNotificationIds]);
 
   useEffect(() => {
     if (!profile?.id) return;
-    window.localStorage.setItem(getFavoritesStorageKey(profile.id), JSON.stringify(favorites));
+    safeLocalStorageSet(getFavoritesStorageKey(profile.id), JSON.stringify(favorites));
   }, [profile?.id, favorites]);
 
   useEffect(() => {
@@ -13920,7 +13950,7 @@ function AppShell() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!session || authRecoveryMode || isPasswordRecoveryRoute || isRootRoute || isPublicEventRequestRoute || isPublicSampleRoute || isLandingRoute) return;
-    window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, safeActive);
+    safeLocalStorageSet(ACTIVE_PAGE_STORAGE_KEY, safeActive);
     const nextPath = PAGE_PATHS[safeActive] || "/dashboard";
     if (window.location.pathname !== nextPath) {
       window.history.pushState({ shepherdPage: safeActive }, "", nextPath);
@@ -13930,7 +13960,7 @@ function AppShell() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!session || authRecoveryMode || isPasswordRecoveryRoute || !isRootRoute) return;
-    const storedPage = window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
+    const storedPage = safeLocalStorageGet(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
     const nextPage = allowedPages.has(storedPage) ? storedPage : safeActive;
     const nextPath = PAGE_PATHS[nextPage] || "/dashboard";
     if (active !== nextPage) {
@@ -13953,7 +13983,7 @@ function AppShell() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !church?.id) return;
-    window.localStorage.setItem(getTrashStorageKey(church.id), JSON.stringify(trashItems));
+    safeLocalStorageSet(getTrashStorageKey(church.id), JSON.stringify(trashItems));
   }, [church?.id, trashItems]);
 
   useEffect(() => {
@@ -14101,7 +14131,7 @@ function AppShell() {
     if (typeof window === "undefined" || loading || !session || !profile?.id || isPublicEventRequestRoute) return;
     const storageKey = getTutorialCompletedStorageKey(profile.id);
     if (profile.walkthrough_completed_at) return;
-    if (window.localStorage.getItem(storageKey) === "true") {
+      if (safeLocalStorageGet(storageKey) === "true") {
       const completedAt = new Date().toISOString();
       setProfile((current) => current?.id === profile.id ? { ...current, walkthrough_completed_at: completedAt } : current);
       supabase
@@ -14114,12 +14144,12 @@ function AppShell() {
     if (tutorialAutoPromptedUserRef.current === profile.id) return;
     const serverPromptCount = Number.parseInt(profile.walkthrough_prompt_count || 0, 10) || 0;
     const promptCountKey = getTutorialPromptCountStorageKey(profile.id);
-    const localPromptCount = Number.parseInt(window.localStorage.getItem(promptCountKey) || "0", 10) || 0;
+    const localPromptCount = Number.parseInt(safeLocalStorageGet(promptCountKey) || "0", 10) || 0;
     const promptCount = Math.max(serverPromptCount, localPromptCount);
     if (promptCount >= TUTORIAL_AUTO_PROMPT_LIMIT) return;
     const nextPromptCount = promptCount + 1;
     tutorialAutoPromptedUserRef.current = profile.id;
-    window.localStorage.setItem(promptCountKey, String(nextPromptCount));
+    safeLocalStorageSet(promptCountKey, String(nextPromptCount));
     setProfile((current) => current?.id === profile.id ? { ...current, walkthrough_prompt_count: nextPromptCount } : current);
     supabase
       .from("profiles")
@@ -14321,9 +14351,9 @@ function AppShell() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(GLOBAL_THEME_STORAGE_KEY, themeMode);
+    safeLocalStorageSet(GLOBAL_THEME_STORAGE_KEY, themeMode);
     if (profile?.id) {
-      window.localStorage.setItem(getThemeStorageKey(profile.id), themeMode);
+      safeLocalStorageSet(getThemeStorageKey(profile.id), themeMode);
     }
   }, [profile?.id, themeMode]);
 

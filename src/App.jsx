@@ -7844,6 +7844,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const [operationsSection, setOperationsSection] = useState("home");
   const [timeOffMode, setTimeOffMode] = useState("");
   const [lockupMode, setLockupMode] = useState("home");
+  const [lockupEditingId, setLockupEditingId] = useState("");
   const [operationsMessage, setOperationsMessage] = useState("");
   const [operationsError, setOperationsError] = useState("");
   const [operationsSubmitting, setOperationsSubmitting] = useState(false);
@@ -7891,15 +7892,6 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     .slice()
     .sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
   const [lockupWindowStart, setLockupWindowStart] = useState(() => toAppDateValue(startOfWeekMonday(new Date())));
-  const currentLockupAssignment = lockupAssignments.find((assignment) => {
-    if (!assignment?.week_of) return false;
-    const weekStart = parseAppDate(assignment.week_of);
-    if (!weekStart) return false;
-    const thisWeekStart = startOfWeekMonday(new Date());
-    return weekStart.getFullYear() === thisWeekStart.getFullYear()
-      && weekStart.getMonth() === thisWeekStart.getMonth()
-      && weekStart.getDate() === thisWeekStart.getDate();
-  }) || null;
   const [lockupForm, setLockupForm] = useState(() => {
     const baseWeek = startOfWeekMonday(new Date());
     const weekValue = toAppDateValue(baseWeek);
@@ -7986,6 +7978,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const resetOperationsFlow = () => {
     setTimeOffMode("");
     setLockupMode("home");
+    setLockupEditingId("");
     setOperationsMessage("");
     setOperationsError("");
     setOperationsSubmitting(false);
@@ -8239,6 +8232,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     setOperationsError("");
     setLockupMode("form");
     if (assignment) {
+      setLockupEditingId(assignment.id || "");
       setLockupForm({
         weekOf: toAppDateValue(startOfWeekMonday(assignment.week_of)),
         assigneeNames: Array.isArray(assignment.assignee_names) ? assignment.assignee_names : [],
@@ -8246,6 +8240,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       });
       return;
     }
+    setLockupEditingId("");
     const baseWeek = startOfWeekMonday(weekOfOverride || new Date());
     const weekValue = toAppDateValue(baseWeek);
     setLockupForm({
@@ -8306,6 +8301,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         const next = [...(current || []).filter((assignment) => assignment.id !== saved.id && assignment.week_of !== saved.week_of), saved];
         return next.sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
       });
+      setLockupWindowStart(normalizedWeekOf);
       await createNotificationsForNames({
         users: previewUsers,
         names: saved.assignee_names.filter((name) => !samePerson(name, profile?.full_name)),
@@ -8380,9 +8376,11 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const renderLockupForm = () => (
     <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,background:C.surface}}>
       <div>
-        <div style={{fontSize:18,fontWeight:600,color:C.text}}>Church Lock Up</div>
+        <div style={{fontSize:18,fontWeight:600,color:C.text}}>
+          {lockupEditingId ? "Edit Lock Up Week" : "Assign Lock Up Week"}
+        </div>
         <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
-          Assign who is responsible for locking up after services that week so Operations always has a clear owner.
+          Pick the week, choose the staff covering it, and save.
         </div>
       </div>
       <div style={{display:"grid",gap:6}}>
@@ -8417,29 +8415,29 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       </div>
       <div style={{display:"grid",gap:6}}>
         <label style={{fontSize:12,color:C.muted}}>Assigned Staff</label>
-        <div style={{display:"grid",gap:10}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
           {staffOptions.length === 0 && (
             <div style={{fontSize:12,color:C.muted}}>No staff records are available to assign yet.</div>
           )}
           {staffOptions.map((name) => {
             const selected = lockupForm.assigneeNames.some((entry) => samePerson(entry, name));
             return (
-              <label key={name} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.text}}>
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setLockupForm((current) => ({
-                      ...current,
-                      assigneeNames: checked
-                        ? [...current.assigneeNames, name]
-                        : current.assigneeNames.filter((entry) => !samePerson(entry, name)),
-                    }));
-                  }}
-                />
-                <span>{name}</span>
-              </label>
+              <button
+                key={name}
+                type="button"
+                onClick={() => {
+                  setLockupForm((current) => ({
+                    ...current,
+                    assigneeNames: selected
+                      ? current.assigneeNames.filter((entry) => !samePerson(entry, name))
+                      : [...current.assigneeNames, name],
+                  }));
+                }}
+                className={selected ? "btn-gold-compact" : "btn-outline"}
+                style={{padding:"8px 12px",fontSize:12}}
+              >
+                {name}
+              </button>
             );
           })}
         </div>
@@ -8448,11 +8446,11 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         <label style={{fontSize:12,color:C.muted}}>Notes</label>
         <textarea
           className="input-field"
-          rows={4}
+          rows={3}
           value={lockupForm.notes}
           onChange={(e) => setLockupForm((current) => ({ ...current, notes: e.target.value }))}
-          placeholder="Example: Include sanctuary, lobby, and youth entrance checks after the last service."
-          style={{minHeight:120,resize:"vertical"}}
+          placeholder="Optional notes for that week."
+          style={{minHeight:96,resize:"vertical"}}
         />
       </div>
       {operationsError && <div style={{fontSize:12,color:C.danger}}>{operationsError}</div>}
@@ -8460,7 +8458,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
         <button className="btn-outline" onClick={() => setLockupMode("home")}>Back</button>
         <button className="btn-gold" onClick={submitLockupAssignment} disabled={operationsSubmitting}>
-          {operationsSubmitting ? "Saving..." : "Save Lock Up Assignment"}
+          {operationsSubmitting ? "Saving..." : lockupEditingId ? "Save Changes" : "Save Assignment"}
         </button>
       </div>
     </div>
@@ -8472,18 +8470,18 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         <div>
           <div style={{fontSize:18,fontWeight:600,color:C.text}}>Weekly Lock Up</div>
           <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
-            Keep one visible record of who is assigned to close the building after services each week, five weeks at a time.
+            Five weeks at a time, with one clear owner for each week.
           </div>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <button className="btn-outline" onClick={() => shiftLockupWindow(-1)} style={{padding:"7px 10px"}}>
-            Previous 5 Weeks
+            Previous
           </button>
           <button className="btn-outline" onClick={() => setLockupWindowStart(toAppDateValue(startOfWeekMonday(new Date())))} style={{padding:"7px 10px"}}>
-            This 5-Week Window
+            Today
           </button>
           <button className="btn-outline" onClick={() => shiftLockupWindow(1)} style={{padding:"7px 10px"}}>
-            Next 5 Weeks
+            Next
           </button>
           <button className="btn-gold-compact" onClick={() => openLockupAssignment(null, visibleLockupWeeks[0]?.weekOf || "")}>
             Assign Week
@@ -8493,17 +8491,6 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       {visibleLockupRangeLabel && (
         <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
           Showing {visibleLockupRangeLabel}
-        </div>
-      )}
-      {currentLockupAssignment && (
-        <div className="card" style={{padding:18,display:"grid",gap:8,background:C.card}}>
-          <div style={{fontSize:11,color:C.gold,textTransform:"uppercase",letterSpacing:".12em"}}>This Week</div>
-          <div style={{fontSize:16,fontWeight:600,color:C.text}}>
-            {currentLockupAssignment.assignee_names.join(", ") || "No one assigned yet"}
-          </div>
-          <div style={{fontSize:12,color:C.muted}}>
-            {fmtWeekRange(currentLockupAssignment.week_of)} • {currentLockupAssignment.service_label || "Sunday Services"}
-          </div>
         </div>
       )}
       <div style={{display:"grid",gap:12}}>
@@ -8523,7 +8510,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                       <span style={{fontSize:11,color:C.gold,textTransform:"uppercase",letterSpacing:".12em"}}>This Week</span>
                     )}
                     <div style={{fontSize:12,color:C.muted}}>
-                      {entry.label} • {assignment?.service_label || "Sunday Services"}
+                      {entry.label}
                     </div>
                   </div>
                   <div style={{fontSize:16,fontWeight:600,color:C.text,marginTop:6}}>

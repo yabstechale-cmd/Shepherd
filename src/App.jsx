@@ -13288,7 +13288,7 @@ function AppShell() {
   applyThemePalette(themeMode);
   syncThemeStyles();
 
-  const allowedPages = new Set([
+  const allowedPages = useMemo(() => new Set([
     "dashboard",
     "notifications",
     "account",
@@ -13302,7 +13302,7 @@ function AppShell() {
     "budget",
     "calendar",
     ...(shouldShowChurchTeam(profile, church) ? ["church-team"] : []),
-  ]);
+  ]), [profile, church]);
   const safeActive = allowedPages.has(active) ? active : "dashboard";
   const reportDataLoadIssue = useCallback((message, error) => {
     console.error(message, error);
@@ -13912,6 +13912,20 @@ function AppShell() {
   }, [safeActive, session, authRecoveryMode, isPasswordRecoveryRoute, isRootRoute, isPublicEventRequestRoute, isPublicSampleRoute, isLandingRoute]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!session || authRecoveryMode || isPasswordRecoveryRoute || !isRootRoute) return;
+    const storedPage = window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY) || "dashboard";
+    const nextPage = allowedPages.has(storedPage) ? storedPage : safeActive;
+    const nextPath = PAGE_PATHS[nextPage] || "/dashboard";
+    if (active !== nextPage) {
+      setActive(nextPage);
+    }
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState({ shepherdPage: nextPage }, "", nextPath);
+    }
+  }, [session, authRecoveryMode, isPasswordRecoveryRoute, isRootRoute, active, safeActive, allowedPages]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const handlePopState = () => {
       const pageFromPath = getPageFromPath();
@@ -14245,6 +14259,25 @@ function AppShell() {
     });
     return () => subscription.unsubscribe();
   }, [authRecoveryMode, recordAuthActivity]);
+
+  useEffect(() => {
+    if (!authRecoveryMode || isPasswordRecoveryRoute) return;
+    let cancelled = false;
+    supabase.auth.signOut().catch((error) => {
+      if (!cancelled) {
+        console.error("Shepherd could not clear a stale password recovery session.", error);
+      }
+    }).finally(() => {
+      if (cancelled) return;
+      setAuthRecoveryMode(false);
+      setSession(null);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authRecoveryMode, isPasswordRecoveryRoute]);
+
   const logout = async () => {
     await recordActivity?.({
       action: "requested",
@@ -14296,7 +14329,7 @@ function AppShell() {
     return <PublicSampleShell />;
   }
 
-  if (authRecoveryMode) {
+  if (authRecoveryMode && isPasswordRecoveryRoute) {
     return (
       <>
         <GS/>

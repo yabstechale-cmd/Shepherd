@@ -7890,6 +7890,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const lockupAssignments = (churchLockupAssignments || [])
     .slice()
     .sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
+  const [lockupWindowStart, setLockupWindowStart] = useState(() => toAppDateValue(startOfWeekMonday(new Date())));
   const currentLockupAssignment = lockupAssignments.find((assignment) => {
     if (!assignment?.week_of) return false;
     const weekStart = parseAppDate(assignment.week_of);
@@ -7909,6 +7910,27 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     };
   });
   const lockupWeekRangeLabel = fmtWeekRange(lockupForm.weekOf);
+  const visibleLockupWeeks = useMemo(() => {
+    const start = startOfWeekMonday(lockupWindowStart || new Date());
+    return Array.from({ length: 5 }, (_, index) => {
+      const weekStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + (index * 7));
+      const weekValue = toAppDateValue(weekStart);
+      const assignment = lockupAssignments.find((entry) => entry.week_of === weekValue) || null;
+      const currentWeek = startOfWeekMonday(new Date());
+      const isCurrentWeek = weekStart.getFullYear() === currentWeek.getFullYear()
+        && weekStart.getMonth() === currentWeek.getMonth()
+        && weekStart.getDate() === currentWeek.getDate();
+      return {
+        weekOf: weekValue,
+        label: fmtWeekRange(weekValue),
+        assignment,
+        isCurrentWeek,
+      };
+    });
+  }, [lockupAssignments, lockupWindowStart]);
+  const visibleLockupRangeLabel = visibleLockupWeeks.length
+    ? `${visibleLockupWeeks[0].label} to ${visibleLockupWeeks[visibleLockupWeeks.length - 1].label}`
+    : "";
 
   const buildAvailabilityEventRows = (request) => {
     const rows = [];
@@ -8212,7 +8234,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     );
   };
 
-  const openLockupAssignment = (assignment = null) => {
+  const openLockupAssignment = (assignment = null, weekOfOverride = "") => {
     setOperationsMessage("");
     setOperationsError("");
     setLockupMode("form");
@@ -8224,7 +8246,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       });
       return;
     }
-    const baseWeek = startOfWeekMonday(new Date());
+    const baseWeek = startOfWeekMonday(weekOfOverride || new Date());
     const weekValue = toAppDateValue(baseWeek);
     setLockupForm({
       weekOf: weekValue,
@@ -8321,6 +8343,14 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         ...current,
         weekOf: toAppDateValue(base),
       };
+    });
+  };
+
+  const shiftLockupWindow = (direction) => {
+    setLockupWindowStart((current) => {
+      const base = startOfWeekMonday(current || new Date());
+      base.setDate(base.getDate() + (direction * 35));
+      return toAppDateValue(base);
     });
   };
 
@@ -8442,13 +8472,29 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         <div>
           <div style={{fontSize:18,fontWeight:600,color:C.text}}>Weekly Lock Up</div>
           <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
-            Keep one visible record of who is assigned to close the building after services each week.
+            Keep one visible record of who is assigned to close the building after services each week, five weeks at a time.
           </div>
         </div>
-        <button className="btn-gold-compact" onClick={() => openLockupAssignment()}>
-          Assign Week
-        </button>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <button className="btn-outline" onClick={() => shiftLockupWindow(-1)} style={{padding:"7px 10px"}}>
+            Previous 5 Weeks
+          </button>
+          <button className="btn-outline" onClick={() => setLockupWindowStart(toAppDateValue(startOfWeekMonday(new Date())))} style={{padding:"7px 10px"}}>
+            This 5-Week Window
+          </button>
+          <button className="btn-outline" onClick={() => shiftLockupWindow(1)} style={{padding:"7px 10px"}}>
+            Next 5 Weeks
+          </button>
+          <button className="btn-gold-compact" onClick={() => openLockupAssignment(null, visibleLockupWeeks[0]?.weekOf || "")}>
+            Assign Week
+          </button>
+        </div>
       </div>
+      {visibleLockupRangeLabel && (
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+          Showing {visibleLockupRangeLabel}
+        </div>
+      )}
       {currentLockupAssignment && (
         <div className="card" style={{padding:18,display:"grid",gap:8,background:C.card}}>
           <div style={{fontSize:11,color:C.gold,textTransform:"uppercase",letterSpacing:".12em"}}>This Week</div>
@@ -8466,26 +8512,36 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
             No weekly church lock-up assignments have been added yet.
           </div>
         )}
-        {lockupAssignments.map((assignment) => (
-          <div key={assignment.id} className="card" style={{padding:18,display:"grid",gap:10,background:C.card}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
-              <div>
-                <div style={{fontSize:16,fontWeight:600,color:C.text}}>
-                  {assignment.assignee_names.join(", ") || "No one assigned"}
+        {visibleLockupWeeks.map((entry) => {
+          const assignment = entry.assignment;
+          return (
+            <div key={entry.weekOf} className="card" style={{padding:18,display:"grid",gap:10,background:C.card,border:`1px solid ${entry.isCurrentWeek ? C.goldDim : C.border}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    {entry.isCurrentWeek && (
+                      <span style={{fontSize:11,color:C.gold,textTransform:"uppercase",letterSpacing:".12em"}}>This Week</span>
+                    )}
+                    <div style={{fontSize:12,color:C.muted}}>
+                      {entry.label} • {assignment?.service_label || "Sunday Services"}
+                    </div>
+                  </div>
+                  <div style={{fontSize:16,fontWeight:600,color:C.text,marginTop:6}}>
+                    {assignment?.assignee_names?.join(", ") || "No one assigned"}
+                  </div>
                 </div>
-                <div style={{fontSize:12,color:C.muted,marginTop:4}}>
-                  {fmtWeekRange(assignment.week_of)} • {assignment.service_label || "Sunday Services"}
-                </div>
+                <button className="btn-outline" onClick={() => openLockupAssignment(assignment, entry.weekOf)}>
+                  {assignment ? "Swap / Edit" : "Assign Week"}
+                </button>
               </div>
-              <button className="btn-outline" onClick={() => openLockupAssignment(assignment)}>Swap / Edit</button>
+              {assignment?.notes && (
+                <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                  {assignment.notes}
+                </div>
+              )}
             </div>
-            {assignment.notes && (
-              <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-                {assignment.notes}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
       {operationsError && <div style={{fontSize:12,color:C.danger}}>{operationsError}</div>}
       {operationsMessage && <div style={{fontSize:12,color:C.success}}>{operationsMessage}</div>}

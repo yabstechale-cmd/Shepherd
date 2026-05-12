@@ -8450,12 +8450,17 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                   }));
                 }}
                 className={selected ? "btn-gold-compact" : "btn-outline"}
-                style={{padding:"8px 12px",fontSize:12}}
+                style={{padding:"8px 12px",fontSize:12,border:selected ? `1px solid ${C.gold}` : undefined,boxShadow:selected ? `0 0 0 2px ${C.goldGlow}` : undefined}}
               >
-                {name}
+                {selected ? `Selected • ${name}` : name}
               </button>
             );
           })}
+        </div>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+          {lockupForm.assigneeNames.length
+            ? `Selected: ${lockupForm.assigneeNames.join(", ")}`
+            : "No staff selected yet."}
         </div>
       </div>
       <div style={{display:"grid",gap:6}}>

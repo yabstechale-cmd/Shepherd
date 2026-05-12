@@ -7891,7 +7891,10 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const lockupAssignments = (churchLockupAssignments || [])
     .slice()
     .sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
-  const [lockupWindowStart, setLockupWindowStart] = useState(() => toAppDateValue(startOfWeekMonday(new Date())));
+  const [lockupMonthAnchor, setLockupMonthAnchor] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+  });
   const [lockupForm, setLockupForm] = useState(() => {
     const baseWeek = startOfWeekMonday(new Date());
     const weekValue = toAppDateValue(baseWeek);
@@ -7903,26 +7906,35 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   });
   const lockupWeekRangeLabel = fmtWeekRange(lockupForm.weekOf);
   const visibleLockupWeeks = useMemo(() => {
-    const start = startOfWeekMonday(lockupWindowStart || new Date());
-    return Array.from({ length: 5 }, (_, index) => {
-      const weekStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + (index * 7));
-      const weekValue = toAppDateValue(weekStart);
+    const anchorDate = parseAppDate(lockupMonthAnchor) || new Date();
+    const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+    const monthEnd = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 0);
+    const firstVisibleWeek = startOfWeekMonday(monthStart);
+    const weeks = [];
+    const currentWeek = startOfWeekMonday(new Date());
+    const cursor = new Date(firstVisibleWeek.getFullYear(), firstVisibleWeek.getMonth(), firstVisibleWeek.getDate());
+
+    while (cursor.getTime() <= monthEnd.getTime() || weeks.length === 0) {
+      const weekValue = toAppDateValue(cursor);
       const assignment = lockupAssignments.find((entry) => entry.week_of === weekValue) || null;
-      const currentWeek = startOfWeekMonday(new Date());
-      const isCurrentWeek = weekStart.getFullYear() === currentWeek.getFullYear()
-        && weekStart.getMonth() === currentWeek.getMonth()
-        && weekStart.getDate() === currentWeek.getDate();
-      return {
+      const isCurrentWeek = cursor.getFullYear() === currentWeek.getFullYear()
+        && cursor.getMonth() === currentWeek.getMonth()
+        && cursor.getDate() === currentWeek.getDate();
+      weeks.push({
         weekOf: weekValue,
         label: fmtWeekRange(weekValue),
         assignment,
         isCurrentWeek,
-      };
-    });
-  }, [lockupAssignments, lockupWindowStart]);
-  const visibleLockupRangeLabel = visibleLockupWeeks.length
-    ? `${visibleLockupWeeks[0].label} to ${visibleLockupWeeks[visibleLockupWeeks.length - 1].label}`
-    : "";
+      });
+      cursor.setDate(cursor.getDate() + 7);
+    }
+
+    return weeks;
+  }, [lockupAssignments, lockupMonthAnchor]);
+  const visibleLockupRangeLabel = (() => {
+    const anchorDate = parseAppDate(lockupMonthAnchor) || new Date();
+    return anchorDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  })();
 
   const buildAvailabilityEventRows = (request) => {
     const rows = [];
@@ -8277,7 +8289,10 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         assignee_names: lockupForm.assigneeNames,
         notes: lockupForm.notes.trim() || null,
       };
-      const existing = lockupAssignments.find((assignment) => assignment.week_of === normalizedWeekOf);
+      const editingAssignment = lockupEditingId
+        ? lockupAssignments.find((assignment) => assignment.id === lockupEditingId)
+        : null;
+      const existing = editingAssignment || lockupAssignments.find((assignment) => assignment.week_of === normalizedWeekOf);
       let saved;
       if (existing?.id) {
         const result = await supabase
@@ -8301,7 +8316,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         const next = [...(current || []).filter((assignment) => assignment.id !== saved.id && assignment.week_of !== saved.week_of), saved];
         return next.sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
       });
-      setLockupWindowStart(normalizedWeekOf);
+      setLockupMonthAnchor(`${normalizedWeekOf.slice(0, 7)}-01`);
       await createNotificationsForNames({
         users: previewUsers,
         names: saved.assignee_names.filter((name) => !samePerson(name, profile?.full_name)),
@@ -8323,6 +8338,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         metadata: { week_of: saved.week_of, assignees: saved.assignee_names },
       });
       setOperationsMessage("Church lock-up assignment saved.");
+      setLockupEditingId("");
       setLockupMode("home");
     } catch (error) {
       setOperationsError(error?.message || "We couldn't save that lock-up assignment yet.");
@@ -8342,11 +8358,11 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     });
   };
 
-  const shiftLockupWindow = (direction) => {
-    setLockupWindowStart((current) => {
-      const base = startOfWeekMonday(current || new Date());
-      base.setDate(base.getDate() + (direction * 35));
-      return toAppDateValue(base);
+  const shiftLockupMonth = (direction) => {
+    setLockupMonthAnchor((current) => {
+      const base = parseAppDate(current) || new Date();
+      const next = new Date(base.getFullYear(), base.getMonth() + direction, 1);
+      return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`;
     });
   };
 
@@ -8470,17 +8486,20 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         <div>
           <div style={{fontSize:18,fontWeight:600,color:C.text}}>Weekly Lock Up</div>
           <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
-            Five weeks at a time, with one clear owner for each week.
+            One month at a time, with one clear owner for each week.
           </div>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          <button className="btn-outline" onClick={() => shiftLockupWindow(-1)} style={{padding:"7px 10px"}}>
+          <button className="btn-outline" onClick={() => shiftLockupMonth(-1)} style={{padding:"7px 10px"}}>
             Previous
           </button>
-          <button className="btn-outline" onClick={() => setLockupWindowStart(toAppDateValue(startOfWeekMonday(new Date())))} style={{padding:"7px 10px"}}>
-            Today
+          <button className="btn-outline" onClick={() => {
+            const today = new Date();
+            setLockupMonthAnchor(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`);
+          }} style={{padding:"7px 10px"}}>
+            This Month
           </button>
-          <button className="btn-outline" onClick={() => shiftLockupWindow(1)} style={{padding:"7px 10px"}}>
+          <button className="btn-outline" onClick={() => shiftLockupMonth(1)} style={{padding:"7px 10px"}}>
             Next
           </button>
           <button className="btn-gold-compact" onClick={() => openLockupAssignment(null, visibleLockupWeeks[0]?.weekOf || "")}>

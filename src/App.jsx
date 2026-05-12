@@ -1753,35 +1753,43 @@ const createPersistentNotification = async ({
   data = {},
   sendEmail = true,
 }) => {
-  if (!churchId || !actorProfile?.id || !recipientProfileId || !type || !title || !detail) return null;
-  if (recipientProfileId === actorProfile.id && !["task_due_soon", "task_overdue", "team_task_due_soon", "team_task_overdue"].includes(type)) return null;
-  const payload = {
-    church_id: churchId,
-    recipient_profile_id: recipientProfileId,
-    actor_profile_id: actorProfile.id,
-    type,
-    title,
-    detail,
-    target,
-    task_id: taskId,
-    source_key: sourceKey || null,
-    data,
-    read_at: null,
-    archived_at: null,
-  };
-  const query = sourceKey
-    ? supabase.from("notifications").upsert(payload, { onConflict: "recipient_profile_id,type,source_key", ignoreDuplicates: true })
-    : supabase.from("notifications").insert(payload);
-  const { data: saved, error } = await query.select().maybeSingle();
-  if (error) return null;
-  if (sendEmail && saved?.id) {
-    supabase.functions.invoke("send-notification-email", {
-      body: { notificationId: saved.id },
-    }).catch((invokeError) => {
-      console.error("Could not send Shepherd notification email.", invokeError);
-    });
+  try {
+    if (!churchId || !actorProfile?.id || !recipientProfileId || !type || !title || !detail) return null;
+    if (recipientProfileId === actorProfile.id && !["task_due_soon", "task_overdue", "team_task_due_soon", "team_task_overdue"].includes(type)) return null;
+    const payload = {
+      church_id: churchId,
+      recipient_profile_id: recipientProfileId,
+      actor_profile_id: actorProfile.id,
+      type,
+      title,
+      detail,
+      target,
+      task_id: taskId,
+      source_key: sourceKey || null,
+      data,
+      read_at: null,
+      archived_at: null,
+    };
+    const query = sourceKey
+      ? supabase.from("notifications").upsert(payload, { onConflict: "recipient_profile_id,type,source_key", ignoreDuplicates: true })
+      : supabase.from("notifications").insert(payload);
+    const { data: saved, error } = await query.select().maybeSingle();
+    if (error) {
+      console.error("Could not save a Shepherd notification.", error);
+      return null;
+    }
+    if (sendEmail && saved?.id) {
+      supabase.functions.invoke("send-notification-email", {
+        body: { notificationId: saved.id },
+      }).catch((invokeError) => {
+        console.error("Could not send Shepherd notification email.", invokeError);
+      });
+    }
+    return saved || null;
+  } catch (error) {
+    console.error("Shepherd notification creation failed unexpectedly.", error);
+    return null;
   }
-  return saved || null;
 };
 const createNotificationsForNames = async ({ users, names, actorProfile, churchId, ...notification }) => {
   const recipients = [...new Map((names || [])
@@ -1805,21 +1813,29 @@ const createActivityLog = async ({
   summary,
   metadata = {},
 }) => {
-  if (!churchId || churchId === "preview" || !actorProfile?.id || !action || !entityType || !summary) return null;
-  const payload = {
-    church_id: churchId,
-    actor_profile_id: actorProfile.id,
-    actor_name: actorProfile.full_name || actorProfile.email || "Staff",
-    action,
-    entity_type: entityType,
-    entity_id: entityId ? String(entityId) : null,
-    entity_title: entityTitle || null,
-    summary,
-    metadata,
-  };
-  const { data, error } = await supabase.from("activity_logs").insert(payload).select().maybeSingle();
-  if (error) return null;
-  return data ? normalizeActivityLog(data) : null;
+  try {
+    if (!churchId || churchId === "preview" || !actorProfile?.id || !action || !entityType || !summary) return null;
+    const payload = {
+      church_id: churchId,
+      actor_profile_id: actorProfile.id,
+      actor_name: actorProfile.full_name || actorProfile.email || "Staff",
+      action,
+      entity_type: entityType,
+      entity_id: entityId ? String(entityId) : null,
+      entity_title: entityTitle || null,
+      summary,
+      metadata,
+    };
+    const { data, error } = await supabase.from("activity_logs").insert(payload).select().maybeSingle();
+    if (error) {
+      console.error("Could not save a Shepherd activity log entry.", error);
+      return null;
+    }
+    return data ? normalizeActivityLog(data) : null;
+  } catch (error) {
+    console.error("Shepherd activity logging failed unexpectedly.", error);
+    return null;
+  }
 };
 const getAuthActivitySummary = (action, actorName) => {
   const safeName = actorName || "A user";

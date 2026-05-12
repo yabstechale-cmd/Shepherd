@@ -2136,7 +2136,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
                 </option>
               ))}
             </select>
-          ) : (
+          ) : isPasswordReset ? (
             <div
               style={{
                 border:`1px solid ${C.border}`,
@@ -2159,7 +2159,7 @@ function AuthScreen({ initialMode = "login", allowedModes = ["login", "signup", 
                   : "This reset link is tied to one secure account only. Shepherd will not let you choose or reset someone else's password here."}
               </div>
             </div>
-          )}
+          ) : null}
           {isFirstTimeLogin && selectedChurchId && churchAccess.church && churchAccess.users.length === 0 && (
             <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
               No staff have been added to this church yet. Ask the church account admin to add the team in <span style={{color:C.text}}>Church Team</span> before anyone else uses First Time Login.

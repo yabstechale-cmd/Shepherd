@@ -786,6 +786,7 @@ const normalizeCalendarEvent = (event) => ({
   google_calendar_source_event_id: event?.google_calendar_source_event_id || "",
   google_last_synced_at: event?.google_last_synced_at || null,
   linked_event_request_id: event?.linked_event_request_id || null,
+  all_day: !!event?.all_day || (!event?.start_time && !event?.end_time),
   updated_at: event?.updated_at || event?.created_at || new Date().toISOString(),
 });
 const mergeSyncedCalendarEvents = (currentRows, syncedRows, deletedIds = []) => {
@@ -13204,6 +13205,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     event_date: "",
     start_time: "",
     end_time: "",
+    all_day: false,
     location: "",
     notes: "",
     sync_to_google: false,
@@ -13256,7 +13258,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         date: event.event_date,
         title: event.title || "Church event",
         detail: [
-          event.start_time && event.end_time ? `${event.start_time} - ${event.end_time}` : event.start_time || "",
+          event.all_day ? "All day" : (event.start_time && event.end_time ? `${event.start_time} - ${event.end_time}` : event.start_time || ""),
           event.location || "",
           googleCalendarTitle || "",
         ].filter(Boolean).join(" • ") || "Added directly to the church calendar",
@@ -13390,8 +13392,8 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         created_by: profile.id,
         title: calendarItemForm.title.trim(),
         event_date: calendarItemForm.event_date,
-        start_time: calendarItemForm.start_time || null,
-        end_time: calendarItemForm.end_time || null,
+        start_time: calendarItemForm.all_day ? null : (calendarItemForm.start_time || null),
+        end_time: calendarItemForm.all_day ? null : (calendarItemForm.end_time || null),
         location: calendarItemForm.location.trim() || null,
         notes: calendarItemForm.notes.trim() || null,
         sync_to_google: !!calendarItemForm.sync_to_google,
@@ -13455,7 +13457,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     }
     setCalendarItemError("");
     setEditingCalendarEventId(null);
-    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", location: "", notes: "", sync_to_google: false });
+    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", all_day: false, location: "", notes: "", sync_to_google: false });
     setShowCalendarItemForm(false);
   };
 
@@ -13469,6 +13471,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       event_date: item.source.event_date || "",
       start_time: item.source.start_time || "",
       end_time: item.source.end_time || "",
+      all_day: !!item.source.all_day || (!item.source.start_time && !item.source.end_time),
       location: item.source.location || "",
       notes: stripGoogleCalendarMetadata(item.source.notes),
       sync_to_google: !!item.source.sync_to_google || !!item.source.google_calendar_source_event_id,
@@ -13483,7 +13486,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     setShowCalendarItemForm(false);
     setEditingCalendarEventId(null);
     setCalendarItemError("");
-    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", location: "", notes: "", sync_to_google: false });
+    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", all_day: false, location: "", notes: "", sync_to_google: false });
   };
 
   const deleteCalendarItem = async (item = selectedCalendarItem) => {
@@ -13581,16 +13584,31 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
             )}
           </div>
           {calendarItemForm.calendar_type === "churchEvents" && (
-            <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
-              <div style={{display:"grid",gap:6}}>
-                <label style={{fontSize:12,color:C.muted}}>Start Time</label>
-                <input className="input-field" type="time" value={calendarItemForm.start_time} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, start_time: e.target.value }))} />
+            <>
+              <label style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:C.text}}>
+                <input
+                  type="checkbox"
+                  checked={!!calendarItemForm.all_day}
+                  onChange={(e) => setCalendarItemForm((current) => ({
+                    ...current,
+                    all_day: e.target.checked,
+                    start_time: e.target.checked ? "" : current.start_time,
+                    end_time: e.target.checked ? "" : current.end_time,
+                  }))}
+                />
+                All Day
+              </label>
+              <div className="mobile-two-stack" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+                <div style={{display:"grid",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted}}>Start Time</label>
+                  <input className="input-field" type="time" value={calendarItemForm.start_time} disabled={!!calendarItemForm.all_day} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, start_time: e.target.value }))} />
+                </div>
+                <div style={{display:"grid",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted}}>End Time</label>
+                  <input className="input-field" type="time" value={calendarItemForm.end_time} disabled={!!calendarItemForm.all_day} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, end_time: e.target.value }))} />
+                </div>
               </div>
-              <div style={{display:"grid",gap:6}}>
-                <label style={{fontSize:12,color:C.muted}}>End Time</label>
-                <input className="input-field" type="time" value={calendarItemForm.end_time} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, end_time: e.target.value }))} />
-              </div>
-            </div>
+            </>
           )}
           <div style={{display:"grid",gap:6}}>
             <label style={{fontSize:12,color:C.muted}}>Notes</label>

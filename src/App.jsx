@@ -82,6 +82,13 @@ const parseAppDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 const getDateSortValue = (value) => parseAppDate(value)?.getTime() || 0;
+const eventOccursOnDate = (startValue, endValue, targetValue) => {
+  const start = parseAppDate(startValue);
+  const target = parseAppDate(targetValue);
+  if (!start || !target) return false;
+  const end = parseAppDate(endValue) || start;
+  return target >= start && target <= end;
+};
 const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.abs(n || 0));
 const fmtDate = (d) => {
   const parsed = parseAppDate(d);
@@ -794,6 +801,7 @@ const normalizeChurchLockupAssignment = (assignment) => ({
 });
 const normalizeCalendarEvent = (event) => ({
   ...event,
+  end_date: event?.end_date || null,
   sync_to_google: !!event?.sync_to_google,
   google_calendar_source_id: event?.google_calendar_source_id || "",
   google_calendar_source_title: event?.google_calendar_source_title || "",
@@ -13259,8 +13267,10 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         sourceId: event.id,
         type: "churchEvents",
         date: event.event_date,
+        endDate: event.end_date || null,
         title: event.title || "Church event",
         detail: [
+          event.end_date && event.end_date !== event.event_date ? `${fmtDate(event.event_date)} - ${fmtDate(event.end_date)}` : "",
           event.all_day ? "All day" : (event.start_time && event.end_time ? `${event.start_time} - ${event.end_time}` : event.start_time || ""),
           event.location || "",
         ].filter(Boolean).join(" • ") || "Added directly to the church calendar",
@@ -13314,16 +13324,17 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     return {
       key,
       date,
-      items: calendarItems.filter((item) => item.date === key),
+      items: calendarItems.filter((item) => eventOccursOnDate(item.date, item.endDate, key)),
       isToday: key === toDateKey(today),
       isPast: date < todayStart,
       isCurrentMonth: date.getMonth() === calendarCursor.getMonth(),
     };
   });
   const visibleMonthItems = calendarItems.filter((item) => {
-    const parsed = parseAppDate(item.date);
-    if (!parsed) return false;
-    return parsed >= monthStart && parsed <= monthEnd;
+    const start = parseAppDate(item.date);
+    if (!start) return false;
+    const end = parseAppDate(item.endDate) || start;
+    return end >= monthStart && start <= monthEnd;
   });
   const filterOptions = [
     { key: "churchCalendar", label: churchCalendarLabel },

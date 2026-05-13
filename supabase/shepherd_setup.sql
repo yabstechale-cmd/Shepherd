@@ -494,6 +494,7 @@ create table if not exists public.calendar_events (
   linked_event_request_id uuid references public.event_requests(id) on delete set null,
   title text not null,
   event_date date not null,
+  end_date date,
   start_time text,
   end_time text,
   location text,
@@ -512,6 +513,7 @@ alter table public.calendar_events add column if not exists created_by uuid refe
 alter table public.calendar_events add column if not exists linked_event_request_id uuid references public.event_requests(id) on delete set null;
 alter table public.calendar_events add column if not exists title text;
 alter table public.calendar_events add column if not exists event_date date;
+alter table public.calendar_events add column if not exists end_date date;
 alter table public.calendar_events add column if not exists start_time text;
 alter table public.calendar_events add column if not exists end_time text;
 alter table public.calendar_events add column if not exists location text;

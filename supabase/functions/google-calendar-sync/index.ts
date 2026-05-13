@@ -40,6 +40,7 @@ type CalendarEventRow = {
   linked_event_request_id: string | null;
   title: string;
   event_date: string;
+  end_date: string | null;
   start_time: string | null;
   end_time: string | null;
   location: string | null;
@@ -369,6 +370,15 @@ function getGoogleEventDate(value: string | undefined) {
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
 }
 
+function getInclusiveGoogleAllDayEndDate(value: string | undefined) {
+  const endDate = getGoogleEventDate(value);
+  if (!endDate) return null;
+  const parsed = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setDate(parsed.getDate() - 1);
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+}
+
 function getGoogleEventTime(value: string | undefined) {
   if (!value) return null;
   const parsed = new Date(value);
@@ -386,13 +396,18 @@ function stripGoogleSyncMetadata(notes: string | null) {
 }
 
 function mapGoogleEventToLocalRow(existing: CalendarEventRow | null, event: Record<string, any>, church: ChurchRow, fallbackProfileId: string | null) {
+  const startDate = getGoogleEventDate(event.start?.dateTime || event.start?.date);
+  const endDate = event.start?.date
+    ? getInclusiveGoogleAllDayEndDate(event.end?.date)
+    : getGoogleEventDate(event.end?.dateTime);
   return {
     ...(existing?.id ? { id: existing.id } : {}),
     church_id: church.id,
     created_by: existing?.created_by || fallbackProfileId,
     linked_event_request_id: existing?.linked_event_request_id || null,
     title: sanitizePlainText(event.summary || "Google calendar event", 200),
-    event_date: getGoogleEventDate(event.start?.dateTime || event.start?.date),
+    event_date: startDate,
+    end_date: endDate && endDate !== startDate ? endDate : null,
     start_time: event.start?.dateTime ? getGoogleEventTime(event.start.dateTime) : null,
     end_time: event.end?.dateTime ? getGoogleEventTime(event.end.dateTime) : null,
     location: sanitizePlainText(event.location, 300) || null,

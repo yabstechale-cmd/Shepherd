@@ -13198,6 +13198,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const [showCalendarItemForm, setShowCalendarItemForm] = useState(false);
   const [editingCalendarEventId, setEditingCalendarEventId] = useState(null);
   const [selectedCalendarItem, setSelectedCalendarItem] = useState(null);
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
   const [calendarItemError, setCalendarItemError] = useState("");
   const [calendarItemForm, setCalendarItemForm] = useState({
     calendar_type: "churchEvents",
@@ -13526,6 +13527,15 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     setSelectedCalendarItem(item);
   };
 
+  const openCalendarDay = (day) => {
+    if (!day?.items?.length) return;
+    setSelectedCalendarDay({
+      key: day.key,
+      date: day.date,
+      items: day.items,
+    });
+  };
+
   const openSelectedCalendarItemTarget = () => {
     if (!selectedCalendarItem) return;
     if (selectedCalendarItem.editable) {
@@ -13741,6 +13751,54 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
             </div>
           </div>
         )}
+        {selectedCalendarDay?.items?.length > 0 && (
+          <div className="card" style={{padding:16,display:"grid",gap:12,marginBottom:18,textAlign:"left",background:"rgba(255,255,255,.03)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:600,color:C.text,lineHeight:1.35}}>
+                  {selectedCalendarDay.date.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric" })}
+                </div>
+                <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginTop:4}}>
+                  {selectedCalendarDay.items.length} item{selectedCalendarDay.items.length === 1 ? "" : "s"} on this date
+                </div>
+              </div>
+              <button className="btn-outline" onClick={() => setSelectedCalendarDay(null)} style={{padding:"6px 12px",fontSize:12}}>
+                Close Day View
+              </button>
+            </div>
+            <div style={{display:"grid",gap:8}}>
+              {selectedCalendarDay.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => openCalendarItem(item)}
+                  style={{
+                    display:"grid",
+                    gap:4,
+                    width:"100%",
+                    textAlign:"left",
+                    border:`1px solid ${item.tone}33`,
+                    borderRadius:12,
+                    background:`${item.tone}12`,
+                    color:C.text,
+                    padding:"10px 12px",
+                    cursor:"pointer",
+                  }}
+                >
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                    <div style={{fontSize:13,fontWeight:700,lineHeight:1.35}}>{item.title}</div>
+                    <div style={{fontSize:10,color:item.tone,textTransform:"uppercase",letterSpacing:".08em",fontWeight:700}}>
+                      {item.tag}
+                    </div>
+                  </div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.5}}>
+                    {item.detail || "Open to see more details"}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {!visibleMonthItems.length && (
           <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Nothing is showing for the calendars you have selected this month.</p>
         )}
@@ -13776,9 +13834,24 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                         }}
                       >
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
-                          <span style={{fontSize:12,fontWeight:700,color:day.isToday ? C.gold : day.isPast ? C.muted : C.text}}>
+                          <button
+                            type="button"
+                            onClick={() => openCalendarDay(day)}
+                            disabled={!day.items.length}
+                            style={{
+                              border:"none",
+                              background:"transparent",
+                              padding:0,
+                              margin:0,
+                              cursor:day.items.length ? "pointer" : "default",
+                              fontSize:12,
+                              fontWeight:700,
+                              color:day.isToday ? C.gold : day.isPast ? C.muted : C.text,
+                              opacity:day.items.length ? 1 : .9,
+                            }}
+                          >
                             {day.date.getDate()}
-                          </span>
+                          </button>
                           {day.isToday && <span style={{fontSize:8,color:C.gold,textTransform:"uppercase",letterSpacing:".08em"}}>Today</span>}
                           {!day.isToday && day.isPast && day.isCurrentMonth && <span style={{fontSize:8,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>Past</span>}
                         </div>
@@ -13811,10 +13884,10 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                           {hiddenCount > 0 && (
                             <button
                               type="button"
-                              onClick={() => setSelectedCalendarItem(day.items[3])}
-                              style={{border:"none",background:"transparent",color:C.gold,fontSize:10,textAlign:"left",padding:0,cursor:"pointer"}}
+                              onClick={() => openCalendarDay(day)}
+                              style={{border:"none",background:"transparent",color:C.gold,fontSize:10,textAlign:"left",padding:0,cursor:"pointer",fontWeight:700}}
                             >
-                              +{hiddenCount} more
+                              View all {day.items.length}
                             </button>
                           )}
                         </div>

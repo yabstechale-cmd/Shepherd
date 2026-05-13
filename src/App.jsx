@@ -3264,6 +3264,10 @@ function CalendarSettingsPanel({ profile, church, setChurch, setCalendarEvents, 
   );
   const churchId = church?.id || profile?.church_id || null;
   const canManageSettings = canManageCalendarSettings(profile);
+  const getGoogleCalendarRedirectUri = () => {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/account`;
+  };
   const invokeGoogleCalendarSync = useCallback(async (body) => {
     const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
       body,
@@ -3334,7 +3338,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, setCalendarEvents, 
       try {
         setGoogleCalendarSaving(true);
         setGoogleCalendarActionError("");
-        const redirectUri = `${window.location.origin}${window.location.pathname}?google_calendar_oauth=1`;
+        const redirectUri = getGoogleCalendarRedirectUri();
         const data = await invokeGoogleCalendarSync({
           action: "completeConnection",
           code,
@@ -3435,7 +3439,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, setCalendarEvents, 
       window.localStorage.setItem(ACCOUNT_SETTINGS_BRANCH_STORAGE_KEY, "calendar");
       const state = `${churchId}:${crypto.randomUUID()}`;
       window.localStorage.setItem(getGoogleCalendarOAuthStateStorageKey(churchId), state);
-      const redirectUri = `${window.location.origin}${window.location.pathname}?google_calendar_oauth=1`;
+      const redirectUri = getGoogleCalendarRedirectUri();
       const data = await invokeGoogleCalendarSync({
         action: "getAuthUrl",
         redirectUri,

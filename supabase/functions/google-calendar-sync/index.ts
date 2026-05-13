@@ -295,7 +295,11 @@ async function googleRequest(accessToken: string, url: string, init: RequestInit
   if (response.status === 204) return null;
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error?.message || payload?.error_description || "Google Calendar request failed.");
+    const message = String(payload?.error?.message || payload?.error_description || "").trim();
+    if (/insufficient authentication scopes/i.test(message)) {
+      throw new Error("This church's Google connection needs to be reconnected before Shepherd can create or edit Google Calendar events. Go to Account, open Calendar Settings, disconnect Google, then connect it again.");
+    }
+    throw new Error(message || "Google Calendar request failed.");
   }
   return payload;
 }

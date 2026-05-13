@@ -757,6 +757,16 @@ const normalizeAirHandlerSchedule = (entry) => ({
     : [],
   hours: String(entry?.hours || "").trim(),
 });
+const buildAirHandlerScheduleRow = (handlerNumber, rowOrder, row = null) => ({
+  id: row?.id || "",
+  church_id: row?.church_id || null,
+  created_by_id: row?.created_by_id || null,
+  handler_number: handlerNumber,
+  row_order: rowOrder,
+  active_days: Array.isArray(row?.active_days) ? row.active_days.filter((day) => AIR_HANDLER_DAY_KEYS.includes(day)) : [],
+  hours: String(row?.hours || "").trim(),
+  created_at: row?.created_at || "",
+});
 const normalizeEventWorkflow = (workflow) => ({
   ...workflow,
   event_name: workflow?.event_name || workflow?.title || "",
@@ -7865,7 +7875,8 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const [timeOffMode, setTimeOffMode] = useState("");
   const [lockupMode, setLockupMode] = useState("home");
   const [lockupEditingId, setLockupEditingId] = useState("");
-  const [airHandlerEditor, setAirHandlerEditor] = useState(null);
+  const [airHandlerDrafts, setAirHandlerDrafts] = useState({});
+  const [airHandlerSavingKeys, setAirHandlerSavingKeys] = useState([]);
   const [operationsMessage, setOperationsMessage] = useState("");
   const [operationsError, setOperationsError] = useState("");
   const [operationsSubmitting, setOperationsSubmitting] = useState(false);
@@ -7928,7 +7939,11 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const airHandlerScheduleGroups = useMemo(
     () => AIR_HANDLER_NUMBERS.map((handlerNumber) => ({
       handlerNumber,
-      rows: sortedAirHandlerSchedules.filter((entry) => entry.handler_number === handlerNumber),
+      rows: Array.from({ length: 7 }, (_, index) => {
+        const rowOrder = index + 1;
+        const existing = sortedAirHandlerSchedules.find((entry) => entry.handler_number === handlerNumber && entry.row_order === rowOrder) || null;
+        return buildAirHandlerScheduleRow(handlerNumber, rowOrder, existing);
+      }),
     })),
     [sortedAirHandlerSchedules]
   );
@@ -8032,7 +8047,8 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     setTimeOffMode("");
     setLockupMode("home");
     setLockupEditingId("");
-    setAirHandlerEditor(null);
+    setAirHandlerDrafts({});
+    setAirHandlerSavingKeys([]);
     setOperationsMessage("");
     setOperationsError("");
     setOperationsSubmitting(false);
@@ -8413,57 +8429,63 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     });
   };
 
-  const openAirHandlerEditor = (handlerNumber, row = null) => {
-    setOperationsMessage("");
-    setOperationsError("");
-    setOperationsSection("ac-schedule");
-    setAirHandlerEditor(row ? {
-      id: row.id,
-      handlerNumber: row.handler_number,
-      activeDays: Array.isArray(row.active_days) ? row.active_days : [],
-      hours: row.hours || "",
-    } : {
-      id: "",
-      handlerNumber,
-      activeDays: [],
-      hours: "",
+  const getAirHandlerDraftKey = (handlerNumber, rowOrder) => `${handlerNumber}-${rowOrder}`;
+  const getAirHandlerRowState = (row) => airHandlerDrafts[getAirHandlerDraftKey(row.handler_number, row.row_order)] || row;
+  const isAirHandlerRowSaving = (handlerNumber, rowOrder) => airHandlerSavingKeys.includes(getAirHandlerDraftKey(handlerNumber, rowOrder));
+
+  const setAirHandlerRowDraft = (row, nextState) => {
+    const key = getAirHandlerDraftKey(row.handler_number, row.row_order);
+    setAirHandlerDrafts((current) => ({
+      ...current,
+      [key]: nextState,
+    }));
+  };
+
+  const clearAirHandlerRowDraft = (handlerNumber, rowOrder) => {
+    const key = getAirHandlerDraftKey(handlerNumber, rowOrder);
+    setAirHandlerDrafts((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
     });
   };
 
-  const saveAirHandlerSchedule = async () => {
+  const persistAirHandlerRow = async (draftRow, { silent = true } = {}) => {
+    const rowState = buildAirHandlerScheduleRow(draftRow.handler_number, draftRow.row_order, draftRow);
+    const saveKey = getAirHandlerDraftKey(rowState.handler_number, rowState.row_order);
     setOperationsError("");
-    setOperationsMessage("");
     if (!church?.id || !profile?.id) {
       setOperationsError("We couldn't find your church profile yet.");
       return;
     }
-    if (!airHandlerEditor?.handlerNumber) {
-      setOperationsError("Choose which air handler this row belongs to.");
-      return;
-    }
-    if (!airHandlerEditor.activeDays.length) {
-      setOperationsError("Choose at least one day for this programmed row.");
-      return;
-    }
-    if (!airHandlerEditor.hours.trim()) {
-      setOperationsError("Add the programmed military-hour range for this row.");
-      return;
-    }
-    setOperationsSubmitting(true);
+    setAirHandlerSavingKeys((current) => current.includes(saveKey) ? current : [...current, saveKey]);
     try {
-      const existingRows = sortedAirHandlerSchedules.filter((entry) => entry.handler_number === airHandlerEditor.handlerNumber);
-      const existingRow = airHandlerEditor.id
-        ? existingRows.find((entry) => entry.id === airHandlerEditor.id)
-        : null;
-      const nextRowOrder = existingRow?.row_order
-        || ((existingRows.reduce((max, entry) => Math.max(max, Number.parseInt(entry.row_order || 0, 10) || 0), 0)) + 1);
+      const existingRow = rowState.id
+        ? sortedAirHandlerSchedules.find((entry) => entry.id === rowState.id)
+        : sortedAirHandlerSchedules.find((entry) => entry.handler_number === rowState.handler_number && entry.row_order === rowState.row_order);
+      const nextDays = AIR_HANDLER_DAY_KEYS.filter((day) => rowState.active_days.includes(day));
+      const nextHours = rowState.hours.trim();
+      if (!nextDays.length && !nextHours) {
+        if (existingRow?.id) {
+          const { error } = await supabase
+            .from("air_handler_schedules")
+            .delete()
+            .eq("id", existingRow.id);
+          if (error) throw error;
+          setAirHandlerSchedules((current) => (current || []).filter((entry) => entry.id !== existingRow.id));
+        }
+        clearAirHandlerRowDraft(rowState.handler_number, rowState.row_order);
+        if (!silent) setOperationsMessage("A/C schedule row cleared.");
+        return;
+      }
       const payload = {
         church_id: church.id,
         created_by_id: profile.id,
-        handler_number: airHandlerEditor.handlerNumber,
-        row_order: nextRowOrder,
-        active_days: AIR_HANDLER_DAY_KEYS.filter((day) => airHandlerEditor.activeDays.includes(day)),
-        hours: airHandlerEditor.hours.trim(),
+        handler_number: rowState.handler_number,
+        row_order: rowState.row_order,
+        active_days: nextDays,
+        hours: nextHours,
       };
       let saved;
       if (existingRow?.id) {
@@ -8485,7 +8507,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         saved = normalizeAirHandlerSchedule(result.data);
       }
       setAirHandlerSchedules((current) => {
-        const next = [...(current || []).filter((entry) => entry.id !== saved.id), saved];
+        const next = [...(current || []).filter((entry) => entry.id !== saved.id && !(entry.handler_number === saved.handler_number && entry.row_order === saved.row_order)), saved];
         return next
           .map(normalizeAirHandlerSchedule)
           .sort((a, b) => (
@@ -8494,53 +8516,22 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
             || getDateSortValue(a.created_at) - getDateSortValue(b.created_at)
           ));
       });
-      await recordActivity?.({
-        action: existingRow?.id ? "updated" : "created",
-        entityType: "air_handler_schedule",
-        entityId: saved.id,
-        entityTitle: `Air Handler ${saved.handler_number}`,
-        summary: `${profile?.full_name || "A staff member"} ${existingRow?.id ? "updated" : "added"} an A/C schedule row for Air Handler ${saved.handler_number}.`,
-        metadata: { active_days: saved.active_days, hours: saved.hours, handler_number: saved.handler_number },
-      });
-      setOperationsMessage(existingRow?.id ? "A/C schedule row updated." : "A/C schedule row added.");
-      setAirHandlerEditor(null);
+      clearAirHandlerRowDraft(saved.handler_number, saved.row_order);
+      if (!silent) setOperationsMessage("A/C schedule row saved.");
     } catch (error) {
       setOperationsError(error?.message || "We couldn't save that A/C schedule row yet.");
     } finally {
-      setOperationsSubmitting(false);
+      setAirHandlerSavingKeys((current) => current.filter((entry) => entry !== saveKey));
     }
   };
 
-  const deleteAirHandlerSchedule = async (row) => {
-    if (!row?.id) return;
-    if (!confirmDestructiveAction("Remove this A/C schedule row?")) return;
-    setOperationsError("");
-    setOperationsMessage("");
-    setOperationsSubmitting(true);
-    try {
-      const { error } = await supabase
-        .from("air_handler_schedules")
-        .delete()
-        .eq("id", row.id);
-      if (error) throw error;
-      setAirHandlerSchedules((current) => (current || []).filter((entry) => entry.id !== row.id));
-      if (airHandlerEditor?.id === row.id) {
-        setAirHandlerEditor(null);
-      }
-      await recordActivity?.({
-        action: "deleted",
-        entityType: "air_handler_schedule",
-        entityId: row.id,
-        entityTitle: `Air Handler ${row.handler_number}`,
-        summary: `${profile?.full_name || "A staff member"} removed an A/C schedule row from Air Handler ${row.handler_number}.`,
-        metadata: { active_days: row.active_days, hours: row.hours, handler_number: row.handler_number },
-      });
-      setOperationsMessage("A/C schedule row removed.");
-    } catch (error) {
-      setOperationsError(error?.message || "We couldn't remove that A/C schedule row yet.");
-    } finally {
-      setOperationsSubmitting(false);
-    }
+  const clearAirHandlerRow = async (row) => {
+    if (!confirmDestructiveAction("Clear this A/C schedule row?")) return;
+    await persistAirHandlerRow({
+      ...row,
+      active_days: [],
+      hours: "",
+    }, { silent: false });
   };
 
   useEffect(() => {
@@ -8748,27 +8739,25 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       <div>
         <div style={{fontSize:18,fontWeight:600,color:C.text}}>A/C Schedule</div>
         <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
-          Set weekly program rows for air handlers 1, 2, and 3. Tick the days that apply, then record the programmed military-hour range for that row.
+          Each handler comes with seven ready rows. Click the day boxes directly, then enter the programmed military-hour range for that row.
         </div>
       </div>
       <div style={{display:"grid",gap:16}}>
         {airHandlerScheduleGroups.map((group) => (
           <div key={group.handlerNumber} className="card" style={{padding:18,display:"grid",gap:14,background:C.card,border:`1px solid ${C.border}`}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
-              <div>
-                <div style={{fontSize:16,fontWeight:600,color:C.text}}>Air Handler {group.handlerNumber}</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
-                  Weekly programmed rows for this handler.
-                </div>
+            <div>
+              <div style={{fontSize:16,fontWeight:600,color:C.text}}>Air Handler {group.handlerNumber}</div>
+              <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                Weekly programmed rows for this handler.
               </div>
-              <button className="btn-gold-compact" type="button" onClick={() => openAirHandlerEditor(group.handlerNumber)}>
-                Add Row
-              </button>
             </div>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,tableLayout:"fixed",minWidth:760}}>
                 <thead>
                   <tr>
+                    <th style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"left",width:84}}>
+                      Row
+                    </th>
                     {AIR_HANDLER_DAY_COLUMNS.map((column) => (
                       <th key={column.key} style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"center"}}>
                         {column.label}
@@ -8777,23 +8766,37 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                     <th style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"left",width:220}}>
                       Hours
                     </th>
+                    <th style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"right",width:130}}>
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {group.rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} style={{padding:"18px 10px",fontSize:12,color:C.muted,border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center"}}>
-                        No rows have been added for Air Handler {group.handlerNumber} yet.
+                  {group.rows.map((row) => {
+                    const rowState = getAirHandlerRowState(row);
+                    return (
+                    <tr key={row.id || `${group.handlerNumber}-${row.row_order}`}>
+                      <td style={{padding:"10px",borderTop:`1px solid ${C.border}`,fontSize:12,color:C.muted}}>
+                        Row {row.row_order}
                       </td>
-                    </tr>
-                  ) : group.rows.map((row) => (
-                    <tr key={row.id}>
                       {AIR_HANDLER_DAY_COLUMNS.map((column) => {
-                        const active = row.active_days.includes(column.key);
+                        const active = rowState.active_days.includes(column.key);
                         return (
                           <td key={column.key} style={{padding:"10px",borderTop:`1px solid ${C.border}`,textAlign:"center"}}>
-                            <span
-                              aria-hidden="true"
+                            <button
+                              type="button"
+                              aria-label={`${active ? "Clear" : "Select"} ${column.label} for Air Handler ${group.handlerNumber} row ${row.row_order}`}
+                              onClick={() => {
+                                const nextState = {
+                                  ...rowState,
+                                  active_days: active
+                                    ? rowState.active_days.filter((day) => day !== column.key)
+                                    : [...rowState.active_days, column.key],
+                                };
+                                setAirHandlerRowDraft(row, nextState);
+                                persistAirHandlerRow(nextState);
+                              }}
+                              disabled={isAirHandlerRowSaving(group.handlerNumber, row.row_order)}
                               style={{
                                 display:"inline-grid",
                                 placeItems:"center",
@@ -8805,83 +8808,48 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                                 color:active ? C.buttonText : "transparent",
                                 fontSize:12,
                                 fontWeight:700,
+                                cursor:"pointer",
                               }}
                             >
                               ✓
-                            </span>
+                            </button>
                           </td>
                         );
                       })}
                       <td style={{padding:"10px",borderTop:`1px solid ${C.border}`}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                          <span style={{fontSize:13,color:C.text,whiteSpace:"nowrap"}}>{row.hours}</span>
-                          <div style={{display:"flex",gap:8,flexShrink:0}}>
-                            <button className="btn-outline" type="button" onClick={() => openAirHandlerEditor(group.handlerNumber, row)} style={{padding:"7px 10px",fontSize:12}}>
-                              Edit
-                            </button>
-                            <button className="btn-outline" type="button" onClick={() => deleteAirHandlerSchedule(row)} style={{padding:"7px 10px",fontSize:12,color:C.danger,borderColor:"rgba(224,82,82,.28)"}}>
-                              Remove
-                            </button>
-                          </div>
-                        </div>
+                        <input
+                          className="input-field"
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="06:00-18:00"
+                          value={rowState.hours}
+                          onChange={(e) => setAirHandlerRowDraft(row, { ...rowState, hours: e.target.value })}
+                          onBlur={() => persistAirHandlerRow(rowState)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.currentTarget.blur();
+                            }
+                          }}
+                          disabled={isAirHandlerRowSaving(group.handlerNumber, row.row_order)}
+                          style={{minWidth:0}}
+                        />
+                      </td>
+                      <td style={{padding:"10px",borderTop:`1px solid ${C.border}`,textAlign:"right"}}>
+                        <button
+                          className="btn-outline"
+                          type="button"
+                          onClick={() => clearAirHandlerRow(rowState)}
+                          disabled={isAirHandlerRowSaving(group.handlerNumber, row.row_order)}
+                          style={{padding:"7px 10px",fontSize:12}}
+                        >
+                          Clear Row
+                        </button>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
-            {airHandlerEditor?.handlerNumber === group.handlerNumber && (
-              <div style={{display:"grid",gap:14,padding:16,border:`1px solid ${C.border}`,borderRadius:16,background:C.surface}}>
-                <div style={{fontSize:14,fontWeight:600,color:C.text}}>
-                  {airHandlerEditor.id ? "Edit Program Row" : "Add Program Row"}
-                </div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                  {AIR_HANDLER_DAY_COLUMNS.map((column) => {
-                    const selected = airHandlerEditor.activeDays.includes(column.key);
-                    return (
-                      <button
-                        key={column.key}
-                        type="button"
-                        className={selected ? "btn-gold-compact" : "btn-outline"}
-                        onClick={() => {
-                          setAirHandlerEditor((current) => current ? {
-                            ...current,
-                            activeDays: selected
-                              ? current.activeDays.filter((day) => day !== column.key)
-                              : [...current.activeDays, column.key],
-                          } : current);
-                        }}
-                        style={{padding:"8px 12px",fontSize:12}}
-                      >
-                        {selected ? `Selected • ${column.label}` : column.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{display:"grid",gap:6}}>
-                  <label style={{fontSize:12,color:C.muted}}>Programmed Hours</label>
-                  <input
-                    className="input-field"
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="06:00-18:00"
-                    value={airHandlerEditor.hours}
-                    onChange={(e) => setAirHandlerEditor((current) => current ? { ...current, hours: e.target.value } : current)}
-                  />
-                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-                    Use military hours, for example <span style={{color:C.text}}>06:00-18:00</span>.
-                  </div>
-                </div>
-                <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
-                  <button className="btn-outline" type="button" onClick={() => setAirHandlerEditor(null)}>
-                    Cancel
-                  </button>
-                  <button className="btn-gold" type="button" onClick={saveAirHandlerSchedule} disabled={operationsSubmitting}>
-                    {operationsSubmitting ? "Saving..." : airHandlerEditor.id ? "Save Changes" : "Save Row"}
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         ))}
       </div>

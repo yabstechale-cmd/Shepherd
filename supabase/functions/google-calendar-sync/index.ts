@@ -312,13 +312,21 @@ function combineNotesWithGoogleDescription(notes: string | null, linkedEventRequ
   return parts.filter(Boolean).join("\n\n").trim();
 }
 
+function normalizeGoogleEventTimeValue(value: string | null | undefined) {
+  const trimmed = sanitizePlainText(value, 20);
+  if (!trimmed) return "";
+  if (/^\d{2}:\d{2}$/.test(trimmed)) return `${trimmed}:00`;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+  return "";
+}
+
 function buildGoogleEventPayload(event: CalendarEventRow) {
   const description = combineNotesWithGoogleDescription(event.notes, event.linked_event_request_id);
   const timeZone = getAppTimeZone();
   const title = sanitizePlainText(event.title, 200) || "Shepherd calendar event";
   const location = sanitizePlainText(event.location, 300) || undefined;
-  const startTime = sanitizePlainText(event.start_time, 20);
-  const endTime = sanitizePlainText(event.end_time, 20);
+  const startTime = normalizeGoogleEventTimeValue(event.start_time);
+  const endTime = normalizeGoogleEventTimeValue(event.end_time);
 
   if (startTime && endTime) {
     return {
@@ -326,11 +334,11 @@ function buildGoogleEventPayload(event: CalendarEventRow) {
       location,
       description: description || undefined,
       start: {
-        dateTime: `${event.event_date}T${startTime}:00`,
+        dateTime: `${event.event_date}T${startTime}`,
         timeZone,
       },
       end: {
-        dateTime: `${event.event_date}T${endTime}:00`,
+        dateTime: `${event.event_date}T${endTime}`,
         timeZone,
       },
     };

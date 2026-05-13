@@ -13215,7 +13215,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     birthdays: true,
     timeOff: true,
   });
-  const [googleCalendarFilters, setGoogleCalendarFilters] = useState({});
   const [showCalendarItemForm, setShowCalendarItemForm] = useState(false);
   const [editingCalendarEventId, setEditingCalendarEventId] = useState(null);
   const [selectedCalendarItem, setSelectedCalendarItem] = useState(null);
@@ -13236,10 +13235,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const officialGoogleCalendarIds = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
     ? church.google_calendar_ids
     : (church?.google_calendar_id ? [church.google_calendar_id] : []);
-  const officialGoogleCalendarTitleMap = Object.fromEntries(
-    officialGoogleCalendarIds.map((id, index) => [id, getChurchGoogleCalendarLabel(church, index, officialGoogleCalendarIds.length)])
-  );
-  const churchShepherdCalendarLabel = `${church?.name || "Church"} Shepherd Calendar`;
+  const churchCalendarLabel = `${church?.name || "Church"} Calendar`;
   const churchGoogleCalendarLabel = `${church?.name || "Church"} Google Calendar`;
   const getGoogleCalendarIdFromNotes = (notes) => {
     const text = String(notes || "");
@@ -13254,27 +13250,10 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     const legacyMatch = text.match(/google-calendar:(.+):([^\n]+)/);
     return legacyMatch?.[1]?.trim() || "";
   };
-  const getGoogleCalendarTitleFromNotes = (notes) => {
-    const match = String(notes || "").match(/google-calendar-title:([^\n]+)/);
-    return match?.[1]?.trim() || "";
-  };
-  const resolvedGoogleCalendarFilters = (() => {
-    const ids = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
-      ? church.google_calendar_ids
-      : (church?.google_calendar_id ? [church.google_calendar_id] : []);
-    const next = {};
-    ids.forEach((id) => {
-      next[id] = Object.prototype.hasOwnProperty.call(googleCalendarFilters, id) ? googleCalendarFilters[id] : true;
-    });
-    return next;
-  })();
   const approvedEvents = [];
   const directChurchEvents = (calendarEvents || [])
     .map((event) => {
       const googleCalendarId = event.google_calendar_source_id || getGoogleCalendarIdFromNotes(event.notes);
-      const noteCalendarTitle = event.google_calendar_source_title || getGoogleCalendarTitleFromNotes(event.notes);
-      const savedCalendarTitle = googleCalendarId ? (officialGoogleCalendarTitleMap[googleCalendarId] || "") : "";
-      const googleCalendarTitle = noteCalendarTitle || savedCalendarTitle;
       return {
         id: `calendar-event-${event.id}`,
         sourceId: event.id,
@@ -13284,14 +13263,13 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         detail: [
           event.all_day ? "All day" : (event.start_time && event.end_time ? `${event.start_time} - ${event.end_time}` : event.start_time || ""),
           event.location || "",
-          googleCalendarTitle || "",
         ].filter(Boolean).join(" • ") || "Added directly to the church calendar",
         tone: event.calendar_category === "birthdays" ? C.purple : event.calendar_category === "timeoff" ? C.blue : C.gold,
         tag: event.calendar_category === "birthdays"
           ? "Birthdays"
           : event.calendar_category === "timeoff"
             ? "Time Off & Sick Days"
-            : (googleCalendarTitle || (event.sync_to_google ? "Google Sync" : churchShepherdCalendarLabel)),
+            : churchCalendarLabel,
         editable: true,
         source: event,
         googleCalendarId,
@@ -13300,9 +13278,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     })
     .filter((entry) => entry.date);
   const visibleDirectChurchEvents = directChurchEvents.filter((event) => {
-    if (!event.googleCalendarId) return true;
-    return resolvedGoogleCalendarFilters[event.googleCalendarId] !== false;
-  }).filter((event) => {
     if (event.calendarCategory === "birthdays") return calendarFilters.birthdays;
     if (event.calendarCategory === "timeoff") return calendarFilters.timeOff;
     return calendarFilters.churchCalendar;
@@ -13321,10 +13296,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       source: task,
     }));
   const calendarItems = [
-    ...approvedEvents.filter((event) => {
-      if (!event.googleCalendarId) return false;
-      return resolvedGoogleCalendarFilters[event.googleCalendarId] !== false;
-    }),
+    ...approvedEvents,
     ...visibleDirectChurchEvents,
     ...(calendarFilters.myTasks ? myTasks : []),
   ]
@@ -13354,7 +13326,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     return parsed >= monthStart && parsed <= monthEnd;
   });
   const filterOptions = [
-    { key: "churchCalendar", label: churchShepherdCalendarLabel },
+    { key: "churchCalendar", label: churchCalendarLabel },
     { key: "birthdays", label: "Birthdays" },
     { key: "timeOff", label: "Time Off & Sick Days" },
     { key: "myTasks", label: "My Tasks" },
@@ -13616,7 +13588,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
           <div style={{display:"grid",gap:6}}>
             <label style={{fontSize:12,color:C.muted}}>Calendar</label>
             <select className="input-field" value={calendarItemForm.calendar_type} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, calendar_type: e.target.value }))} style={{background:C.surface}} disabled={!!editingCalendarEventId}>
-              <option value="churchEvents">{churchShepherdCalendarLabel}</option>
+              <option value="churchEvents">{churchCalendarLabel}</option>
               <option value="birthdays">Birthdays</option>
               <option value="myTasks">My Tasks</option>
             </select>
@@ -13744,26 +13716,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
           </div>
           <p style={{color:C.muted,fontSize:13,lineHeight:1.6,margin:0}}>See the full month across the calendars you have turned on.</p>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            {officialGoogleCalendarIds.map((id, index) => {
-              const active = resolvedGoogleCalendarFilters[id] !== false;
-              const label = officialGoogleCalendarTitleMap[id] || `Calendar ${index + 1}`;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={active ? "btn-gold-compact" : "btn-outline"}
-                  onClick={() => setGoogleCalendarFilters((current) => ({ ...current, [id]: !active }))}
-                  style={active ? activeCalendarFilterStyle : inactiveCalendarFilterStyle}
-                >
-                  {active ? (
-                    <>
-                      <span style={activeCalendarCheckStyle}>✓</span>
-                      <span>{label}</span>
-                    </>
-                  ) : label}
-                </button>
-              );
-            })}
             {filterOptions.map((option) => (
               <button
                 key={option.key}

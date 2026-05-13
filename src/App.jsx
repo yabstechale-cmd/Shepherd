@@ -889,9 +889,7 @@ const isChurchAdministrator = (profile) =>
   || (profile?.staff_roles || []).includes("church_administrator")
   || samePerson(profile?.title, "Church Administrator");
 const canManageCalendarSettings = (profile) =>
-  profile?.role === "church_administrator"
-  || (profile?.staff_roles || []).includes("church_administrator")
-  || samePerson(profile?.title, "Church Administrator");
+  !!profile?.church_id;
 const hasAdministrativeOversight = (profile, church) =>
   !!profile && (
     profile?.canSeeAdminOverview
@@ -4975,7 +4973,7 @@ const FAQ_ITEMS = [
   { tag: "Calendar", question: "Why are the calendar filters so simple?", answer: "The filters stay intentionally simple: imported church Google calendars and My Tasks. That keeps the calendar useful without stacking too many overlapping filter controls." },
 
   { tag: "Calendar Settings", question: "Who can manage Calendar Settings?", answer: "Calendar Settings are managed by a church admin from Account > Calendar Settings. This keeps the shared church calendar connection controlled and consistent." },
-  { tag: "Calendar Settings", question: "Where do I connect Google?", answer: "Go to Account, open Calendar Settings, and use Connect Google. Once connected, the admin can select which calendars Shepherd should import." },
+  { tag: "Calendar Settings", question: "Where do I connect Google?", answer: "Go to Account, open Calendar Settings, and use Connect Google. Once connected, any signed-in church staff user can manage the shared calendar tools there." },
   { tag: "Calendar Settings", question: "Can staff connect their own Google calendars?", answer: "The current design is church-level, not personal. Staff view the shared church calendar feed, while admins manage which Google calendars are imported." },
   { tag: "Calendar Settings", question: "How do I remove an imported calendar?", answer: "Use Calendar Settings to remove the imported calendar. Removing it should also clear that calendar's imported items from the shared Shepherd calendar view." },
   { tag: "Calendar Settings", question: "Why are settings under Account?", answer: "Calendar connection is an account-level church setting, so it lives beside other protected account controls instead of crowding the daily Calendar page." },

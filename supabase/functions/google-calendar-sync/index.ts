@@ -146,12 +146,7 @@ async function getRequesterProfile(req: Request) {
 }
 
 function canManageCalendarSettings(profile: RequesterProfile) {
-  const title = String(profile?.title || "").trim().toLowerCase();
-  const roles = Array.isArray(profile?.staff_roles) ? profile.staff_roles : [];
-  return profile?.role === "church_administrator"
-    || profile?.role === "admin"
-    || roles.includes("church_administrator")
-    || title === "church administrator";
+  return !!profile?.church_id;
 }
 
 async function getAdminClient() {
@@ -747,7 +742,7 @@ Deno.serve(async (req) => {
 
     if (action === "getAuthUrl" || action === "completeConnection" || action === "disconnectConnection" || action === "listCalendars") {
       if (!canManageCalendarSettings(profile)) {
-        return jsonResponse(403, { error: "Only the Church Administrator can manage the shared Google calendar connection." });
+        return jsonResponse(403, { error: "Only signed-in church staff can manage the shared Google calendar connection." });
       }
     }
 

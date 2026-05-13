@@ -222,6 +222,17 @@ const fmtWeekRange = (value) => {
   const weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
   return `${fmtShortDate(weekStart)}-${fmtShortDate(weekEnd)}`;
 };
+const AIR_HANDLER_DAY_COLUMNS = [
+  { key: "sunday", label: "Sun" },
+  { key: "monday", label: "Mon" },
+  { key: "tuesday", label: "Tue" },
+  { key: "wednesday", label: "Wed" },
+  { key: "thursday", label: "Thu" },
+  { key: "friday", label: "Fri" },
+  { key: "saturday", label: "Sat" },
+];
+const AIR_HANDLER_DAY_KEYS = AIR_HANDLER_DAY_COLUMNS.map((column) => column.key);
+const AIR_HANDLER_NUMBERS = [1, 2, 3];
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
@@ -736,6 +747,15 @@ const normalizeStaffAvailabilityRequest = (request) => ({
 const normalizeChurchLockupAssignment = (assignment) => ({
   ...assignment,
   assignee_names: Array.isArray(assignment?.assignee_names) ? assignment.assignee_names : [],
+});
+const normalizeAirHandlerSchedule = (entry) => ({
+  ...entry,
+  handler_number: Number.parseInt(entry?.handler_number || 0, 10) || 1,
+  row_order: Number.parseInt(entry?.row_order || 0, 10) || 0,
+  active_days: Array.isArray(entry?.active_days)
+    ? entry.active_days.filter((day) => AIR_HANDLER_DAY_KEYS.includes(day))
+    : [],
+  hours: String(entry?.hours || "").trim(),
 });
 const normalizeEventWorkflow = (workflow) => ({
   ...workflow,
@@ -7840,11 +7860,12 @@ function PlaceholderBoard({ title, summary, systems }) {
   );
 }
 
-function OperationsBoard({ profile, church, previewUsers, staffAvailabilityRequests, setStaffAvailabilityRequests, churchLockupAssignments, setChurchLockupAssignments, setCalendarEvents, recordActivity, operationsOpenRequest, clearOperationsOpenRequest, isFavorite, toggleFavorite }) {
+function OperationsBoard({ profile, church, previewUsers, staffAvailabilityRequests, setStaffAvailabilityRequests, churchLockupAssignments, setChurchLockupAssignments, airHandlerSchedules, setAirHandlerSchedules, setCalendarEvents, recordActivity, operationsOpenRequest, clearOperationsOpenRequest, isFavorite, toggleFavorite }) {
   const [operationsSection, setOperationsSection] = useState("home");
   const [timeOffMode, setTimeOffMode] = useState("");
   const [lockupMode, setLockupMode] = useState("home");
   const [lockupEditingId, setLockupEditingId] = useState("");
+  const [airHandlerEditor, setAirHandlerEditor] = useState(null);
   const [operationsMessage, setOperationsMessage] = useState("");
   const [operationsError, setOperationsError] = useState("");
   const [operationsSubmitting, setOperationsSubmitting] = useState(false);
@@ -7872,6 +7893,12 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       summary: "Assign the staff member responsible for locking up after services each week so there is always a clear owner.",
       systems: ["Weekly assignment", "Service coverage", "After-service accountability"],
     },
+    {
+      id: "ac-schedule",
+      name: "A/C Schedule",
+      summary: "Program weekly run times for air handlers 1, 2, and 3 so Operations can see each active day and military-hour schedule at a glance.",
+      systems: ["Air handler 1-3", "Weekly programming", "Day and hour rows"],
+    },
   ];
   const approverCandidates = [...new Map((previewUsers || [])
     .filter((user) =>
@@ -7891,6 +7918,20 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const lockupAssignments = (churchLockupAssignments || [])
     .slice()
     .sort((a, b) => getDateSortValue(a.week_of) - getDateSortValue(b.week_of));
+  const sortedAirHandlerSchedules = (airHandlerSchedules || [])
+    .slice()
+    .sort((a, b) => (
+      (Number.parseInt(a.handler_number || 0, 10) || 0) - (Number.parseInt(b.handler_number || 0, 10) || 0)
+      || (Number.parseInt(a.row_order || 0, 10) || 0) - (Number.parseInt(b.row_order || 0, 10) || 0)
+      || getDateSortValue(a.created_at) - getDateSortValue(b.created_at)
+    ));
+  const airHandlerScheduleGroups = useMemo(
+    () => AIR_HANDLER_NUMBERS.map((handlerNumber) => ({
+      handlerNumber,
+      rows: sortedAirHandlerSchedules.filter((entry) => entry.handler_number === handlerNumber),
+    })),
+    [sortedAirHandlerSchedules]
+  );
   const [lockupMonthAnchor, setLockupMonthAnchor] = useState(() => {
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
@@ -7991,6 +8032,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     setTimeOffMode("");
     setLockupMode("home");
     setLockupEditingId("");
+    setAirHandlerEditor(null);
     setOperationsMessage("");
     setOperationsError("");
     setOperationsSubmitting(false);
@@ -8023,6 +8065,11 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     if (cardId === "lock-up") {
       resetOperationsFlow();
       setOperationsSection("lock-up");
+      return;
+    }
+    if (cardId === "ac-schedule") {
+      resetOperationsFlow();
+      setOperationsSection("ac-schedule");
     }
   };
 
@@ -8366,6 +8413,136 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     });
   };
 
+  const openAirHandlerEditor = (handlerNumber, row = null) => {
+    setOperationsMessage("");
+    setOperationsError("");
+    setOperationsSection("ac-schedule");
+    setAirHandlerEditor(row ? {
+      id: row.id,
+      handlerNumber: row.handler_number,
+      activeDays: Array.isArray(row.active_days) ? row.active_days : [],
+      hours: row.hours || "",
+    } : {
+      id: "",
+      handlerNumber,
+      activeDays: [],
+      hours: "",
+    });
+  };
+
+  const saveAirHandlerSchedule = async () => {
+    setOperationsError("");
+    setOperationsMessage("");
+    if (!church?.id || !profile?.id) {
+      setOperationsError("We couldn't find your church profile yet.");
+      return;
+    }
+    if (!airHandlerEditor?.handlerNumber) {
+      setOperationsError("Choose which air handler this row belongs to.");
+      return;
+    }
+    if (!airHandlerEditor.activeDays.length) {
+      setOperationsError("Choose at least one day for this programmed row.");
+      return;
+    }
+    if (!airHandlerEditor.hours.trim()) {
+      setOperationsError("Add the programmed military-hour range for this row.");
+      return;
+    }
+    setOperationsSubmitting(true);
+    try {
+      const existingRows = sortedAirHandlerSchedules.filter((entry) => entry.handler_number === airHandlerEditor.handlerNumber);
+      const existingRow = airHandlerEditor.id
+        ? existingRows.find((entry) => entry.id === airHandlerEditor.id)
+        : null;
+      const nextRowOrder = existingRow?.row_order
+        || ((existingRows.reduce((max, entry) => Math.max(max, Number.parseInt(entry.row_order || 0, 10) || 0), 0)) + 1);
+      const payload = {
+        church_id: church.id,
+        created_by_id: profile.id,
+        handler_number: airHandlerEditor.handlerNumber,
+        row_order: nextRowOrder,
+        active_days: AIR_HANDLER_DAY_KEYS.filter((day) => airHandlerEditor.activeDays.includes(day)),
+        hours: airHandlerEditor.hours.trim(),
+      };
+      let saved;
+      if (existingRow?.id) {
+        const result = await supabase
+          .from("air_handler_schedules")
+          .update(payload)
+          .eq("id", existingRow.id)
+          .select()
+          .single();
+        if (result.error) throw result.error;
+        saved = normalizeAirHandlerSchedule(result.data);
+      } else {
+        const result = await supabase
+          .from("air_handler_schedules")
+          .insert(payload)
+          .select()
+          .single();
+        if (result.error) throw result.error;
+        saved = normalizeAirHandlerSchedule(result.data);
+      }
+      setAirHandlerSchedules((current) => {
+        const next = [...(current || []).filter((entry) => entry.id !== saved.id), saved];
+        return next
+          .map(normalizeAirHandlerSchedule)
+          .sort((a, b) => (
+            a.handler_number - b.handler_number
+            || a.row_order - b.row_order
+            || getDateSortValue(a.created_at) - getDateSortValue(b.created_at)
+          ));
+      });
+      await recordActivity?.({
+        action: existingRow?.id ? "updated" : "created",
+        entityType: "air_handler_schedule",
+        entityId: saved.id,
+        entityTitle: `Air Handler ${saved.handler_number}`,
+        summary: `${profile?.full_name || "A staff member"} ${existingRow?.id ? "updated" : "added"} an A/C schedule row for Air Handler ${saved.handler_number}.`,
+        metadata: { active_days: saved.active_days, hours: saved.hours, handler_number: saved.handler_number },
+      });
+      setOperationsMessage(existingRow?.id ? "A/C schedule row updated." : "A/C schedule row added.");
+      setAirHandlerEditor(null);
+    } catch (error) {
+      setOperationsError(error?.message || "We couldn't save that A/C schedule row yet.");
+    } finally {
+      setOperationsSubmitting(false);
+    }
+  };
+
+  const deleteAirHandlerSchedule = async (row) => {
+    if (!row?.id) return;
+    if (!confirmDestructiveAction("Remove this A/C schedule row?")) return;
+    setOperationsError("");
+    setOperationsMessage("");
+    setOperationsSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from("air_handler_schedules")
+        .delete()
+        .eq("id", row.id);
+      if (error) throw error;
+      setAirHandlerSchedules((current) => (current || []).filter((entry) => entry.id !== row.id));
+      if (airHandlerEditor?.id === row.id) {
+        setAirHandlerEditor(null);
+      }
+      await recordActivity?.({
+        action: "deleted",
+        entityType: "air_handler_schedule",
+        entityId: row.id,
+        entityTitle: `Air Handler ${row.handler_number}`,
+        summary: `${profile?.full_name || "A staff member"} removed an A/C schedule row from Air Handler ${row.handler_number}.`,
+        metadata: { active_days: row.active_days, hours: row.hours, handler_number: row.handler_number },
+      });
+      setOperationsMessage("A/C schedule row removed.");
+    } catch (error) {
+      setOperationsError(error?.message || "We couldn't remove that A/C schedule row yet.");
+    } finally {
+      setOperationsSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (!operationsOpenRequest?.requestId) return;
     setOperationsMessage("");
@@ -8381,6 +8558,13 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       setOperationsSection("lock-up");
       setTimeOffMode("");
       setLockupMode(operationsOpenRequest.lockupMode || "home");
+      clearOperationsOpenRequest?.();
+      return;
+    }
+    if (operationsOpenRequest.section === "ac-schedule") {
+      setOperationsSection("ac-schedule");
+      setTimeOffMode("");
+      setLockupMode("home");
       clearOperationsOpenRequest?.();
       return;
     }
@@ -8553,6 +8737,153 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
             </div>
           );
         })}
+      </div>
+      {operationsError && <div style={{fontSize:12,color:C.danger}}>{operationsError}</div>}
+      {operationsMessage && <div style={{fontSize:12,color:C.success}}>{operationsMessage}</div>}
+    </div>
+  );
+
+  const renderAirHandlerScheduleBoard = () => (
+    <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:18,background:C.surface}}>
+      <div>
+        <div style={{fontSize:18,fontWeight:600,color:C.text}}>A/C Schedule</div>
+        <div style={{fontSize:12,color:C.muted,marginTop:8,lineHeight:1.6}}>
+          Set weekly program rows for air handlers 1, 2, and 3. Tick the days that apply, then record the programmed military-hour range for that row.
+        </div>
+      </div>
+      <div style={{display:"grid",gap:16}}>
+        {airHandlerScheduleGroups.map((group) => (
+          <div key={group.handlerNumber} className="card" style={{padding:18,display:"grid",gap:14,background:C.card,border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:600,color:C.text}}>Air Handler {group.handlerNumber}</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.6}}>
+                  Weekly programmed rows for this handler.
+                </div>
+              </div>
+              <button className="btn-gold-compact" type="button" onClick={() => openAirHandlerEditor(group.handlerNumber)}>
+                Add Row
+              </button>
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,tableLayout:"fixed",minWidth:760}}>
+                <thead>
+                  <tr>
+                    {AIR_HANDLER_DAY_COLUMNS.map((column) => (
+                      <th key={column.key} style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"center"}}>
+                        {column.label}
+                      </th>
+                    ))}
+                    <th style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"left",width:220}}>
+                      Hours
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{padding:"18px 10px",fontSize:12,color:C.muted,border:`1px dashed ${C.border}`,borderRadius:12,textAlign:"center"}}>
+                        No rows have been added for Air Handler {group.handlerNumber} yet.
+                      </td>
+                    </tr>
+                  ) : group.rows.map((row) => (
+                    <tr key={row.id}>
+                      {AIR_HANDLER_DAY_COLUMNS.map((column) => {
+                        const active = row.active_days.includes(column.key);
+                        return (
+                          <td key={column.key} style={{padding:"10px",borderTop:`1px solid ${C.border}`,textAlign:"center"}}>
+                            <span
+                              aria-hidden="true"
+                              style={{
+                                display:"inline-grid",
+                                placeItems:"center",
+                                width:20,
+                                height:20,
+                                borderRadius:6,
+                                border:`1px solid ${active ? C.gold : C.border}`,
+                                background:active ? C.gold : "transparent",
+                                color:active ? C.buttonText : "transparent",
+                                fontSize:12,
+                                fontWeight:700,
+                              }}
+                            >
+                              ✓
+                            </span>
+                          </td>
+                        );
+                      })}
+                      <td style={{padding:"10px",borderTop:`1px solid ${C.border}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                          <span style={{fontSize:13,color:C.text,whiteSpace:"nowrap"}}>{row.hours}</span>
+                          <div style={{display:"flex",gap:8,flexShrink:0}}>
+                            <button className="btn-outline" type="button" onClick={() => openAirHandlerEditor(group.handlerNumber, row)} style={{padding:"7px 10px",fontSize:12}}>
+                              Edit
+                            </button>
+                            <button className="btn-outline" type="button" onClick={() => deleteAirHandlerSchedule(row)} style={{padding:"7px 10px",fontSize:12,color:C.danger,borderColor:"rgba(224,82,82,.28)"}}>
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {airHandlerEditor?.handlerNumber === group.handlerNumber && (
+              <div style={{display:"grid",gap:14,padding:16,border:`1px solid ${C.border}`,borderRadius:16,background:C.surface}}>
+                <div style={{fontSize:14,fontWeight:600,color:C.text}}>
+                  {airHandlerEditor.id ? "Edit Program Row" : "Add Program Row"}
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                  {AIR_HANDLER_DAY_COLUMNS.map((column) => {
+                    const selected = airHandlerEditor.activeDays.includes(column.key);
+                    return (
+                      <button
+                        key={column.key}
+                        type="button"
+                        className={selected ? "btn-gold-compact" : "btn-outline"}
+                        onClick={() => {
+                          setAirHandlerEditor((current) => current ? {
+                            ...current,
+                            activeDays: selected
+                              ? current.activeDays.filter((day) => day !== column.key)
+                              : [...current.activeDays, column.key],
+                          } : current);
+                        }}
+                        style={{padding:"8px 12px",fontSize:12}}
+                      >
+                        {selected ? `Selected • ${column.label}` : column.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{display:"grid",gap:6}}>
+                  <label style={{fontSize:12,color:C.muted}}>Programmed Hours</label>
+                  <input
+                    className="input-field"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="06:00-18:00"
+                    value={airHandlerEditor.hours}
+                    onChange={(e) => setAirHandlerEditor((current) => current ? { ...current, hours: e.target.value } : current)}
+                  />
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+                    Use military hours, for example <span style={{color:C.text}}>06:00-18:00</span>.
+                  </div>
+                </div>
+                <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+                  <button className="btn-outline" type="button" onClick={() => setAirHandlerEditor(null)}>
+                    Cancel
+                  </button>
+                  <button className="btn-gold" type="button" onClick={saveAirHandlerSchedule} disabled={operationsSubmitting}>
+                    {operationsSubmitting ? "Saving..." : airHandlerEditor.id ? "Save Changes" : "Save Row"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
       {operationsError && <div style={{fontSize:12,color:C.danger}}>{operationsError}</div>}
       {operationsMessage && <div style={{fontSize:12,color:C.success}}>{operationsMessage}</div>}
@@ -8741,7 +9072,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         <div style={{display:"grid",gap:6,maxWidth:760}}>
           <h2 style={{...pageTitleStyle,margin:0}}>Operations Board</h2>
           <div style={{fontSize:12,color:C.muted,lineHeight:1.7}}>
-            Build the internal systems that help your church run smoothly behind the scenes, starting with staff coverage and time-off workflows.
+            Build the internal systems that help your church run smoothly behind the scenes, from staff coverage to lock-up accountability and weekly A/C programming.
           </div>
         </div>
         <div style={{display:"flex",justifyContent:"flex-end"}}>
@@ -8869,7 +9200,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                   ))}
                 </div>
               </div>
-            ) : operationsSection === "time-off" ? renderTimeOffForm() : lockupMode === "form" ? renderLockupForm() : renderLockupAssignments()}
+            ) : operationsSection === "time-off" ? renderTimeOffForm() : operationsSection === "ac-schedule" ? renderAirHandlerScheduleBoard() : lockupMode === "form" ? renderLockupForm() : renderLockupAssignments()}
             {operationsSection === "time-off" ? renderAvailabilityRequests() : null}
           </div>
         )}
@@ -13366,6 +13697,7 @@ function AppShell() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [staffAvailabilityRequests, setStaffAvailabilityRequests] = useState([]);
   const [churchLockupAssignments, setChurchLockupAssignments] = useState([]);
+  const [airHandlerSchedules, setAirHandlerSchedules] = useState([]);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [ministries, setMinistries] = useState([]);
   const [eventRequests, setEventRequests] = useState(null);
@@ -13827,6 +14159,7 @@ function AppShell() {
         setPurchaseOrders([]);
         setStaffAvailabilityRequests([]);
         setChurchLockupAssignments([]);
+        setAirHandlerSchedules([]);
         setCalendarEvents([]);
         setMinistries([]);
         setPreviewUsers([]);
@@ -13883,15 +14216,16 @@ function AppShell() {
         setTrashItems([]);
       }
       if (prof?.church_id) {
-        const [ch, t, cla, staff, profileRows, notificationRows] = await Promise.all([
+        const [ch, t, cla, staff, profileRows, notificationRows, air] = await Promise.all([
           supabase.from("churches").select("*").eq("id", prof.church_id).single(),
           supabase.from("tasks").select("*").eq("church_id", prof.church_id).order("created_at", { ascending: false }),
           supabase.from("church_lockup_assignments").select("*").eq("church_id", prof.church_id).order("week_of", { ascending: true }),
           supabase.from("church_staff").select("*").eq("church_id", prof.church_id).order("full_name"),
           supabase.from("profiles").select("id,staff_id,full_name,current_focus_task_id,current_focus_updated_at").eq("church_id", prof.church_id),
           supabase.from("notifications").select("*").eq("recipient_profile_id", prof.id).order("created_at", { ascending: false }).limit(100),
+          supabase.from("air_handler_schedules").select("*").eq("church_id", prof.church_id).order("handler_number", { ascending: true }).order("row_order", { ascending: true }),
         ]);
-        const primaryErrors = [ch.error, t.error, cla.error, staff.error, profileRows.error, notificationRows.error].filter(Boolean);
+        const primaryErrors = [ch.error, t.error, cla.error, staff.error, profileRows.error, notificationRows.error, air.error].filter(Boolean);
         if (primaryErrors.length) {
           reportDataLoadIssue("Some church data could not be loaded completely. Refresh and try again.", primaryErrors.map((entry) => entry.message || String(entry)).join(" | "));
         }
@@ -13905,6 +14239,7 @@ function AppShell() {
         setChurch(ch.data);
         setTasks((t.data || []).map(normalizeTask));
         setChurchLockupAssignments((cla.data || []).map(normalizeChurchLockupAssignment));
+        setAirHandlerSchedules((air.data || []).map(normalizeAirHandlerSchedule));
         setPersistentNotifications(notificationRows.data || []);
         if (canViewActivityLog(enhancedProfile)) {
           supabase
@@ -13967,6 +14302,7 @@ function AppShell() {
         setPurchaseOrders([]);
         setStaffAvailabilityRequests([]);
         setChurchLockupAssignments([]);
+        setAirHandlerSchedules([]);
         setCalendarEvents([]);
         setMinistries([]);
         setPreviewUsers([]);
@@ -14541,7 +14877,7 @@ function AppShell() {
     workspaces: <Workspaces setActive={setActive} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity} eventOpenRequest={eventOpenRequest} clearEventOpenRequest={clearEventOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setTasks={setTasks} setActive={setActive} churchId={church?.id} recordActivity={recordActivity} isFavorite={isFavorite} toggleFavorite={toggleFavorite} />,
-    "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} setCalendarEvents={setCalendarEvents} recordActivity={recordActivity} operationsOpenRequest={operationsOpenRequest} clearOperationsOpenRequest={clearOperationsOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite} />,
+    "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} airHandlerSchedules={airHandlerSchedules} setAirHandlerSchedules={setAirHandlerSchedules} setCalendarEvents={setCalendarEvents} recordActivity={recordActivity} operationsOpenRequest={operationsOpenRequest} clearOperationsOpenRequest={clearOperationsOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite} />,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest} recordActivity={recordActivity} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     faq: <FAQPage onStartTutorial={startTutorial} />,
     trash: <TrashPage trashItems={trashItems} clearTrash={clearTrash} restoreTrashItem={restoreTrashItem} />,

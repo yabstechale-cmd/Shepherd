@@ -233,6 +233,21 @@ const AIR_HANDLER_DAY_COLUMNS = [
 ];
 const AIR_HANDLER_DAY_KEYS = AIR_HANDLER_DAY_COLUMNS.map((column) => column.key);
 const AIR_HANDLER_NUMBERS = [1, 2, 3];
+const AIR_HANDLER_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const hours = String(Math.floor(index / 2)).padStart(2, "0");
+  const minutes = index % 2 === 0 ? "00" : "30";
+  return `${hours}:${minutes}`;
+});
+const parseAirHandlerHoursRange = (value) => {
+  const [startTime = "", endTime = ""] = String(value || "").split("-").map((entry) => entry.trim());
+  return {
+    startTime: AIR_HANDLER_TIME_OPTIONS.includes(startTime) ? startTime : "",
+    endTime: AIR_HANDLER_TIME_OPTIONS.includes(endTime) ? endTime : "",
+  };
+};
+const buildAirHandlerHoursRange = (startTime, endTime) => (
+  startTime && endTime ? `${startTime}-${endTime}` : ""
+);
 const CATEGORY_STORAGE_KEY = "shepherd-recent-task-categories";
 const AUTH_CODE_LENGTH = 4;
 const NOTIFICATION_STORAGE_PREFIX = "shepherd-notifications";
@@ -756,6 +771,7 @@ const normalizeAirHandlerSchedule = (entry) => ({
     ? entry.active_days.filter((day) => AIR_HANDLER_DAY_KEYS.includes(day))
     : [],
   hours: String(entry?.hours || "").trim(),
+  ...parseAirHandlerHoursRange(entry?.hours),
 });
 const buildAirHandlerScheduleRow = (handlerNumber, rowOrder, row = null) => ({
   id: row?.id || "",
@@ -764,7 +780,9 @@ const buildAirHandlerScheduleRow = (handlerNumber, rowOrder, row = null) => ({
   handler_number: handlerNumber,
   row_order: rowOrder,
   active_days: Array.isArray(row?.active_days) ? row.active_days.filter((day) => AIR_HANDLER_DAY_KEYS.includes(day)) : [],
-  hours: String(row?.hours || "").trim(),
+  hours: buildAirHandlerHoursRange(row?.start_time || parseAirHandlerHoursRange(row?.hours).startTime, row?.end_time || parseAirHandlerHoursRange(row?.hours).endTime),
+  start_time: row?.start_time || parseAirHandlerHoursRange(row?.hours).startTime,
+  end_time: row?.end_time || parseAirHandlerHoursRange(row?.hours).endTime,
   created_at: row?.created_at || "",
 });
 const normalizeEventWorkflow = (workflow) => ({
@@ -8465,7 +8483,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
         ? sortedAirHandlerSchedules.find((entry) => entry.id === rowState.id)
         : sortedAirHandlerSchedules.find((entry) => entry.handler_number === rowState.handler_number && entry.row_order === rowState.row_order);
       const nextDays = AIR_HANDLER_DAY_KEYS.filter((day) => rowState.active_days.includes(day));
-      const nextHours = rowState.hours.trim();
+      const nextHours = buildAirHandlerHoursRange(rowState.start_time, rowState.end_time);
       if (!nextDays.length && !nextHours) {
         if (existingRow?.id) {
           const { error } = await supabase
@@ -8530,6 +8548,8 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     await persistAirHandlerRow({
       ...row,
       active_days: [],
+      start_time: "",
+      end_time: "",
       hours: "",
     }, { silent: false });
   };
@@ -8763,7 +8783,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                         {column.label}
                       </th>
                     ))}
-                    <th style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"left",width:220}}>
+                    <th style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"left",width:320}}>
                       Hours
                     </th>
                     <th style={{padding:"0 10px 10px",fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",textAlign:"right",width:130}}>
@@ -8817,22 +8837,51 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
                         );
                       })}
                       <td style={{padding:"10px",borderTop:`1px solid ${C.border}`}}>
-                        <input
-                          className="input-field"
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="06:00-18:00"
-                          value={rowState.hours}
-                          onChange={(e) => setAirHandlerRowDraft(row, { ...rowState, hours: e.target.value })}
-                          onBlur={() => persistAirHandlerRow(rowState)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.currentTarget.blur();
-                            }
-                          }}
-                          disabled={isAirHandlerRowSaving(group.handlerNumber, row.row_order)}
-                          style={{minWidth:0}}
-                        />
+                        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto minmax(0,1fr)",gap:8,alignItems:"center"}}>
+                          <select
+                            className="input-field"
+                            value={rowState.start_time || ""}
+                            onChange={(e) => {
+                              const nextState = buildAirHandlerScheduleRow(row.handler_number, row.row_order, {
+                                ...rowState,
+                                start_time: e.target.value,
+                                end_time: rowState.end_time,
+                              });
+                              setAirHandlerRowDraft(row, nextState);
+                              if (!nextState.start_time || !nextState.end_time) return;
+                              persistAirHandlerRow(nextState);
+                            }}
+                            disabled={isAirHandlerRowSaving(group.handlerNumber, row.row_order)}
+                            style={{minWidth:0}}
+                          >
+                            <option value="">Start</option>
+                            {AIR_HANDLER_TIME_OPTIONS.map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                          </select>
+                          <span style={{fontSize:12,color:C.muted}}>to</span>
+                          <select
+                            className="input-field"
+                            value={rowState.end_time || ""}
+                            onChange={(e) => {
+                              const nextState = buildAirHandlerScheduleRow(row.handler_number, row.row_order, {
+                                ...rowState,
+                                start_time: rowState.start_time,
+                                end_time: e.target.value,
+                              });
+                              setAirHandlerRowDraft(row, nextState);
+                              if (!nextState.start_time || !nextState.end_time) return;
+                              persistAirHandlerRow(nextState);
+                            }}
+                            disabled={isAirHandlerRowSaving(group.handlerNumber, row.row_order)}
+                            style={{minWidth:0}}
+                          >
+                            <option value="">End</option>
+                            {AIR_HANDLER_TIME_OPTIONS.map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
                       <td style={{padding:"10px",borderTop:`1px solid ${C.border}`,textAlign:"right"}}>
                         <button

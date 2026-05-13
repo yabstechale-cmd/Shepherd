@@ -13364,6 +13364,16 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       setCalendarItemError("Add at least a title and date before saving.");
       return;
     }
+    if (calendarItemForm.calendar_type !== "myTasks" && !calendarItemForm.all_day) {
+      if (!calendarItemForm.start_time || !calendarItemForm.end_time) {
+        setCalendarItemError("Choose both a start and end time, or mark this event as all day.");
+        return;
+      }
+      if (calendarItemForm.end_time <= calendarItemForm.start_time) {
+        setCalendarItemError("End time needs to come after the start time.");
+        return;
+      }
+    }
     setCalendarSyncStatus({ error: "", message: "" });
     let keepCalendarFormOpen = false;
     if (calendarItemForm.calendar_type === "myTasks") {
@@ -13486,6 +13496,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     if (!item?.editable || !item?.source) return;
     setEditingCalendarEventId(item.source.id);
     setCalendarItemError("");
+    setCalendarSyncStatus({ error: "", message: "" });
     setCalendarItemForm({
       calendar_type: item.source.calendar_category === "birthdays" ? "birthdays" : "churchEvents",
       title: item.source.title || "",
@@ -13507,6 +13518,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     setShowCalendarItemForm(false);
     setEditingCalendarEventId(null);
     setCalendarItemError("");
+    setCalendarSyncStatus({ error: "", message: "" });
     setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", all_day: false, location: "", notes: "", sync_to_google: false });
   };
 
@@ -13593,8 +13605,8 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
               <option value="myTasks">My Tasks</option>
             </select>
             {!!editingCalendarEventId && (
-              <div style={{fontSize:11,color:C.danger,lineHeight:1.5,textAlign:"left"}}>
-                You do not have authorization to change which calendar this item belongs to after it is created.
+              <div style={{fontSize:11,color:C.muted,lineHeight:1.5,textAlign:"left"}}>
+                This item stays on its current calendar after it is created.
               </div>
             )}
           </div>

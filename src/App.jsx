@@ -13358,6 +13358,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       return;
     }
     setCalendarSyncStatus({ error: "", message: "" });
+    let keepCalendarFormOpen = false;
     if (calendarItemForm.calendar_type === "myTasks") {
       const payload = {
         church_id: churchId,
@@ -13433,6 +13434,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
             setCalendarSyncStatus({ error: "", message: "Google Calendar is in sync with this event." });
           }
         } catch (syncError) {
+          keepCalendarFormOpen = true;
           setCalendarSyncStatus({ error: syncError?.message || "This event saved in Shepherd, but Google sync did not finish yet.", message: "" });
         }
       } else if (editingCalendarEventId && selectedCalendarItem?.source?.google_calendar_source_event_id && !calendarItemForm.sync_to_google) {
@@ -13444,6 +13446,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
           setCalendarEvents((current) => (current || []).filter((entry) => entry.id !== normalizedEvent.id));
           setCalendarSyncStatus({ error: "", message: "The Google-synced version of this event was removed." });
         } catch (syncError) {
+          keepCalendarFormOpen = true;
           setCalendarSyncStatus({ error: syncError?.message || "We couldn't unsync this event from Google yet.", message: "" });
         }
       }
@@ -13458,8 +13461,10 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     }
     setCalendarItemError("");
     setEditingCalendarEventId(null);
-    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", all_day: false, location: "", notes: "", sync_to_google: false });
-    setShowCalendarItemForm(false);
+    if (!keepCalendarFormOpen) {
+      setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", all_day: false, location: "", notes: "", sync_to_google: false });
+      setShowCalendarItemForm(false);
+    }
   };
 
   const openCalendarEventEditor = (item) => {

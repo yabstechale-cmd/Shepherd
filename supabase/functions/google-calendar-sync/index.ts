@@ -645,7 +645,7 @@ async function upsertOfficialCalendarEvent(
   const endpointBase = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
   const googlePayload = localEvent.google_calendar_source_event_id
     ? await googleRequest(accessToken, `${endpointBase}/${encodeURIComponent(localEvent.google_calendar_source_event_id)}`, {
-        method: "PATCH",
+        method: "PUT",
         body: JSON.stringify(payload),
       })
     : await googleRequest(accessToken, endpointBase, {
@@ -718,6 +718,64 @@ async function deleteOfficialCalendarEvent(
       google_event_id: localEvent.google_calendar_source_event_id,
     },
   });
+}
+
+async function unsyncOfficialCalendarEvent(
+  adminClient: ReturnType<typeof createClient>,
+  accessToken: string,
+  church: ChurchRow,
+  profile: RequesterProfile,
+  calendarEventId: string,
+) {
+  const localEvent = await fetchCalendarEvent(adminClient, church.id, calendarEventId);
+  const calendarId = getOfficialCalendarId(church);
+
+  if (localEvent.google_calendar_source_event_id) {
+    await googleRequest(
+      accessToken,
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(localEvent.google_calendar_source_event_id)}`,
+      { method: "DELETE" },
+    ).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error || "");
+      if (!/not found/i.test(message)) throw error;
+    });
+  }
+
+  const { data, error } = await adminClient
+    .from("calendar_events")
+    .update({
+      sync_to_google: false,
+      google_calendar_source_id: null,
+      google_calendar_source_title: null,
+      google_calendar_source_event_id: null,
+      google_last_synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", localEvent.id)
+    .select()
+    .single();
+
+  if (error || !data?.id) {
+    throw new Error(error?.message || "We couldn't unsync this Shepherd event from Google Calendar.");
+  }
+
+  await recordSyncActivity(adminClient, {
+    churchId: church.id,
+    actorProfileId: profile.id,
+    actorName: profile.full_name || profile.email || "Staff",
+    action: "updated",
+    entityType: "calendar_event",
+    entityId: localEvent.id,
+    entityTitle: localEvent.title,
+    summary: `${profile.full_name || "A staff member"} unsynced calendar event "${localEvent.title}" from Google Calendar.`,
+    metadata: {
+      source: "shepherd",
+      unsynced_from_google: true,
+      google_event_id: localEvent.google_calendar_source_event_id,
+    },
+  });
+
+  return data as CalendarEventRow;
 }
 
 Deno.serve(async (req) => {
@@ -861,6 +919,16 @@ Deno.serve(async (req) => {
       const accessToken = await exchangeRefreshToken(connection.refresh_token);
       await deleteOfficialCalendarEvent(adminClient, accessToken, church, profile, calendarEventId);
       return jsonResponse(200, { deleted: true });
+    }
+
+    if (action === "unsyncCalendarEvent") {
+      const calendarEventId = sanitizePlainText(body?.calendarEventId, 200);
+      if (!calendarEventId) {
+        return jsonResponse(400, { error: "calendarEventId is required." });
+      }
+      const accessToken = await exchangeRefreshToken(connection.refresh_token);
+      const saved = await unsyncOfficialCalendarEvent(adminClient, accessToken, church, profile, calendarEventId);
+      return jsonResponse(200, { event: saved, unsynced: true });
     }
 
     if (action === "syncOfficialCalendar") {

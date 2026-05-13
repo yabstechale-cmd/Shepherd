@@ -13464,12 +13464,18 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         }
       } else if (editingCalendarEventId && selectedCalendarItem?.source?.google_calendar_source_event_id && !calendarItemForm.sync_to_google) {
         try {
-          await invokeGoogleCalendarSyncRequest({
-            action: "deleteCalendarEvent",
+          const syncResult = await invokeGoogleCalendarSyncRequest({
+            action: "unsyncCalendarEvent",
             calendarEventId: normalizedEvent.id,
           });
-          setCalendarEvents((current) => (current || []).filter((entry) => entry.id !== normalizedEvent.id));
-          setCalendarSyncStatus({ error: "", message: "The Google-synced version of this event was removed." });
+          if (syncResult?.event?.id) {
+            const unsyncedEvent = normalizeCalendarEvent(syncResult.event);
+            setCalendarEvents((current) => {
+              const others = (current || []).filter((entry) => entry.id !== unsyncedEvent.id);
+              return [unsyncedEvent, ...others];
+            });
+          }
+          setCalendarSyncStatus({ error: "", message: "This event was unsynced from Google Calendar." });
         } catch (syncError) {
           keepCalendarFormOpen = true;
           setCalendarSyncStatus({ error: syncError?.message || "We couldn't unsync this event from Google yet.", message: "" });
@@ -13485,8 +13491,8 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       });
     }
     setCalendarItemError("");
-    setEditingCalendarEventId(null);
     if (!keepCalendarFormOpen) {
+      setEditingCalendarEventId(null);
       setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", all_day: false, location: "", notes: "", sync_to_google: false });
       setShowCalendarItemForm(false);
     }
@@ -13599,14 +13605,14 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         <div className="card" style={{padding:20,display:"grid",gap:12,marginBottom:18,textAlign:"left"}}>
           <div style={{display:"grid",gap:6}}>
             <label style={{fontSize:12,color:C.muted}}>Calendar</label>
-            <select className="input-field" value={calendarItemForm.calendar_type} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, calendar_type: e.target.value }))} style={{background:C.surface}} disabled={!!editingCalendarEventId}>
+            <select className="input-field" value={calendarItemForm.calendar_type} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, calendar_type: e.target.value }))} style={{background:C.surface}}>
               <option value="churchEvents">{churchCalendarLabel}</option>
               <option value="birthdays">Birthdays</option>
               <option value="myTasks">My Tasks</option>
             </select>
             {!!editingCalendarEventId && (
               <div style={{fontSize:11,color:C.muted,lineHeight:1.5,textAlign:"left"}}>
-                This item stays on its current calendar after it is created.
+                You can update this event's calendar placement and Google sync settings here.
               </div>
             )}
           </div>
@@ -13663,20 +13669,17 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                 type="checkbox"
                 checked={!!calendarItemForm.sync_to_google}
                 onChange={(e) => setCalendarItemForm((current) => ({ ...current, sync_to_google: e.target.checked }))}
-                disabled={!!editingCalendarEventId && !!selectedCalendarItem?.source?.google_calendar_source_event_id}
                 style={{marginTop:2}}
               />
               <div style={{display:"grid",gap:2}}>
                 <span style={{fontWeight:700}}>
-                  {editingCalendarEventId && !!selectedCalendarItem?.source?.google_calendar_source_event_id
-                    ? `This event is already synced to the ${churchGoogleCalendarLabel}.`
-                    : `Sync to the ${churchGoogleCalendarLabel}`}
+                  {calendarItemForm.sync_to_google
+                    ? `Sync to the ${churchGoogleCalendarLabel}`
+                    : `Keep this event only on the ${churchCalendarLabel}`}
                 </span>
-                {!editingCalendarEventId || !selectedCalendarItem?.source?.google_calendar_source_event_id ? (
-                  <span style={{fontSize:11,color:C.muted}}>
-                    Turn this on when this item should live in the shared church Google Calendar too.
-                  </span>
-                ) : null}
+                <span style={{fontSize:11,color:C.muted}}>
+                  Turn this on when this item should live in the shared church Google Calendar too, or turn it off to keep it only inside Shepherd.
+                </span>
               </div>
             </label>
           )}

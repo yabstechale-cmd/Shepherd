@@ -114,6 +114,20 @@ const stripGoogleCalendarMetadata = (notes) => String(notes || "")
   .join("\n")
   .replace(/\n{3,}/g, "\n\n")
   .trim();
+const getCalendarEventMetadataValue = (notes, key) => {
+  const match = String(notes || "").match(new RegExp(`${key}:([^\\n]+)`));
+  return match?.[1]?.trim() || "";
+};
+const stripCalendarEventMetadata = (notes) => String(notes || "")
+  .split(/\n+/)
+  .filter((line) => {
+    const trimmed = line.trim();
+    return !trimmed.startsWith("calendar-category:")
+      && !trimmed.startsWith("staff-availability-request:");
+  })
+  .join("\n")
+  .replace(/\n{3,}/g, "\n\n")
+  .trim();
 const getTaskMetadataValue = (notes, key) => {
   const match = String(notes || "").match(new RegExp(`${key}:([^\\n]+)`));
   return match?.[1]?.trim() || "";
@@ -787,6 +801,8 @@ const normalizeCalendarEvent = (event) => ({
   google_last_synced_at: event?.google_last_synced_at || null,
   linked_event_request_id: event?.linked_event_request_id || null,
   all_day: !!event?.all_day || (!event?.start_time && !event?.end_time),
+  calendar_category: getCalendarEventMetadataValue(event?.notes, "calendar-category")
+    || (event?.location === "Staff Availability" ? "timeoff" : "church"),
   updated_at: event?.updated_at || event?.created_at || new Date().toISOString(),
 });
 const mergeSyncedCalendarEvents = (currentRows, syncedRows, deletedIds = []) => {
@@ -13195,6 +13211,9 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [calendarFilters, setCalendarFilters] = useState({
     myTasks: true,
+    churchCalendar: true,
+    birthdays: true,
+    timeOff: true,
   });
   const [googleCalendarFilters, setGoogleCalendarFilters] = useState({});
   const [showCalendarItemForm, setShowCalendarItemForm] = useState(false);
@@ -13220,6 +13239,8 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const officialGoogleCalendarTitleMap = Object.fromEntries(
     officialGoogleCalendarIds.map((id, index) => [id, getChurchGoogleCalendarLabel(church, index, officialGoogleCalendarIds.length)])
   );
+  const churchShepherdCalendarLabel = `${church?.name || "Church"} Shepherd Calendar`;
+  const churchGoogleCalendarLabel = `${church?.name || "Church"} Google Calendar`;
   const getGoogleCalendarIdFromNotes = (notes) => {
     const text = String(notes || "");
     const safeMatch = text.match(/google-calendar-id:([^\n]+)/);
@@ -13265,17 +13286,26 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
           event.location || "",
           googleCalendarTitle || "",
         ].filter(Boolean).join(" • ") || "Added directly to the church calendar",
-        tone: C.gold,
-        tag: googleCalendarTitle || (event.sync_to_google ? "Google Sync" : "Church Event"),
+        tone: event.calendar_category === "birthdays" ? C.purple : event.calendar_category === "timeoff" ? C.blue : C.gold,
+        tag: event.calendar_category === "birthdays"
+          ? "Birthdays"
+          : event.calendar_category === "timeoff"
+            ? "Time Off & Sick Days"
+            : (googleCalendarTitle || (event.sync_to_google ? "Google Sync" : churchShepherdCalendarLabel)),
         editable: true,
         source: event,
         googleCalendarId,
+        calendarCategory: event.calendar_category,
       };
     })
     .filter((entry) => entry.date);
   const visibleDirectChurchEvents = directChurchEvents.filter((event) => {
     if (!event.googleCalendarId) return true;
     return resolvedGoogleCalendarFilters[event.googleCalendarId] !== false;
+  }).filter((event) => {
+    if (event.calendarCategory === "birthdays") return calendarFilters.birthdays;
+    if (event.calendarCategory === "timeoff") return calendarFilters.timeOff;
+    return calendarFilters.churchCalendar;
   });
   const myTasks = (tasks || [])
     .filter((task) => task.status !== "done" && samePerson(task.assignee, profile?.full_name) && task.due_date)
@@ -13324,6 +13354,9 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     return parsed >= monthStart && parsed <= monthEnd;
   });
   const filterOptions = [
+    { key: "churchCalendar", label: churchShepherdCalendarLabel },
+    { key: "birthdays", label: "Birthdays" },
+    { key: "timeOff", label: "Time Off & Sick Days" },
     { key: "myTasks", label: "My Tasks" },
   ];
   const activeCalendarFilterStyle = {
@@ -13391,6 +13424,14 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         metadata: { due_date: savedTask.due_date },
       });
     } else {
+      const calendarCategory = calendarItemForm.calendar_type === "birthdays"
+        ? "birthdays"
+        : "church";
+      const userNotes = stripCalendarEventMetadata(calendarItemForm.notes);
+      const notesWithMetadata = [
+        `calendar-category:${calendarCategory}`,
+        userNotes,
+      ].filter(Boolean).join("\n\n");
       const payload = {
         church_id: churchId,
         created_by: profile.id,
@@ -13399,7 +13440,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         start_time: calendarItemForm.all_day ? null : (calendarItemForm.start_time || null),
         end_time: calendarItemForm.all_day ? null : (calendarItemForm.end_time || null),
         location: calendarItemForm.location.trim() || null,
-        notes: calendarItemForm.notes.trim() || null,
+        notes: notesWithMetadata || null,
         sync_to_google: !!calendarItemForm.sync_to_google,
         updated_at: new Date().toISOString(),
       };
@@ -13474,14 +13515,14 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     setEditingCalendarEventId(item.source.id);
     setCalendarItemError("");
     setCalendarItemForm({
-      calendar_type: "churchEvents",
+      calendar_type: item.source.calendar_category === "birthdays" ? "birthdays" : "churchEvents",
       title: item.source.title || "",
       event_date: item.source.event_date || "",
       start_time: item.source.start_time || "",
       end_time: item.source.end_time || "",
       all_day: !!item.source.all_day || (!item.source.start_time && !item.source.end_time),
       location: item.source.location || "",
-      notes: stripGoogleCalendarMetadata(item.source.notes),
+      notes: stripCalendarEventMetadata(stripGoogleCalendarMetadata(item.source.notes)),
       sync_to_google: !!item.source.sync_to_google || !!item.source.google_calendar_source_event_id,
     });
     setShowCalendarItemForm(true);
@@ -13575,7 +13616,8 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
           <div style={{display:"grid",gap:6}}>
             <label style={{fontSize:12,color:C.muted}}>Calendar</label>
             <select className="input-field" value={calendarItemForm.calendar_type} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, calendar_type: e.target.value }))} style={{background:C.surface}} disabled={!!editingCalendarEventId}>
-              <option value="churchEvents">Church Events</option>
+              <option value="churchEvents">{churchShepherdCalendarLabel}</option>
+              <option value="birthdays">Birthdays</option>
               <option value="myTasks">My Tasks</option>
             </select>
             {!!editingCalendarEventId && (
@@ -13593,14 +13635,14 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
               <label style={{fontSize:12,color:C.muted}}>Date</label>
               <input className="input-field" type="date" value={calendarItemForm.event_date} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, event_date: e.target.value }))} />
             </div>
-            {calendarItemForm.calendar_type === "churchEvents" && (
+            {calendarItemForm.calendar_type !== "myTasks" && (
               <div style={{display:"grid",gap:6}}>
                 <label style={{fontSize:12,color:C.muted}}>Location</label>
-                <input className="input-field" value={calendarItemForm.location} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, location: e.target.value }))} placeholder="Example: Main Lobby" />
+                <input className="input-field" value={calendarItemForm.location} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, location: e.target.value }))} placeholder={calendarItemForm.calendar_type === "birthdays" ? "Example: Family Home or Celebration Location" : "Example: Main Lobby"} />
               </div>
             )}
           </div>
-          {calendarItemForm.calendar_type === "churchEvents" && (
+          {calendarItemForm.calendar_type !== "myTasks" && (
             <>
               <label style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:C.text}}>
                 <input
@@ -13631,17 +13673,27 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
             <label style={{fontSize:12,color:C.muted}}>Notes</label>
             <textarea className="input-field" rows={3} value={calendarItemForm.notes} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, notes: e.target.value }))} placeholder={calendarItemForm.calendar_type === "myTasks" ? "Add a quick note for this task" : "Anything your team should know"} style={{resize:"vertical"}} />
           </div>
-          {calendarItemForm.calendar_type === "churchEvents" && !!officialGoogleCalendarIds.length && (
-            <label style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:C.text}}>
+          {calendarItemForm.calendar_type !== "myTasks" && !!officialGoogleCalendarIds.length && (
+            <label style={{display:"flex",alignItems:"flex-start",gap:12,fontSize:12,color:C.text,padding:"12px 14px",border:`1px solid ${C.goldDim}`,borderRadius:12,background:C.goldGlow}}>
               <input
                 type="checkbox"
                 checked={!!calendarItemForm.sync_to_google}
                 onChange={(e) => setCalendarItemForm((current) => ({ ...current, sync_to_google: e.target.checked }))}
                 disabled={!!editingCalendarEventId && !!selectedCalendarItem?.source?.google_calendar_source_event_id}
+                style={{marginTop:2}}
               />
-              {editingCalendarEventId && !!selectedCalendarItem?.source?.google_calendar_source_event_id
-                ? "This event is already synced with Google Calendar."
-                : "Add to Google Calendar"}
+              <div style={{display:"grid",gap:2}}>
+                <span style={{fontWeight:700}}>
+                  {editingCalendarEventId && !!selectedCalendarItem?.source?.google_calendar_source_event_id
+                    ? `This event is already synced to the ${churchGoogleCalendarLabel}.`
+                    : `Sync to the ${churchGoogleCalendarLabel}`}
+                </span>
+                {!editingCalendarEventId || !selectedCalendarItem?.source?.google_calendar_source_event_id ? (
+                  <span style={{fontSize:11,color:C.muted}}>
+                    Turn this on when this item should live in the shared church Google Calendar too.
+                  </span>
+                ) : null}
+              </div>
             </label>
           )}
           {calendarItemError && <div style={{fontSize:12,color:C.danger}}>{calendarItemError}</div>}

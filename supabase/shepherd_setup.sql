@@ -489,30 +489,42 @@ create table if not exists public.calendar_events (
   id uuid primary key default gen_random_uuid(),
   church_id uuid not null references public.churches(id) on delete cascade,
   created_by uuid references public.profiles(id) on delete set null,
+  linked_event_request_id uuid references public.event_requests(id) on delete set null,
   title text not null,
   event_date date not null,
   start_time text,
   end_time text,
   location text,
+  sync_to_google boolean not null default false,
   google_calendar_source_id text,
   google_calendar_source_title text,
   google_calendar_source_event_id text,
+  google_last_synced_at timestamptz,
   notes text,
+  updated_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
 
 alter table public.calendar_events add column if not exists church_id uuid references public.churches(id) on delete cascade;
 alter table public.calendar_events add column if not exists created_by uuid references public.profiles(id) on delete set null;
+alter table public.calendar_events add column if not exists linked_event_request_id uuid references public.event_requests(id) on delete set null;
 alter table public.calendar_events add column if not exists title text;
 alter table public.calendar_events add column if not exists event_date date;
 alter table public.calendar_events add column if not exists start_time text;
 alter table public.calendar_events add column if not exists end_time text;
 alter table public.calendar_events add column if not exists location text;
+alter table public.calendar_events add column if not exists sync_to_google boolean not null default false;
 alter table public.calendar_events add column if not exists google_calendar_source_id text;
 alter table public.calendar_events add column if not exists google_calendar_source_title text;
 alter table public.calendar_events add column if not exists google_calendar_source_event_id text;
+alter table public.calendar_events add column if not exists google_last_synced_at timestamptz;
 alter table public.calendar_events add column if not exists notes text;
+alter table public.calendar_events add column if not exists updated_at timestamptz not null default now();
 alter table public.calendar_events add column if not exists created_at timestamptz not null default now();
+
+create unique index if not exists calendar_events_google_source_key
+  on public.calendar_events (church_id, google_calendar_source_id, google_calendar_source_event_id)
+  where google_calendar_source_event_id is not null;
 
 alter table public.calendar_events
   enable row level security;
@@ -1894,10 +1906,6 @@ using (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = calendar_events.church_id
-      and (
-        p.id = calendar_events.created_by
-        or public.user_can_manage_church(calendar_events.church_id)
-      )
   )
 )
 with check (
@@ -1906,10 +1914,6 @@ with check (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = calendar_events.church_id
-      and (
-        p.id = calendar_events.created_by
-        or public.user_can_manage_church(calendar_events.church_id)
-      )
   )
 );
 
@@ -1923,10 +1927,6 @@ using (
     from public.profiles p
     where p.id = auth.uid()
       and p.church_id = calendar_events.church_id
-      and (
-        p.id = calendar_events.created_by
-        or public.user_can_manage_church(calendar_events.church_id)
-      )
   )
 );
 

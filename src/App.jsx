@@ -300,6 +300,21 @@ const safeLocalStorageRemove = (key) => {
     return false;
   }
 };
+const invokeGoogleCalendarSyncRequest = async (body) => {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token || "";
+  const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
+    body,
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
+  if (error) {
+    const detailedError = error?.context && typeof error.context.json === "function"
+      ? await error.context.json().catch(() => null)
+      : null;
+    throw new Error(detailedError?.error || error?.message || "We couldn't reach the Google calendar service.");
+  }
+  return data;
+};
 
 const getGoogleCalendarOAuthStateStorageKey = (churchId) => `${GOOGLE_CALENDAR_OAUTH_STATE_STORAGE_PREFIX}:${churchId || "anon"}`;
 const getTutorialCompletedStorageKey = (userId) => `${TUTORIAL_COMPLETED_STORAGE_PREFIX}:${userId || "anon"}`;
@@ -763,6 +778,28 @@ const normalizeChurchLockupAssignment = (assignment) => ({
   ...assignment,
   assignee_names: Array.isArray(assignment?.assignee_names) ? assignment.assignee_names : [],
 });
+const normalizeCalendarEvent = (event) => ({
+  ...event,
+  sync_to_google: !!event?.sync_to_google,
+  google_calendar_source_id: event?.google_calendar_source_id || "",
+  google_calendar_source_title: event?.google_calendar_source_title || "",
+  google_calendar_source_event_id: event?.google_calendar_source_event_id || "",
+  google_last_synced_at: event?.google_last_synced_at || null,
+  linked_event_request_id: event?.linked_event_request_id || null,
+  updated_at: event?.updated_at || event?.created_at || new Date().toISOString(),
+});
+const mergeSyncedCalendarEvents = (currentRows, syncedRows, deletedIds = []) => {
+  const normalizedRows = (Array.isArray(syncedRows) ? syncedRows : []).map(normalizeCalendarEvent);
+  const deletedIdSet = new Set((Array.isArray(deletedIds) ? deletedIds : []).filter(Boolean));
+  const syncedIdSet = new Set(normalizedRows.map((entry) => entry.id).filter(Boolean));
+  const preservedRows = (Array.isArray(currentRows) ? currentRows : []).filter((entry) => (
+    entry
+    && !deletedIdSet.has(entry.id)
+    && !syncedIdSet.has(entry.id)
+  ));
+  return [...normalizedRows, ...preservedRows]
+    .sort((a, b) => getDateSortValue(a.event_date) - getDateSortValue(b.event_date));
+};
 const normalizeAirHandlerSchedule = (entry) => ({
   ...entry,
   handler_number: Number.parseInt(entry?.handler_number || 0, 10) || 1,
@@ -1374,6 +1411,25 @@ const getEventEndTime = (request) =>
   || request?.multi_end_time
   || request?.recurring_end_time
   || "";
+const buildApprovedCalendarEventPayload = (request, churchId, profileId, shouldSyncToGoogle) => ({
+  church_id: churchId,
+  created_by: profileId,
+  linked_event_request_id: request?.id || null,
+  title: String(request?.event_name || "Approved event").trim(),
+  event_date: toAppDateValue(getEventPrimaryDate(request)) || "",
+  start_time: getEventStartTime(request) || null,
+  end_time: getEventEndTime(request) || null,
+  location: getEventLocationSummary(request) || null,
+  sync_to_google: !!shouldSyncToGoogle,
+  notes: [
+    "Approved event request.",
+    "",
+    `Event: ${request?.event_name || "Untitled event"}`,
+    `Contact: ${request?.contact_name || "Not provided"}`,
+    `Event date: ${request?.event_timing || "Not provided"}`,
+    `Additional notes: ${request?.additional_information || "None provided."}`,
+  ].join("\n"),
+});
 const hasEventOpsNeeds = (request) =>
   request?.location_scope === "building"
   || Array.isArray(request?.location_areas) && request.location_areas.length > 0
@@ -3186,7 +3242,7 @@ function DesktopTopBanner({ setActive }) {
   );
 }
 
-function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, setCalendarEvents, session }) {
+function CalendarSettingsPanel({ profile, church, setChurch, setCalendarEvents, session }) {
   const [googleCalendarLinked, setGoogleCalendarLinked] = useState(false);
   const [googleCalendarActionMessage, setGoogleCalendarActionMessage] = useState("");
   const [googleCalendarActionError, setGoogleCalendarActionError] = useState("");
@@ -3209,39 +3265,6 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   );
   const churchId = church?.id || profile?.church_id || null;
   const canManageSettings = canManageCalendarSettings(profile);
-  const getGoogleCalendarIdFromNotes = (notes) => {
-    const text = String(notes || "");
-    const safeMatch = text.match(/google-calendar-id:([^\n]+)/);
-    if (safeMatch?.[1]) {
-      try {
-        return decodeURIComponent(safeMatch[1].trim());
-      } catch {
-        return safeMatch[1].trim();
-      }
-    }
-    const legacyMatch = text.match(/google-calendar:(.+):([^\n]+)/);
-    return legacyMatch?.[1]?.trim() || "";
-  };
-  const getGoogleEventIdFromNotes = (notes) => {
-    const text = String(notes || "");
-    const safeMatch = text.match(/google-event-id:([^\n]+)/);
-    if (safeMatch?.[1]) return safeMatch[1].trim();
-    const legacyMatch = text.match(/google-calendar:(.+):([^\n]+)/);
-    return legacyMatch?.[2]?.trim() || "";
-  };
-  const getGoogleEventDate = (value) => {
-    if (!value) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return "";
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
-  };
-  const formatGoogleTime = (value) => {
-    if (!value) return "";
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return "";
-    return `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
-  };
   const invokeGoogleCalendarSync = useCallback(async (body) => {
     const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
       body,
@@ -3484,73 +3507,16 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
     setGoogleCalendarActionError("");
     setGoogleCalendarActionMessage("");
     try {
-      const today = new Date();
-      const startWindow = new Date(today.getFullYear(), 0, 1).toISOString();
-      const endWindow = new Date(today.getFullYear() + 2, 0, 1).toISOString();
-      const existingEvents = Array.isArray(calendarEvents) ? calendarEvents : [];
-      const imports = [];
-      for (const calendarId of officialGoogleCalendarIds) {
-        const data = await invokeGoogleCalendarSync({
-          action: "listEvents",
-          calendarId,
-          timeMin: startWindow,
-          timeMax: endWindow,
-        });
-        const sourceTitle = officialGoogleCalendarTitleMap[calendarId]
-          || getChurchGoogleCalendarLabel(church, officialGoogleCalendarIds.indexOf(calendarId), officialGoogleCalendarIds.length);
-        const calendarImports = (data?.items || [])
-          .map((entry) => {
-            const eventDate = getGoogleEventDate(entry.start?.dateTime || entry.start?.date);
-            if (!eventDate) return null;
-            const existing = existingEvents.find((event) => (
-              (event.google_calendar_source_id || getGoogleCalendarIdFromNotes(event.notes)) === calendarId
-              && (event.google_calendar_source_event_id || getGoogleEventIdFromNotes(event.notes)) === entry.id
-            ));
-            return {
-              ...(existing?.id ? { id: existing.id } : {}),
-              church_id: churchId,
-              created_by: profile.id,
-              title: entry.summary || "Google calendar event",
-              event_date: eventDate,
-              start_time: entry.start?.dateTime ? formatGoogleTime(entry.start.dateTime) : null,
-              end_time: entry.end?.dateTime ? formatGoogleTime(entry.end.dateTime) : null,
-              location: entry.location || null,
-              google_calendar_source_id: calendarId,
-              google_calendar_source_title: sourceTitle,
-              google_calendar_source_event_id: entry.id,
-              notes: stripGoogleCalendarMetadata(entry.description || "") || null,
-            };
-          })
-          .filter(Boolean);
-        imports.push(...calendarImports);
-      }
-      if (!imports.length) {
-        setGoogleCalendarActionMessage("Those Google calendars do not have any events in this year or next year yet.");
-        setGoogleSyncLoading(false);
-        return;
-      }
-      const updates = imports.filter((entry) => entry.id);
-      const inserts = imports.filter((entry) => !entry.id).map((entry) => {
-        const nextEntry = { ...entry };
-        delete nextEntry.id;
-        return nextEntry;
+      const result = await invokeGoogleCalendarSync({
+        action: "syncOfficialCalendar",
       });
-      const savedRows = [];
-      if (updates.length) {
-        const { data, error } = await supabase.from("calendar_events").upsert(updates).select();
-        if (error) throw error;
-        savedRows.push(...(data || []));
-      }
-      if (inserts.length) {
-        const { data, error } = await supabase.from("calendar_events").insert(inserts).select();
-        if (error) throw error;
-        savedRows.push(...(data || []));
-      }
-      setCalendarEvents((current) => {
-        const others = (current || []).filter((event) => !savedRows.some((saved) => saved.id === event.id));
-        return [...savedRows, ...others].sort((a, b) => getDateSortValue(a.event_date) - getDateSortValue(b.event_date));
-      });
-      setGoogleCalendarActionMessage(`Imported ${savedRows.length} Google calendar event${savedRows.length === 1 ? "" : "s"} into the shared church calendar.`);
+      const savedRows = Array.isArray(result?.rows) ? result.rows : [];
+      const deletedIds = Array.isArray(result?.deletedIds) ? result.deletedIds : [];
+      setCalendarEvents((current) => mergeSyncedCalendarEvents(current, savedRows, deletedIds));
+      setGoogleCalendarActionMessage(
+        `Synced ${savedRows.length} Google calendar event${savedRows.length === 1 ? "" : "s"} into Shepherd`
+        + `${deletedIds.length ? ` and removed ${deletedIds.length} deleted item${deletedIds.length === 1 ? "" : "s"}` : ""}.`
+      );
     } catch (error) {
       setGoogleCalendarActionError(error?.message || "We couldn't import those Google calendars yet.");
     } finally {
@@ -3788,7 +3754,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, calendarEvents, set
   );
 }
 
-function AccountPage({ profile, setProfile, church, setChurch, previewUsers, calendarEvents, setCalendarEvents, session, onStartTutorial, activityLogs, refreshActivityLogs, recordActivity, onLogout, themeMode, setThemeMode }) {
+function AccountPage({ profile, setProfile, church, setChurch, previewUsers, setCalendarEvents, session, onStartTutorial, activityLogs, refreshActivityLogs, recordActivity, onLogout, themeMode, setThemeMode }) {
   const canSeeCalendarSettings = canManageCalendarSettings(profile);
   const canManageAccountManagers = canManageChurchTeam(profile, church);
   const canSeeActivityLog = canViewActivityLog(profile);
@@ -4483,7 +4449,6 @@ function AccountPage({ profile, setProfile, church, setChurch, previewUsers, cal
               profile={profile}
               church={church}
               setChurch={setChurch}
-              calendarEvents={calendarEvents}
               setCalendarEvents={setCalendarEvents}
               session={session}
             />
@@ -5821,7 +5786,7 @@ function EventRequestFormFields({ eventForm, setEventForm }) {
   );
 }
 
-function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, setTasks, moveItemToTrash, previewUsers, recordActivity, eventOpenRequest, clearEventOpenRequest, isFavorite, toggleFavorite }) {
+function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, setTasks, calendarEvents, setCalendarEvents, moveItemToTrash, previewUsers, recordActivity, eventOpenRequest, clearEventOpenRequest, isFavorite, toggleFavorite }) {
   const [eventsSection, setEventsSection] = useState("home");
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState(() => createEventRequestBlank(profile));
@@ -6027,6 +5992,47 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
               data: { taskTitle: task.title, eventRequestId: existingRequest.id, eventName: existingRequest.event_name },
             });
           }));
+        }
+      }
+    }
+
+    if (status === "approved" && existingRequest && church?.id && profile?.id) {
+      const existingCalendarEvent = (calendarEvents || []).find((entry) => entry.linked_event_request_id === existingRequest.id);
+      const calendarPayload = buildApprovedCalendarEventPayload(
+        existingRequest,
+        church.id,
+        profile.id,
+        !!church?.google_calendar_id,
+      );
+      const calendarResult = existingCalendarEvent?.id
+        ? await supabase.from("calendar_events").update(calendarPayload).eq("id", existingCalendarEvent.id).select().maybeSingle()
+        : await supabase.from("calendar_events").insert(calendarPayload).select().maybeSingle();
+      if (calendarResult.error) {
+        setFormError(calendarResult.error.message || "The event was approved, but we couldn't add it to the calendar yet.");
+        return;
+      }
+      if (calendarResult.data?.id) {
+        const savedCalendarEvent = normalizeCalendarEvent(calendarResult.data);
+        setCalendarEvents((current) => {
+          const others = (current || []).filter((entry) => entry.id !== savedCalendarEvent.id);
+          return [savedCalendarEvent, ...others].sort((a, b) => getDateSortValue(a.event_date) - getDateSortValue(b.event_date));
+        });
+        if (savedCalendarEvent.sync_to_google) {
+          try {
+            const syncResult = await invokeGoogleCalendarSyncRequest({
+              action: "upsertCalendarEvent",
+              calendarEventId: savedCalendarEvent.id,
+            });
+            if (syncResult?.event?.id) {
+              const syncedEvent = normalizeCalendarEvent(syncResult.event);
+              setCalendarEvents((current) => {
+                const others = (current || []).filter((entry) => entry.id !== syncedEvent.id);
+                return [syncedEvent, ...others].sort((a, b) => getDateSortValue(a.event_date) - getDateSortValue(b.event_date));
+              });
+            }
+          } catch (syncError) {
+            console.error("Could not sync approved event into Google Calendar.", syncError);
+          }
         }
       }
     }
@@ -8053,7 +8059,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     if (!rows.length) return [];
     const { data, error } = await supabase.from("calendar_events").insert(rows).select();
     if (error) throw error;
-    const saved = data || [];
+    const saved = (data || []).map(normalizeCalendarEvent);
     setCalendarEvents((current) => {
       const others = (current || []).filter((event) => !saved.some((entry) => entry.id === event.id));
       return [...others, ...saved].sort((a, b) => getDateSortValue(a.event_date) - getDateSortValue(b.event_date));
@@ -13179,10 +13185,13 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     end_time: "",
     location: "",
     notes: "",
+    sync_to_google: false,
   });
+  const [calendarSyncStatus, setCalendarSyncStatus] = useState({ error: "", message: "" });
   const officialGoogleCalendarIds = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
     ? church.google_calendar_ids
     : (church?.google_calendar_id ? [church.google_calendar_id] : []);
+  const officialGoogleCalendarKey = officialGoogleCalendarIds.join("|");
   const officialGoogleCalendarTitleMap = Object.fromEntries(
     officialGoogleCalendarIds.map((id, index) => [id, getChurchGoogleCalendarLabel(church, index, officialGoogleCalendarIds.length)])
   );
@@ -13232,7 +13241,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
           googleCalendarTitle || "",
         ].filter(Boolean).join(" • ") || "Added directly to the church calendar",
         tone: C.gold,
-        tag: googleCalendarTitle || "Church Event",
+        tag: googleCalendarTitle || (event.sync_to_google ? "Google Sync" : "Church Event"),
         editable: true,
         source: event,
         googleCalendarId,
@@ -13325,6 +13334,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       setCalendarItemError("Add at least a title and date before saving.");
       return;
     }
+    setCalendarSyncStatus({ error: "", message: "" });
     if (calendarItemForm.calendar_type === "myTasks") {
       const payload = {
         church_id: churchId,
@@ -13364,6 +13374,8 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         end_time: calendarItemForm.end_time || null,
         location: calendarItemForm.location.trim() || null,
         notes: calendarItemForm.notes.trim() || null,
+        sync_to_google: !!calendarItemForm.sync_to_google,
+        updated_at: new Date().toISOString(),
       };
       const result = editingCalendarEventId
         ? await supabase.from("calendar_events").update(payload).eq("id", editingCalendarEventId).select().maybeSingle()
@@ -13377,22 +13389,53 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
         setCalendarItemError("That church event could not be saved yet.");
         return;
       }
+      const normalizedEvent = normalizeCalendarEvent(data);
       setCalendarEvents((current) => {
-        const others = (current || []).filter((entry) => entry.id !== data.id);
-        return [data, ...others];
+        const others = (current || []).filter((entry) => entry.id !== normalizedEvent.id);
+        return [normalizedEvent, ...others];
       });
+      const shouldSyncToGoogle = normalizedEvent.sync_to_google || !!normalizedEvent.google_calendar_source_event_id;
+      if (shouldSyncToGoogle) {
+        try {
+          const syncResult = await invokeGoogleCalendarSyncRequest({
+            action: "upsertCalendarEvent",
+            calendarEventId: normalizedEvent.id,
+          });
+          if (syncResult?.event?.id) {
+            const syncedEvent = normalizeCalendarEvent(syncResult.event);
+            setCalendarEvents((current) => {
+              const others = (current || []).filter((entry) => entry.id !== syncedEvent.id);
+              return [syncedEvent, ...others];
+            });
+            setCalendarSyncStatus({ error: "", message: "Google Calendar is in sync with this event." });
+          }
+        } catch (syncError) {
+          setCalendarSyncStatus({ error: syncError?.message || "This event saved in Shepherd, but Google sync did not finish yet.", message: "" });
+        }
+      } else if (editingCalendarEventId && selectedCalendarItem?.source?.google_calendar_source_event_id && !calendarItemForm.sync_to_google) {
+        try {
+          await invokeGoogleCalendarSyncRequest({
+            action: "deleteCalendarEvent",
+            calendarEventId: normalizedEvent.id,
+          });
+          setCalendarEvents((current) => (current || []).filter((entry) => entry.id !== normalizedEvent.id));
+          setCalendarSyncStatus({ error: "", message: "The Google-synced version of this event was removed." });
+        } catch (syncError) {
+          setCalendarSyncStatus({ error: syncError?.message || "We couldn't unsync this event from Google yet.", message: "" });
+        }
+      }
       await recordActivity?.({
         action: editingCalendarEventId ? "updated" : "created",
         entityType: "calendar_event",
-        entityId: data.id,
-        entityTitle: data.title,
-        summary: `${profile?.full_name || "A staff member"} ${editingCalendarEventId ? "updated" : "added"} calendar event "${data.title}".`,
-        metadata: { event_date: data.event_date },
+        entityId: normalizedEvent.id,
+        entityTitle: normalizedEvent.title,
+        summary: `${profile?.full_name || "A staff member"} ${editingCalendarEventId ? "updated" : "added"} calendar event "${normalizedEvent.title}".`,
+        metadata: { event_date: normalizedEvent.event_date, sync_to_google: normalizedEvent.sync_to_google },
       });
     }
     setCalendarItemError("");
     setEditingCalendarEventId(null);
-    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", location: "", notes: "" });
+    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", location: "", notes: "", sync_to_google: false });
     setShowCalendarItemForm(false);
   };
 
@@ -13408,6 +13451,7 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       end_time: item.source.end_time || "",
       location: item.source.location || "",
       notes: stripGoogleCalendarMetadata(item.source.notes),
+      sync_to_google: !!item.source.sync_to_google || !!item.source.google_calendar_source_event_id,
     });
     setShowCalendarItemForm(true);
     if (typeof window !== "undefined") {
@@ -13419,8 +13463,64 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
     setShowCalendarItemForm(false);
     setEditingCalendarEventId(null);
     setCalendarItemError("");
-    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", location: "", notes: "" });
+    setCalendarItemForm({ calendar_type: "churchEvents", title: "", event_date: "", start_time: "", end_time: "", location: "", notes: "", sync_to_google: false });
   };
+
+  const deleteCalendarItem = async (item = selectedCalendarItem) => {
+    if (!item?.editable || !item?.source?.id) return;
+    if (!confirmDestructiveAction(`Delete "${item.source.title || item.title}" from the calendar?`)) return;
+    setCalendarItemError("");
+    setCalendarSyncStatus({ error: "", message: "" });
+    try {
+      if (item.source.google_calendar_source_event_id || item.source.sync_to_google) {
+        await invokeGoogleCalendarSyncRequest({
+          action: "deleteCalendarEvent",
+          calendarEventId: item.source.id,
+        });
+      } else {
+        const { error } = await supabase.from("calendar_events").delete().eq("id", item.source.id);
+        if (error) throw error;
+        await recordActivity?.({
+          action: "deleted",
+          entityType: "calendar_event",
+          entityId: item.source.id,
+          entityTitle: item.source.title,
+          summary: `${profile?.full_name || "A staff member"} deleted calendar event "${item.source.title}".`,
+          metadata: { event_date: item.source.event_date },
+        });
+      }
+      setCalendarEvents((current) => (current || []).filter((entry) => entry.id !== item.source.id));
+      setSelectedCalendarItem(null);
+      closeCalendarItemForm();
+      setCalendarSyncStatus({ error: "", message: "Calendar event deleted." });
+    } catch (error) {
+      setCalendarSyncStatus({ error: error?.message || "We couldn't delete that calendar event yet.", message: "" });
+    }
+  };
+
+  useEffect(() => {
+    if (!churchId || !officialGoogleCalendarIds.length) return undefined;
+    let active = true;
+    const runSync = async () => {
+      try {
+        const result = await invokeGoogleCalendarSyncRequest({
+          action: "syncOfficialCalendar",
+        });
+        if (!active || !Array.isArray(result?.rows)) return;
+        const deletedIds = Array.isArray(result?.deletedIds) ? result.deletedIds : [];
+        setCalendarEvents((current) => mergeSyncedCalendarEvents(current, result.rows, deletedIds));
+      } catch (error) {
+        if (!active) return;
+        setCalendarSyncStatus((current) => current.error ? current : { ...current, error: error?.message || "Google Calendar sync ran into a problem." });
+      }
+    };
+    runSync();
+    const timer = window.setInterval(runSync, 120000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [churchId, officialGoogleCalendarKey, officialGoogleCalendarIds.length, setCalendarEvents]);
 
   const openCalendarItem = (item) => {
     if (!item) return;
@@ -13500,9 +13600,29 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
             <label style={{fontSize:12,color:C.muted}}>Notes</label>
             <textarea className="input-field" rows={3} value={calendarItemForm.notes} onChange={(e)=>setCalendarItemForm((current) => ({ ...current, notes: e.target.value }))} placeholder={calendarItemForm.calendar_type === "myTasks" ? "Add a quick note for this task" : "Anything your team should know"} style={{resize:"vertical"}} />
           </div>
+          {calendarItemForm.calendar_type === "churchEvents" && !!officialGoogleCalendarIds.length && (
+            <label style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:C.text}}>
+              <input
+                type="checkbox"
+                checked={!!calendarItemForm.sync_to_google}
+                onChange={(e) => setCalendarItemForm((current) => ({ ...current, sync_to_google: e.target.checked }))}
+                disabled={!!editingCalendarEventId && !!selectedCalendarItem?.source?.google_calendar_source_event_id}
+              />
+              {editingCalendarEventId && !!selectedCalendarItem?.source?.google_calendar_source_event_id
+                ? "This event is already synced with Google Calendar."
+                : "Add to Google Calendar"}
+            </label>
+          )}
           {calendarItemError && <div style={{fontSize:12,color:C.danger}}>{calendarItemError}</div>}
+          {calendarSyncStatus.error && <div style={{fontSize:12,color:C.danger}}>{calendarSyncStatus.error}</div>}
+          {calendarSyncStatus.message && <div style={{fontSize:12,color:C.success}}>{calendarSyncStatus.message}</div>}
           <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
             <button className="btn-outline" onClick={closeCalendarItemForm}>Cancel</button>
+            {!!editingCalendarEventId && (
+              <button className="btn-outline" onClick={() => deleteCalendarItem()} style={{color:C.danger,borderColor:"rgba(224,82,82,.28)"}}>
+                Delete
+              </button>
+            )}
             <button className="btn-gold" onClick={saveCalendarItem}>{editingCalendarEventId ? "Save Changes" : "Save"}</button>
           </div>
         </div>
@@ -13593,6 +13713,11 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
                 {(selectedCalendarItem.editable || selectedCalendarItem.type === "myTasks" || (selectedCalendarItem.type === "churchEvents" && String(selectedCalendarItem.id || "").startsWith("event-"))) && (
                   <button className="btn-gold-compact" onClick={openSelectedCalendarItemTarget}>
                     {selectedCalendarItem.editable ? "Edit" : selectedCalendarItem.type === "myTasks" ? "Open Task" : "Open Event"}
+                  </button>
+                )}
+                {selectedCalendarItem.editable && (
+                  <button className="btn-outline" onClick={() => deleteCalendarItem(selectedCalendarItem)} style={{padding:"6px 12px",fontSize:12,color:C.danger,borderColor:"rgba(224,82,82,.28)"}}>
+                    Delete
                   </button>
                 )}
                 <button className="btn-outline" onClick={() => setSelectedCalendarItem(null)} style={{padding:"6px 12px",fontSize:12}}>
@@ -14304,7 +14429,7 @@ function AppShell() {
           setTransactions(tr.data || []);
           setPurchaseOrders((po.data || []).map(normalizePurchaseOrder));
           setStaffAvailabilityRequests((sar.data || []).map(normalizeStaffAvailabilityRequest));
-          setCalendarEvents(ce.data || []);
+          setCalendarEvents((ce.data || []).map(normalizeCalendarEvent));
           setMinistries(m.data || []);
         }).catch((error) => {
           reportDataLoadIssue("Some church data could not be loaded completely. Refresh and try again.", error);
@@ -14889,10 +15014,10 @@ function AppShell() {
   const pages = {
     dashboard:  <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
     notifications: <NotificationsPage notifications={activeNotifications} unreadCount={unreadNotifications.length} markAllRead={markAllNotificationsRead} markRead={markNotificationRead} setActive={setActive} browserPermission={browserPermission} enableBrowserNotifications={enableBrowserNotifications} openNotificationTarget={openNotificationTarget} />,
-    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} onLogout={logout} themeMode={themeMode} setThemeMode={setThemeMode} />,
+    account: <AccountPage profile={profile} setProfile={setProfile} church={church} setChurch={setChurch} previewUsers={previewUsers} setCalendarEvents={setCalendarEvents} session={session} onStartTutorial={startTutorial} activityLogs={activityLogs} refreshActivityLogs={() => refreshActivityLogs(church?.id)} recordActivity={recordActivity} onLogout={logout} themeMode={themeMode} setThemeMode={setThemeMode} />,
     "church-team": shouldShowChurchTeam(profile, church) ? <ChurchTeamPage church={church} profile={profile} setProfile={setProfile} previewUsers={previewUsers} setPreviewUsers={setPreviewUsers} /> : <Dashboard key={`dashboard-${profile?.id || "anon"}`} tasks={tasks} setActive={setActive} profile={profile} church={church} previewUsers={previewUsers} setProfile={setProfile} setPreviewUsers={setPreviewUsers} churchLockupAssignments={churchLockupAssignments} notifications={activeNotifications.slice(0, 8)} archivedNotifications={archivedNotifications.slice(0, 12)} unreadCount={unreadNotifications.length} readNotificationIds={cleanedReadNotificationIds} archiveNotification={archiveNotification} restoreNotification={restoreNotification} openNotificationTarget={openNotificationTarget} favorites={favorites} openFavorite={openFavorite} toggleFavorite={toggleFavorite} isFavorite={isFavorite}/>,
     workspaces: <Workspaces setActive={setActive} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
-    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity} eventOpenRequest={eventOpenRequest} clearEventOpenRequest={clearEventOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
+    "events-board": <EventsBoard profile={profile} church={church} eventRequests={eventRequests} setEventRequests={setEventRequests} tasks={tasks} setTasks={setTasks} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} moveItemToTrash={moveItemToTrash} previewUsers={previewUsers} recordActivity={recordActivity} eventOpenRequest={eventOpenRequest} clearEventOpenRequest={clearEventOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,
     "content-media-board": <ContentMediaBoard tasks={tasks} setTasks={setTasks} setActive={setActive} churchId={church?.id} recordActivity={recordActivity} isFavorite={isFavorite} toggleFavorite={toggleFavorite} />,
     "operations-board": <OperationsBoard profile={profile} church={church} previewUsers={previewUsers} staffAvailabilityRequests={staffAvailabilityRequests} setStaffAvailabilityRequests={setStaffAvailabilityRequests} churchLockupAssignments={churchLockupAssignments} setChurchLockupAssignments={setChurchLockupAssignments} airHandlerSchedules={airHandlerSchedules} setAirHandlerSchedules={setAirHandlerSchedules} setCalendarEvents={setCalendarEvents} recordActivity={recordActivity} operationsOpenRequest={operationsOpenRequest} clearOperationsOpenRequest={clearOperationsOpenRequest} isFavorite={isFavorite} toggleFavorite={toggleFavorite} />,
     tasks:      <Tasks tasks={tasks} setTasks={setTasks} churchId={church?.id} church={church} profile={profile} previewUsers={previewUsers} moveItemToTrash={moveItemToTrash} taskOpenRequest={taskOpenRequest} clearTaskOpenRequest={clearTaskOpenRequest} recordActivity={recordActivity} isFavorite={isFavorite} toggleFavorite={toggleFavorite}/>,

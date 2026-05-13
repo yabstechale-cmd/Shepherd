@@ -7952,6 +7952,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   const [operationsMessage, setOperationsMessage] = useState("");
   const [operationsError, setOperationsError] = useState("");
   const [operationsSubmitting, setOperationsSubmitting] = useState(false);
+  const canUseAirHandlerSchedule = samePerson(church?.name, "Reach Church");
   const [timeOffForm, setTimeOffForm] = useState({
     requestType: "PTO Request",
     fromDate: "",
@@ -7982,7 +7983,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       summary: "Program weekly run times for air handlers 1, 2, and 3 so Operations can see each active day and military-hour schedule at a glance.",
       systems: ["Air handler 1-3", "Weekly programming", "Day and hour rows"],
     },
-  ];
+  ].filter((card) => canUseAirHandlerSchedule || card.id !== "ac-schedule");
   const approverCandidates = [...new Map((previewUsers || [])
     .filter((user) =>
       (Array.isArray(user?.staff_roles) && (
@@ -8156,6 +8157,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       return;
     }
     if (cardId === "ac-schedule") {
+      if (!canUseAirHandlerSchedule) return;
       resetOperationsFlow();
       setOperationsSection("ac-schedule");
     }
@@ -8609,6 +8611,12 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
   };
 
   useEffect(() => {
+    if (!canUseAirHandlerSchedule && operationsSection === "ac-schedule") {
+      setOperationsSection("home");
+    }
+  }, [canUseAirHandlerSchedule, operationsSection]);
+
+  useEffect(() => {
     if (!operationsOpenRequest?.requestId) return;
     setOperationsMessage("");
     setOperationsError("");
@@ -8627,6 +8635,10 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
       return;
     }
     if (operationsOpenRequest.section === "ac-schedule") {
+      if (!canUseAirHandlerSchedule) {
+        clearOperationsOpenRequest?.();
+        return;
+      }
       setOperationsSection("ac-schedule");
       setTimeOffMode("");
       setLockupMode("home");
@@ -8636,7 +8648,7 @@ function OperationsBoard({ profile, church, previewUsers, staffAvailabilityReque
     resetOperationsFlow();
     setOperationsSection("home");
     clearOperationsOpenRequest?.();
-  }, [operationsOpenRequest, clearOperationsOpenRequest]);
+  }, [operationsOpenRequest, clearOperationsOpenRequest, canUseAirHandlerSchedule]);
 
   const renderLockupForm = () => (
     <div className="card" style={{padding:22,textAlign:"left",display:"grid",gap:16,background:C.surface}}>

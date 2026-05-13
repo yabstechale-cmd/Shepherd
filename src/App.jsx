@@ -3513,11 +3513,22 @@ function CalendarSettingsPanel({ profile, church, setChurch, setCalendarEvents, 
       const savedRows = Array.isArray(result?.rows) ? result.rows : [];
       const deletedIds = Array.isArray(result?.deletedIds) ? result.deletedIds : [];
       setCalendarEvents((current) => mergeSyncedCalendarEvents(current, savedRows, deletedIds));
+      if (result?.syncedAt) {
+        setChurch?.((current) => current ? ({
+          ...current,
+          google_calendar_last_synced_at: result.syncedAt,
+          google_calendar_last_sync_error: null,
+        }) : current);
+      }
       setGoogleCalendarActionMessage(
         `Synced ${savedRows.length} Google calendar event${savedRows.length === 1 ? "" : "s"} into Shepherd`
         + `${deletedIds.length ? ` and removed ${deletedIds.length} deleted item${deletedIds.length === 1 ? "" : "s"}` : ""}.`
       );
     } catch (error) {
+      setChurch?.((current) => current ? ({
+        ...current,
+        google_calendar_last_sync_error: error?.message || "The shared Google Calendar sync did not finish.",
+      }) : current);
       setGoogleCalendarActionError(error?.message || "We couldn't import those Google calendars yet.");
     } finally {
       setGoogleSyncLoading(false);
@@ -3731,10 +3742,20 @@ function CalendarSettingsPanel({ profile, church, setChurch, setCalendarEvents, 
         <div className="card" style={{padding:16,display:"grid",gap:12,background:C.surface}}>
           <div style={{display:"grid",gap:4}}>
             <div style={{fontSize:11,color:C.gold,letterSpacing:".08em",textTransform:"uppercase",fontWeight:700}}>Step 3</div>
-            <div style={{fontSize:15,color:C.text,fontWeight:600}}>Refresh Shared Calendar</div>
+            <div style={{fontSize:15,color:C.text,fontWeight:600}}>Shared Calendar Sync</div>
             <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
-              Pull the latest items from the saved Google calendars into Shepherd’s shared calendar view.
+              Shepherd’s server now syncs the official Google calendar for this church automatically every few minutes. Use this button when you want to run that same sync immediately.
             </div>
+            {!!church?.google_calendar_last_synced_at && (
+              <div style={{fontSize:12,color:C.success}}>
+                Last synced {new Date(church.google_calendar_last_synced_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+              </div>
+            )}
+            {!!church?.google_calendar_last_sync_error && (
+              <div style={{fontSize:12,color:C.danger}}>
+                Last sync issue: {church.google_calendar_last_sync_error}
+              </div>
+            )}
           </div>
           <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
             <button
@@ -3743,7 +3764,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, setCalendarEvents, 
               disabled={googleSyncLoading || !officialGoogleCalendarIds.length}
               style={primaryButtonStyle}
             >
-              {googleSyncLoading ? "Refreshing..." : "Refresh Shared Calendars"}
+              {googleSyncLoading ? "Running Sync..." : "Run Sync Now"}
             </button>
           </div>
         </div>
@@ -4958,7 +4979,7 @@ const FAQ_ITEMS = [
   { tag: "Calendar Settings", question: "How do I remove an imported calendar?", answer: "Use Calendar Settings to remove the imported calendar. Removing it should also clear that calendar's imported items from the shared Shepherd calendar view." },
   { tag: "Calendar Settings", question: "Why are settings under Account?", answer: "Calendar connection is an account-level church setting, so it lives beside other protected account controls instead of crowding the daily Calendar page." },
 
-  { tag: "Google Calendar", question: "If something changes in Google Calendar, does Shepherd update right away?", answer: "Shepherd refreshes imported calendars when an authorized admin uses Refresh Shared Calendars. This is a controlled import, not a constant background sync." },
+  { tag: "Google Calendar", question: "If something changes in Google Calendar, does Shepherd update right away?", answer: "Shepherd now syncs the church's official Google Calendar through a shared backend sync that runs every few minutes. An authorized admin can also run that same sync immediately from Calendar Settings." },
   { tag: "Google Calendar", question: "Can Shepherd push calendar changes back into Google too?", answer: "Not right now. One-way import is safer at this stage because it lets Shepherd read the church calendar without risking unexpected changes back into Google." },
   { tag: "Google Calendar", question: "Why would Shepherd ask us to reconnect Google?", answer: "Google access uses tokens. If the live token is missing or expired, an admin may need to reconnect so Shepherd can refresh the shared calendar again." },
   { tag: "Google Calendar", question: "Can our church import more than one Google calendar?", answer: "Yes. The admin can select multiple official Google calendars so staff can filter and view the calendars the church wants to share." },
@@ -13191,7 +13212,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
   const officialGoogleCalendarIds = Array.isArray(church?.google_calendar_ids) && church.google_calendar_ids.length
     ? church.google_calendar_ids
     : (church?.google_calendar_id ? [church.google_calendar_id] : []);
-  const officialGoogleCalendarKey = officialGoogleCalendarIds.join("|");
   const officialGoogleCalendarTitleMap = Object.fromEntries(
     officialGoogleCalendarIds.map((id, index) => [id, getChurchGoogleCalendarLabel(church, index, officialGoogleCalendarIds.length)])
   );
@@ -13497,30 +13517,6 @@ function CalendarView({ tasks, setTasks, calendarEvents, setCalendarEvents, prof
       setCalendarSyncStatus({ error: error?.message || "We couldn't delete that calendar event yet.", message: "" });
     }
   };
-
-  useEffect(() => {
-    if (!churchId || !officialGoogleCalendarIds.length) return undefined;
-    let active = true;
-    const runSync = async () => {
-      try {
-        const result = await invokeGoogleCalendarSyncRequest({
-          action: "syncOfficialCalendar",
-        });
-        if (!active || !Array.isArray(result?.rows)) return;
-        const deletedIds = Array.isArray(result?.deletedIds) ? result.deletedIds : [];
-        setCalendarEvents((current) => mergeSyncedCalendarEvents(current, result.rows, deletedIds));
-      } catch (error) {
-        if (!active) return;
-        setCalendarSyncStatus((current) => current.error ? current : { ...current, error: error?.message || "Google Calendar sync ran into a problem." });
-      }
-    };
-    runSync();
-    const timer = window.setInterval(runSync, 120000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [churchId, officialGoogleCalendarKey, officialGoogleCalendarIds.length, setCalendarEvents]);
 
   const openCalendarItem = (item) => {
     if (!item) return;

@@ -21,6 +21,8 @@ alter table public.churches add column if not exists google_calendar_id text;
 alter table public.churches add column if not exists google_calendar_title text;
 alter table public.churches add column if not exists google_calendar_ids text[] not null default '{}';
 alter table public.churches add column if not exists google_calendar_titles text[] not null default '{}';
+alter table public.churches add column if not exists google_calendar_last_synced_at timestamptz;
+alter table public.churches add column if not exists google_calendar_last_sync_error text;
 
 update public.churches
 set

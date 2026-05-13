@@ -29,6 +29,8 @@ type ChurchRow = {
   name: string | null;
   google_calendar_id: string | null;
   google_calendar_title: string | null;
+  google_calendar_last_synced_at: string | null;
+  google_calendar_last_sync_error: string | null;
 };
 
 type CalendarEventRow = {
@@ -56,6 +58,26 @@ function jsonResponse(status: number, payload: Record<string, unknown>) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function getGoogleSyncJobSecret() {
+  return sanitizePlainText(
+    Deno.env.get("SHEPHERD_GOOGLE_SYNC_SECRET")
+    || Deno.env.get("SHEPHERD_BULK_EMAIL_SECRET")
+    || "",
+    200,
+  );
+}
+
+function assertValidSyncJobSecret(req: Request) {
+  const expected = getGoogleSyncJobSecret();
+  const received = sanitizePlainText(req.headers.get("x-shepherd-job-secret") || "", 200);
+  if (!expected) {
+    throw new Error("The Google Calendar sync job secret is not configured.");
+  }
+  if (!received || received !== expected) {
+    throw new Error("The Google Calendar sync job secret is invalid.");
+  }
 }
 
 function sanitizePlainText(value: unknown, maxLength: number) {
@@ -159,7 +181,7 @@ async function getChurchGoogleConnection(adminClient: ReturnType<typeof createCl
 async function getChurchRecord(adminClient: ReturnType<typeof createClient>, churchId: string) {
   const { data, error } = await adminClient
     .from("churches")
-    .select("id, name, google_calendar_id, google_calendar_title")
+    .select("id, name, google_calendar_id, google_calendar_title, google_calendar_last_synced_at, google_calendar_last_sync_error")
     .eq("id", churchId)
     .maybeSingle();
 
@@ -176,6 +198,29 @@ function getOfficialCalendarId(church: ChurchRow) {
     throw new Error("This church does not have an official Google calendar selected yet.");
   }
   return calendarId;
+}
+
+async function updateChurchSyncStatus(
+  adminClient: ReturnType<typeof createClient>,
+  churchId: string,
+  {
+    syncedAt = null,
+    errorMessage = null,
+  }: {
+    syncedAt?: string | null;
+    errorMessage?: string | null;
+  },
+) {
+  const payload: Record<string, string | null> = {
+    google_calendar_last_sync_error: errorMessage || null,
+  };
+  if (syncedAt) {
+    payload.google_calendar_last_synced_at = syncedAt;
+  }
+  await adminClient
+    .from("churches")
+    .update(payload)
+    .eq("id", churchId);
 }
 
 async function exchangeRefreshToken(refreshToken: string) {
@@ -476,6 +521,91 @@ async function syncOfficialCalendarToShepherd(
   };
 }
 
+async function syncChurchCalendar(
+  adminClient: ReturnType<typeof createClient>,
+  church: ChurchRow,
+  connection: ConnectionRow,
+  profile: RequesterProfile,
+) {
+  const accessToken = await exchangeRefreshToken(connection.refresh_token);
+  const result = await syncOfficialCalendarToShepherd(adminClient, accessToken, church, profile);
+  const syncedAt = new Date().toISOString();
+  await updateChurchSyncStatus(adminClient, church.id, {
+    syncedAt,
+    errorMessage: null,
+  });
+  return {
+    ...result,
+    syncedAt,
+  };
+}
+
+async function runScheduledChurchSync(adminClient: ReturnType<typeof createClient>) {
+  const { data: connections, error } = await adminClient
+    .from("church_google_connections")
+    .select("church_id, connected_by, google_account_email, refresh_token")
+    .not("refresh_token", "is", null);
+
+  if (error) {
+    throw new Error(error.message || "We couldn't load the churches with Google Calendar connections.");
+  }
+
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const connection of (connections || []) as ConnectionRow[]) {
+    let church: ChurchRow | null = null;
+    try {
+      church = await getChurchRecord(adminClient, connection.church_id);
+      if (!sanitizePlainText(church.google_calendar_id, 300)) {
+        await updateChurchSyncStatus(adminClient, church.id, {
+          errorMessage: "No official Google calendar is selected for this church yet.",
+        });
+        results.push({
+          churchId: church.id,
+          churchName: church.name || "Church",
+          synced: false,
+          skipped: true,
+          error: "No official Google calendar is selected for this church yet.",
+        });
+        continue;
+      }
+      const profile = {
+        id: connection.connected_by || "",
+        church_id: church.id,
+        role: "system",
+        staff_roles: [],
+        title: "system",
+        full_name: "Shepherd Sync",
+        email: null,
+      } as RequesterProfile;
+      const syncResult = await syncChurchCalendar(adminClient, church, connection, profile);
+      results.push({
+        churchId: church.id,
+        churchName: church.name || "Church",
+        synced: true,
+        savedCount: syncResult.savedRows.length,
+        deletedCount: syncResult.deletedRows.length,
+        syncedAt: syncResult.syncedAt,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown sync error.";
+      if (church?.id || connection.church_id) {
+        await updateChurchSyncStatus(adminClient, church?.id || connection.church_id, {
+          errorMessage: message,
+        });
+      }
+      results.push({
+        churchId: church?.id || connection.church_id,
+        churchName: church?.name || "Church",
+        synced: false,
+        error: message,
+      });
+    }
+  }
+
+  return results;
+}
+
 async function fetchCalendarEvent(
   adminClient: ReturnType<typeof createClient>,
   churchId: string,
@@ -592,10 +722,24 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const profile = await getRequesterProfile(req);
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "");
     const adminClient = await getAdminClient();
+
+    if (action === "syncAllChurches") {
+      assertValidSyncJobSecret(req);
+      const results = await runScheduledChurchSync(adminClient);
+      return jsonResponse(200, {
+        synced: true,
+        churchCount: results.length,
+        successCount: results.filter((entry) => entry.synced === true).length,
+        failureCount: results.filter((entry) => entry.synced === false && !entry.skipped).length,
+        skippedCount: results.filter((entry) => entry.skipped === true).length,
+        churches: results,
+      });
+    }
+
+    const profile = await getRequesterProfile(req);
 
     if (action === "getAuthUrl" || action === "completeConnection" || action === "disconnectConnection" || action === "listCalendars") {
       if (!canManageCalendarSettings(profile)) {
@@ -682,9 +826,9 @@ Deno.serve(async (req) => {
 
     const connection = await getChurchGoogleConnection(adminClient, profile.church_id);
     const church = await getChurchRecord(adminClient, profile.church_id);
-    const accessToken = await exchangeRefreshToken(connection.refresh_token);
 
     if (action === "listCalendars") {
+      const accessToken = await exchangeRefreshToken(connection.refresh_token);
       const payload = await googleRequest(
         accessToken,
         "https://www.googleapis.com/calendar/v3/users/me/calendarList",
@@ -697,6 +841,7 @@ Deno.serve(async (req) => {
       if (!calendarEventId) {
         return jsonResponse(400, { error: "calendarEventId is required." });
       }
+      const accessToken = await exchangeRefreshToken(connection.refresh_token);
       const saved = await upsertOfficialCalendarEvent(adminClient, accessToken, church, profile, calendarEventId);
       return jsonResponse(200, { event: saved });
     }
@@ -706,18 +851,20 @@ Deno.serve(async (req) => {
       if (!calendarEventId) {
         return jsonResponse(400, { error: "calendarEventId is required." });
       }
+      const accessToken = await exchangeRefreshToken(connection.refresh_token);
       await deleteOfficialCalendarEvent(adminClient, accessToken, church, profile, calendarEventId);
       return jsonResponse(200, { deleted: true });
     }
 
     if (action === "syncOfficialCalendar") {
-      const result = await syncOfficialCalendarToShepherd(adminClient, accessToken, church, profile);
+      const result = await syncChurchCalendar(adminClient, church, connection, profile);
       return jsonResponse(200, {
         synced: true,
         savedCount: result.savedRows.length,
         deletedCount: result.deletedRows.length,
         deletedIds: result.deletedRows,
         rows: result.savedRows,
+        syncedAt: result.syncedAt,
       });
     }
 
@@ -730,6 +877,7 @@ Deno.serve(async (req) => {
         return jsonResponse(400, { error: "calendarId, timeMin, and timeMax are required." });
       }
 
+      const accessToken = await exchangeRefreshToken(connection.refresh_token);
       const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
       url.searchParams.set("singleEvents", "true");
       url.searchParams.set("orderBy", "startTime");

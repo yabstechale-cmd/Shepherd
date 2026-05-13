@@ -1,0 +1,17 @@
+name: Sync Google Calendars
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync-calendars:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger centralized Shepherd Google Calendar sync
+        run: |
+          curl --fail-with-body -X POST "https://nplrfjmxstaxsgribirs.functions.supabase.co/google-calendar-sync" \
+            -H "Content-Type: application/json" \
+            -H "x-shepherd-job-secret: ${{ secrets.SHEPHERD_BULK_EMAIL_SECRET }}" \
+            --data '{"action":"syncAllChurches"}'

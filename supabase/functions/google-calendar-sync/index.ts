@@ -401,7 +401,6 @@ function mapGoogleEventToLocalRow(existing: CalendarEventRow | null, event: Reco
     ? getInclusiveGoogleAllDayEndDate(event.end?.date)
     : getGoogleEventDate(event.end?.dateTime);
   return {
-    ...(existing?.id ? { id: existing.id } : {}),
     church_id: church.id,
     created_by: existing?.created_by || fallbackProfileId,
     linked_event_request_id: existing?.linked_event_request_id || null,
@@ -529,7 +528,9 @@ async function syncOfficialCalendarToShepherd(
   if (activeRows.length) {
     const { data, error: upsertError } = await adminClient
       .from("calendar_events")
-      .upsert(activeRows)
+      .upsert(activeRows, {
+        onConflict: "church_id,google_calendar_source_id,google_calendar_source_event_id",
+      })
       .select();
     if (upsertError) {
       throw new Error(upsertError.message || "We couldn't save synced Google events into Shepherd.");

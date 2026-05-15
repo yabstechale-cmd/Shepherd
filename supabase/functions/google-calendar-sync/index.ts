@@ -526,16 +526,38 @@ async function syncOfficialCalendarToShepherd(
 
   const savedRows = [];
   if (activeRows.length) {
-    const { data, error: upsertError } = await adminClient
-      .from("calendar_events")
-      .upsert(activeRows, {
-        onConflict: "church_id,google_calendar_source_id,google_calendar_source_event_id",
-      })
-      .select();
-    if (upsertError) {
-      throw new Error(upsertError.message || "We couldn't save synced Google events into Shepherd.");
+    for (const row of activeRows) {
+      const existingRow = row.google_calendar_source_event_id
+        ? existingByGoogleId.get(row.google_calendar_source_event_id)
+        : null;
+      if (existingRow?.id) {
+        const { data, error: updateError } = await adminClient
+          .from("calendar_events")
+          .update(row)
+          .eq("id", existingRow.id)
+          .select()
+          .single();
+        if (updateError) {
+          throw new Error(updateError.message || "We couldn't update a synced Google event inside Shepherd.");
+        }
+        if (data) {
+          savedRows.push(data);
+        }
+        continue;
+      }
+
+      const { data, error: insertError } = await adminClient
+        .from("calendar_events")
+        .insert(row)
+        .select()
+        .single();
+      if (insertError) {
+        throw new Error(insertError.message || "We couldn't save a new synced Google event into Shepherd.");
+      }
+      if (data) {
+        savedRows.push(data);
+      }
     }
-    savedRows.push(...(data || []));
   }
 
   return {

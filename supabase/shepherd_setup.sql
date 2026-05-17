@@ -1411,11 +1411,12 @@ declare
   task_row public.tasks%rowtype;
   commenter_name text;
   commenter_church uuid;
+  commenter_photo_url text;
   new_comment jsonb;
   next_comments jsonb;
 begin
-  select full_name, church_id
-  into commenter_name, commenter_church
+  select full_name, church_id, photo_url
+  into commenter_name, commenter_church, commenter_photo_url
   from public.profiles
   where id = auth.uid();
 
@@ -1443,6 +1444,7 @@ begin
   new_comment := jsonb_build_object(
     'id', coalesce(nullif(trim(p_comment_id), ''), gen_random_uuid()::text),
     'author', commenter_name,
+    'author_photo_url', nullif(trim(coalesce(commenter_photo_url, '')), ''),
     'body', trim(p_body),
     'created_at', now()
   );

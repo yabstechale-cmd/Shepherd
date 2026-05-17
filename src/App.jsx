@@ -787,6 +787,51 @@ const normalizeActivityLog = (entry) => ({
   metadata: entry?.metadata && typeof entry.metadata === "object" ? entry.metadata : {},
   created_at: entry?.created_at || new Date().toISOString(),
 });
+const getInitials = (value = "") => {
+  const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "U";
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("") || "U";
+};
+const getCommentAuthorPhotoUrl = (comment, users = [], currentProfile = null) => {
+  const directPhoto = String(comment?.author_photo_url || "").trim();
+  if (directPhoto) return directPhoto;
+  const author = String(comment?.author || "").trim();
+  if (!author) return "";
+  if (samePerson(author, currentProfile?.full_name)) {
+    return String(currentProfile?.photo_url || "").trim();
+  }
+  const matchedUser = (users || []).find((user) => samePerson(user?.full_name, author));
+  return String(matchedUser?.photo_url || "").trim();
+};
+const CommentAvatar = ({ comment, users = [], currentProfile = null, size = 34, background = "rgba(201,168,76,.16)", color = "#c9a84c" }) => {
+  const photoUrl = getCommentAuthorPhotoUrl(comment, users, currentProfile);
+  const label = String(comment?.author || "User");
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        overflow: "hidden",
+        flex: `0 0 ${size}px`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background,
+        color,
+        fontSize: Math.max(11, Math.round(size * 0.36)),
+        fontWeight: 700,
+      }}
+      aria-hidden="true"
+    >
+      {photoUrl ? (
+        <img src={photoUrl} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      ) : (
+        getInitials(label)
+      )}
+    </div>
+  );
+};
 const normalizeStaffAvailabilityRequest = (request) => ({
   ...request,
   status: ["pending_review", "submitted", "approved", "denied"].includes(request?.status) ? request.status : "submitted",
@@ -6768,6 +6813,7 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
     const nextComment = {
       id: crypto.randomUUID(),
       author: profile?.full_name || "Staff",
+      author_photo_url: profile?.photo_url || "",
       email: profile?.email || "",
       role: "staff",
       body,
@@ -7551,11 +7597,14 @@ function EventsBoard({ profile, church, eventRequests, setEventRequests, tasks, 
 	                      </div>
 	                    ) : (requestDetails.public_comments || []).map((comment) => (
 	                      <div key={comment.id} style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.card}}>
-	                        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
-	                          <div style={{fontSize:13,color:C.text,fontWeight:700}}>
-	                            {comment.author || "Guest"}{comment.role === "staff" ? <span style={{color:C.gold}}> • Staff</span> : ""}
+	                        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+	                          <div style={{display:"flex",alignItems:"flex-start",gap:10,minWidth:0}}>
+	                            <CommentAvatar comment={comment} users={previewUsers} currentProfile={profile} />
+	                            <div style={{fontSize:13,color:C.text,fontWeight:700}}>
+	                              {comment.author || "Guest"}{comment.role === "staff" ? <span style={{color:C.gold}}> • Staff</span> : ""}
+	                            </div>
 	                          </div>
-	                          <div style={{fontSize:11,color:C.muted}}>{fmtActivityDate(comment.created_at)}</div>
+	                          <div style={{fontSize:11,color:C.muted,flex:"0 0 auto"}}>{fmtActivityDate(comment.created_at)}</div>
 	                        </div>
 	                        <div style={{fontSize:13,color:C.text,lineHeight:1.6,whiteSpace:"pre-line",marginTop:6}}>{comment.body}</div>
 	                      </div>
@@ -9445,11 +9494,14 @@ function PublicEventRequestSharePage({ token }) {
                   </div>
                 ) : (request?.public_comments || []).map((comment) => (
                   <div key={comment.id} style={{padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:12,background:C.surface}}>
-                    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
-                      <div style={{fontSize:13,color:C.text,fontWeight:700}}>
-                        {comment.author || "Guest"}{comment.role === "staff" ? <span style={{color:C.gold}}> • Staff</span> : ""}
+                    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:10,minWidth:0}}>
+                        <CommentAvatar comment={comment} />
+                        <div style={{fontSize:13,color:C.text,fontWeight:700}}>
+                          {comment.author || "Guest"}{comment.role === "staff" ? <span style={{color:C.gold}}> • Staff</span> : ""}
+                        </div>
                       </div>
-                      <div style={{fontSize:11,color:C.muted}}>{fmtActivityDate(comment.created_at)}</div>
+                      <div style={{fontSize:11,color:C.muted,flex:"0 0 auto"}}>{fmtActivityDate(comment.created_at)}</div>
                     </div>
                     <div style={{fontSize:13,color:C.text,lineHeight:1.6,whiteSpace:"pre-line",marginTop:6}}>{comment.body}</div>
                   </div>
@@ -10778,6 +10830,7 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
       const nextComment = {
         id: crypto.randomUUID(),
         author: profile?.full_name || "Staff",
+        author_photo_url: profile?.photo_url || "",
         body: commentDraft.trim(),
         created_at: new Date().toISOString(),
       };
@@ -11402,8 +11455,13 @@ function Tasks({ tasks, setTasks, churchId, church, profile, previewUsers, moveI
                     }}
                   >
                     <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
-                      <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
-                      <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:10,minWidth:0}}>
+                        <CommentAvatar comment={comment} users={previewUsers} currentProfile={profile} />
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
+                        </div>
+                      </div>
+                      <div style={{fontSize:11,color:C.muted,textAlign:"right",flex:"0 0 auto"}}>
                         {new Date(comment.updated_at || comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
                         {comment.updated_at && <div>Edited</div>}
                       </div>
@@ -12280,6 +12338,7 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
     const commentEntry = {
       id: `${order.id}-comment-${(order.comments || []).length + 1}`,
       author: profile?.full_name || "Staff Member",
+      author_photo_url: profile?.photo_url || "",
       body: draft,
       created_at: new Date().toISOString(),
     };
@@ -13088,8 +13147,11 @@ function Budget({ transactions, setTransactions, purchaseOrders, setPurchaseOrde
                     (order.comments || []).slice().sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).map((comment) => (
                       <div key={comment.id} style={{padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface}}>
                         <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
-                          <div style={{fontSize:12,color:C.text,fontWeight:600}}>{comment.author}</div>
-                          <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
+                          <div style={{display:"flex",alignItems:"flex-start",gap:10,minWidth:0}}>
+                            <CommentAvatar comment={comment} users={previewUsers} currentProfile={profile} />
+                            <div style={{fontSize:12,color:C.text,fontWeight:600,minWidth:0}}>{comment.author}</div>
+                          </div>
+                          <div style={{fontSize:11,color:C.muted,textAlign:"right",flex:"0 0 auto"}}>
                             {new Date(comment.updated_at || comment.created_at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
                             {comment.updated_at && <div>Edited</div>}
                           </div>

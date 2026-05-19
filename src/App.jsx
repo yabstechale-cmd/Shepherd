@@ -634,7 +634,9 @@ const GS = () => (
     .tutorial-step-card:hover{transform:translateY(-2px);border-color:${C.goldDim};background:${C.goldGlow}}
     .tutorial-step-card.active{border-color:${C.gold};background:${C.goldGlow}}
     .input-field{background:${C.surface};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};caret-color:${C.text};-webkit-text-fill-color:${C.text};font-size:14px;width:100%;max-width:100%;min-width:0;outline:none}
-    input.input-field[type="date"],input.input-field[type="time"]{-webkit-appearance:none;appearance:none;display:block}
+    input.input-field[type="date"],input.input-field[type="time"]{-webkit-appearance:none;appearance:none;display:block;color-scheme:${ACTIVE_THEME_MODE === "light" ? "light" : "dark"}}
+    input.input-field[type="date"]::-webkit-calendar-picker-indicator,input.input-field[type="time"]::-webkit-calendar-picker-indicator{display:block;opacity:.92;cursor:pointer;filter:${ACTIVE_THEME_MODE === "light" ? "invert(.18) saturate(.65)" : "invert(.88) saturate(.45)"}}
+    input.input-field[type="date"]::-webkit-calendar-picker-indicator:hover,input.input-field[type="time"]::-webkit-calendar-picker-indicator:hover{opacity:1}
     .input-field:focus{border-color:${C.gold};box-shadow:0 0 0 3px ${C.goldGlow}}
     .input-field::placeholder{color:${C.muted}}
     .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}

@@ -2955,8 +2955,8 @@ function getTutorialSteps(profile, church) {
       title: "Use Frameworks",
       page: "workspaces",
       eyebrow: "Boards and workflows",
-      body: "Use Frameworks when you are not sure which board you need. Choose Event Planning for building an event, Event Requests for approvals, Operations for staff availability and lock-up, or Content/Media for communication work.",
-      tip: "Think of this as the hallway. It does not replace the boards; it helps people enter the right room.",
+      body: "Use Frameworks when you are not sure which board you need. It points people into the main workflow spaces like Event Requests, Event Planning, and Operations instead of making them hunt through the app.",
+      tip: "Think of this as the hallway. It does not replace the boards; it helps people enter the right room faster.",
       action: "Open Frameworks",
     },
     {
@@ -2973,8 +2973,8 @@ function getTutorialSteps(profile, church) {
       title: "Check The Shared Calendar",
       page: "calendar",
       eyebrow: "Church rhythm",
-      body: "Use Calendar to see the week in motion. Toggle imported Google calendars and My Tasks, move week to week, and click an item when you need to review or edit its details.",
-      tip: "Staff time off appears after approval. Church events can come from approved event requests, direct calendar entries, or imported Google calendars.",
+      body: "Use Calendar to see the church rhythm in one place. Filter between your church calendar, birthdays, time off and sick days, and My Tasks, then open any item when you need to review or edit its details.",
+      tip: "Approved events and selected calendar entries can sync with the shared Google calendar, so Shepherd and Google stay aligned instead of drifting apart.",
       action: "Open Calendar",
     },
     {
@@ -3019,8 +3019,8 @@ function getTutorialSteps(profile, church) {
       page: "account",
       branch: "calendar",
       eyebrow: "Admin setup",
-      body: "Calendar Settings is where an admin connects Google once for the church, chooses which Google calendars Shepherd imports, refreshes shared calendars, or disconnects Google when needed.",
-      tip: "This is church-level setup. Staff can view the shared calendar, but admins maintain the connection so everyone sees the same source of truth.",
+      body: "Calendar Settings is where the shared church Google connection is managed. Connect Google, choose the official church calendar, run a sync, or disconnect when the church needs to reset the link.",
+      tip: "This is a church-level connection. Changes here affect the shared calendar experience the rest of the team sees inside Shepherd.",
       action: "Open Calendar Settings",
     });
   }
@@ -3686,7 +3686,7 @@ function CalendarSettingsPanel({ profile, church, setChurch, setCalendarEvents, 
       <div className="card" style={{padding:22,textAlign:"left"}}>
         <h3 style={sectionTitleStyle}>Calendar Settings</h3>
         <p style={{fontSize:12,color:C.muted,marginTop:6,lineHeight:1.7}}>
-          Shared church calendar setup is only available to the Church Administrator account. Once it is configured, the rest of the team can still view the shared calendars from the main calendar page.
+          Shared church calendar setup is managed here at the church-account level. If you cannot use these controls, Shepherd is keeping the shared connection visible without exposing the setup actions on this account.
         </p>
       </div>
     );
@@ -5045,19 +5045,19 @@ const FAQ_ITEMS = [
   { tag: "Calendar", question: "How do I move around the calendar?", answer: "Use the month and year controls at the top of the Calendar card. Shepherd supports the current year and next year so the calendar stays useful without loading unnecessary history." },
   { tag: "Calendar", question: "Can I switch between month and list views?", answer: "Yes. The Calendar includes both a full monthly view and a list view so staff can choose between a visual grid and a simpler agenda-style layout." },
   { tag: "Calendar", question: "Can I click a calendar item and edit it?", answer: "Yes. Calendar items can be opened to review details, and editable Shepherd-created items can be updated from the calendar." },
-  { tag: "Calendar", question: "Why are the calendar filters so simple?", answer: "The filters stay intentionally simple: imported church Google calendars and My Tasks. That keeps the calendar useful without stacking too many overlapping filter controls." },
+  { tag: "Calendar", question: "Why are the calendar filters so simple?", answer: "The filters stay intentionally simple so the calendar remains readable. The main views are your church calendar, birthdays, time off and sick days, and My Tasks instead of a cluttered stack of overlapping toggles." },
 
-  { tag: "Calendar Settings", question: "Who can manage Calendar Settings?", answer: "Calendar Settings are managed by a church admin from Account > Calendar Settings. This keeps the shared church calendar connection controlled and consistent." },
+  { tag: "Calendar Settings", question: "Who can manage Calendar Settings?", answer: "Calendar Settings live under Account > Calendar Settings. Shepherd treats this as a shared church setup area, so the team can manage the connection there without every calendar decision living in a personal Google account." },
   { tag: "Calendar Settings", question: "Where do I connect Google?", answer: "Go to Account, open Calendar Settings, and use Connect Google. Once connected, any signed-in church staff user can manage the shared calendar tools there." },
-  { tag: "Calendar Settings", question: "Can staff connect their own Google calendars?", answer: "The current design is church-level, not personal. Staff view the shared church calendar feed, while admins manage which Google calendars are imported." },
-  { tag: "Calendar Settings", question: "How do I remove an imported calendar?", answer: "Use Calendar Settings to remove the imported calendar. Removing it should also clear that calendar's imported items from the shared Shepherd calendar view." },
+  { tag: "Calendar Settings", question: "Can staff connect their own Google calendars?", answer: "No. The current setup is church-level, not personal. Shepherd is built around one shared church Google connection rather than private calendars for each staff member." },
+  { tag: "Calendar Settings", question: "How do I remove an imported calendar?", answer: "Use Calendar Settings to disconnect Google or remove the shared calendar selection there. When that shared connection is removed, Shepherd clears those synced items from the shared calendar view." },
   { tag: "Calendar Settings", question: "Why are settings under Account?", answer: "Calendar connection is an account-level church setting, so it lives beside other protected account controls instead of crowding the daily Calendar page." },
 
-  { tag: "Google Calendar", question: "If something changes in Google Calendar, does Shepherd update right away?", answer: "Shepherd now syncs the church's official Google Calendar through a shared backend sync that runs every few minutes. An authorized admin can also run that same sync immediately from Calendar Settings." },
-  { tag: "Google Calendar", question: "Can Shepherd push calendar changes back into Google too?", answer: "Not right now. One-way import is safer at this stage because it lets Shepherd read the church calendar without risking unexpected changes back into Google." },
-  { tag: "Google Calendar", question: "Why would Shepherd ask us to reconnect Google?", answer: "Google access uses tokens. If the live token is missing or expired, an admin may need to reconnect so Shepherd can refresh the shared calendar again." },
-  { tag: "Google Calendar", question: "Can our church import more than one Google calendar?", answer: "Yes. The admin can select multiple official Google calendars so staff can filter and view the calendars the church wants to share." },
-  { tag: "Google Calendar", question: "Why do imported calendars have Shepherd-style names?", answer: "Imported Google calendars display under a Shepherd-friendly church label, such as Reach Church's Google Calendar, instead of exposing the raw Google calendar title everywhere." },
+  { tag: "Google Calendar", question: "If something changes in Google Calendar, does Shepherd update right away?", answer: "Google changes do not appear instantly, but Shepherd does keep them moving. The shared backend sync runs automatically every few minutes, and the team can also run that same sync right away from Calendar Settings." },
+  { tag: "Google Calendar", question: "Can Shepherd push calendar changes back into Google too?", answer: "Yes. Shepherd now supports two-way calendar syncing for approved events and calendar entries marked to sync, so edits can be made from either side and the most recent change should win." },
+  { tag: "Google Calendar", question: "Why would Shepherd ask us to reconnect Google?", answer: "Google access uses tokens and permission scopes. If the saved connection expires, loses the needed access, or was originally connected with older permissions, the church may need to reconnect Google so syncing can keep working cleanly." },
+  { tag: "Google Calendar", question: "Can our church import more than one Google calendar?", answer: "Shepherd is designed around the church's shared Google calendar connection. If the church has more than one calendar selected inside that shared setup, Shepherd can pull those into the shared view from the same church-level connection." },
+  { tag: "Google Calendar", question: "Why do imported calendars have Shepherd-style names?", answer: "Shepherd uses church-friendly labels so staff can tell what they are looking at quickly. The goal is clarity inside Shepherd, not forcing everyone to think in raw Google calendar titles." },
 
   { tag: "Operations", question: "Which time-off items need approval and which do not?", answer: "PTO requests go through review. Out Of Office and Sick Day entries are logged directly because they are more immediate status updates." },
   { tag: "Operations", question: "Who is supposed to approve PTO requests?", answer: "PTO requests are intended to be reviewed by church leadership, including the Senior Pastor and Church Administrator, before they appear as approved time off." },
@@ -5085,7 +5085,7 @@ const FAQ_ITEMS = [
 
   { tag: "Account", question: "What is a Shepherd Account Manager?", answer: "A Shepherd Account Manager has church-level account control, including protected church settings. Churches can keep more than one manager so responsibility is shared and lockout risk is lower." },
   { tag: "Account", question: "Where do I change my profile photo?", answer: "Go to Account > My Account Settings and use the profile photo controls. Your photo helps staff recognize accounts more easily across the app." },
-  { tag: "Account", question: "How do I reset my password if I cannot remember it?", answer: "Go to Account > My Account Settings and use Password Recovery. Shepherd sends a reset email to the email address on your account." },
+  { tag: "Account", question: "How do I reset my password if I cannot remember it?", answer: "Use the Forgot Password flow from the login screen. Shepherd sends a reset email to the address on your account and takes you through the dedicated password recovery page from there." },
   { tag: "Account", question: "Where do church-level settings live?", answer: "Church-level settings live under Account in sections like Church Account Settings and Calendar Settings. Locked sections stay visible so staff understand where those controls live." },
   { tag: "Account", question: "Can a church have more than one account manager?", answer: "Yes. Shepherd supports multiple account managers so responsibility can be shared and the church is not dependent on one person's login." },
 ];
